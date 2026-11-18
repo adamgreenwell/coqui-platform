@@ -305,6 +305,9 @@ export default function WorkspaceTokens({
                       </div>
                     </label>
                   </div>
+                  {errors.abilities && (
+                    <p className="mt-1 text-xs text-red-400">{errors.abilities}</p>
+                  )}
                 </div>
 
                 <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-800">
@@ -317,7 +320,7 @@ export default function WorkspaceTokens({
                   </button>
                   <button
                     type="submit"
-                    disabled={processing}
+                    disabled={processing || data.abilities.length === 0}
                     className="px-4 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs transition disabled:opacity-50 cursor-pointer"
                   >
                     {processing ? 'Generating...' : 'Generate Token'}

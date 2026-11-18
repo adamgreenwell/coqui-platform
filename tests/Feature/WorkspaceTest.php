@@ -176,6 +176,14 @@ class WorkspaceTest extends TestCase
         ]);
         $workspace->members()->attach($user->id, ['role' => 'owner']);
 
+        // Reject empty abilities array
+        $this->actingAs($user)
+            ->post("/workspaces/{$workspace->id}/tokens", [
+                'name' => 'Empty Abilities Token',
+                'abilities' => [],
+            ])
+            ->assertSessionHasErrors(['abilities']);
+
         // Generate token
         $response = $this->actingAs($user)
             ->post("/workspaces/{$workspace->id}/tokens", [

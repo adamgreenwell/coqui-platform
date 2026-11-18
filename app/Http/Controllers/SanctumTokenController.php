@@ -56,14 +56,12 @@ class SanctumTokenController extends Controller
         /** @var array<string, mixed> $validated */
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
-            'abilities' => ['nullable', 'array'],
+            'abilities' => ['required', 'array', 'min:1'],
             'abilities.*' => ['string', 'in:crawls:sync,projects:read'],
         ]);
 
         /** @var list<string> $abilities */
-        $abilities = ! empty($validated['abilities'])
-            ? array_values((array) $validated['abilities'])
-            : ['crawls:sync', 'projects:read'];
+        $abilities = array_values((array) $validated['abilities']);
 
         $name = (string) $validated['name'];
         $token = $user->createToken($name, $abilities);
