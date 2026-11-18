@@ -41,6 +41,8 @@ jobs:
       - name: Install dependencies
         run: |
           composer install --no-interaction --prefer-dist
+          cp .env.example .env
+          php artisan key:generate
           npm install
           npm run build
       - name: Code style (Pint)
@@ -48,4 +50,6 @@ jobs:
       - name: Static analysis (PHPStan)
         run: php vendor/bin/phpstan analyse --memory-limit=1G
       - name: Tests (PHPUnit)
-        run: php artisan test
+        run: |
+          php vendor/bin/phpunit --display-warnings --fail-on-warning
+          php artisan test
