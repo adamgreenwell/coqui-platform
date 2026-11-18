@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Tools;
 
 use App\Domains\Projects\Models\Project;
+use App\Models\User;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
 use Laravel\Mcp\Response;
@@ -30,6 +31,15 @@ class InspectProjectSeoTool extends Tool
 
         if ($project === null) {
             return Response::error("Project not found for domain [{$normalized}].");
+        }
+
+        $user = $request->user();
+        if ((bool) config('coqui.mcp.require_auth', false) && $user === null) {
+            return Response::error('Authentication required to inspect project SEO.');
+        }
+
+        if ($user instanceof User && ! $user->can('view', $project)) {
+            return Response::error("Unauthorized access to project [{$normalized}].");
         }
 
         $latestCrawl = $project->crawlRuns()->latest('id')->first();

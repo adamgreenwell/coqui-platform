@@ -20,11 +20,17 @@ class RunnrDeployWebhookController extends Controller
         $secret = (string) config('services.runnr.webhook_secret');
         $signature = (string) $request->header('X-Runnr-Signature', '');
 
-        if ($secret !== '') {
-            $expected = hash_hmac('sha256', $request->getContent(), $secret);
-            if (! hash_equals($expected, $signature)) {
-                return response()->json(['message' => 'Invalid signature.'], 403);
-            }
+        if ($secret === '') {
+            return response()->json(['message' => 'Runnr webhook secret is not configured.'], 503);
+        }
+
+        if ($signature === '') {
+            return response()->json(['message' => 'Missing webhook signature.'], 401);
+        }
+
+        $expected = hash_hmac('sha256', $request->getContent(), $secret);
+        if (! hash_equals($expected, $signature)) {
+            return response()->json(['message' => 'Invalid signature.'], 403);
         }
 
         $validated = $request->validate([

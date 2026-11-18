@@ -57,6 +57,55 @@ final readonly class CrawlSyncPayload
     }
 
     /**
+     * Validation rules for one chunk of camelCase `UrlRecord`, `LinkRecord`, and `Issue` items.
+     *
+     * Shared by the desktop sync API and internal `coqui-worker` callbacks.
+     *
+     * @return array<string, list<string>>
+     */
+    public static function chunkRules(): array
+    {
+        $maxUrls = (int) config('coqui.sync.max_urls_per_chunk', 1000);
+        $maxLinks = (int) config('coqui.sync.max_links_per_chunk', 2500);
+        $maxIssues = (int) config('coqui.sync.max_issues_per_chunk', 2500);
+
+        return [
+            'urls' => ['sometimes', 'array', "max:{$maxUrls}"],
+            'urls.*.id' => ['nullable', 'integer'],
+            'urls.*.url' => ['required', 'string', 'max:4096'],
+            'urls.*.status' => ['nullable', 'integer', 'min:0', 'max:999'],
+            'urls.*.contentType' => ['nullable', 'string', 'max:160'],
+            'urls.*.title' => ['nullable', 'string'],
+            'urls.*.metaDescription' => ['nullable', 'string'],
+            'urls.*.h1' => ['nullable', 'string'],
+            'urls.*.h1Count' => ['nullable', 'integer', 'min:0'],
+            'urls.*.canonical' => ['nullable', 'string'],
+            'urls.*.metaRobots' => ['nullable', 'string', 'max:255'],
+            'urls.*.redirectTarget' => ['nullable', 'string'],
+            'urls.*.redirectChain' => ['nullable', 'array'],
+            'urls.*.wordCount' => ['nullable', 'integer', 'min:0'],
+            'urls.*.depth' => ['nullable', 'integer', 'min:0'],
+            'urls.*.responseTimeMs' => ['nullable', 'integer', 'min:0'],
+            'urls.*.sizeBytes' => ['nullable', 'integer', 'min:0'],
+            'urls.*.error' => ['nullable', 'string'],
+            'urls.*.discoveredAt' => ['nullable', 'integer', 'min:0'],
+
+            'links' => ['sometimes', 'array', "max:{$maxLinks}"],
+            'links.*.fromUrl' => ['required', 'string', 'max:4096'],
+            'links.*.toUrl' => ['required', 'string', 'max:4096'],
+            'links.*.anchor' => ['nullable', 'string'],
+            'links.*.rel' => ['nullable', 'string', 'max:120'],
+            'links.*.internal' => ['required', 'boolean'],
+
+            'issues' => ['sometimes', 'array', "max:{$maxIssues}"],
+            'issues.*.url' => ['required', 'string', 'max:4096'],
+            'issues.*.rule' => ['required', 'string', 'max:96'],
+            'issues.*.severity' => ['required', 'in:error,warning,opportunity'],
+            'issues.*.detail' => ['nullable', 'string'],
+        ];
+    }
+
+    /**
      * Strip credentials and sensitive header values before persisting config JSON.
      *
      * @param  array<string, mixed>  $config

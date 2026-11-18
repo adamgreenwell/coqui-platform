@@ -76,4 +76,61 @@ class CoquiMcpServerTest extends TestCase
             ->assertSee('seo crawler')
             ->assertSee('dataforseo_fallback');
     }
+
+    public function test_project_tools_enforce_workspace_authorization(): void
+    {
+        $owner = User::factory()->create();
+        $stranger = User::factory()->create();
+
+        $workspace = Workspace::query()->create([
+            'name' => 'Private Workspace',
+            'slug' => 'private-workspace',
+            'owner_id' => $owner->id,
+        ]);
+        Project::query()->create([
+            'workspace_id' => $workspace->id,
+            'name' => 'Secret Project',
+            'domain' => 'secret-project.com',
+            'canonical_url' => 'https://secret-project.com/',
+        ]);
+
+        // Unauthorized user cannot inspect
+        CoquiSeoServer::actingAs($stranger)
+            ->tool(InspectProjectSeoTool::class, ['domain' => 'secret-project.com'])
+            ->assertSee('Unauthorized access to project [secret-project.com].');
+
+        // Owner can inspect
+        CoquiSeoServer::actingAs($owner)
+            ->tool(InspectProjectSeoTool::class, ['domain' => 'secret-project.com'])
+            ->assertOk()
+            ->assertSee('secret-project.com');
+    }
+
+    public function test_tools_require_authentication_when_configured(): void
+    {
+        config()->set('coqui.mcp.require_auth', true);
+
+        $user = User::factory()->create();
+        $workspace = Workspace::query()->create([
+            'name' => 'Protected Workspace',
+            'slug' => 'protected-workspace',
+            'owner_id' => $user->id,
+        ]);
+        Project::query()->create([
+            'workspace_id' => $workspace->id,
+            'name' => 'Protected Project',
+            'domain' => 'protected.com',
+            'canonical_url' => 'https://protected.com/',
+        ]);
+
+        // Anonymous request rejected
+        CoquiSeoServer::tool(InspectProjectSeoTool::class, ['domain' => 'protected.com'])
+            ->assertSee('Authentication required to inspect project SEO.');
+
+        // Authenticated request allowed
+        CoquiSeoServer::actingAs($user)
+            ->tool(InspectProjectSeoTool::class, ['domain' => 'protected.com'])
+            ->assertOk()
+            ->assertSee('protected.com');
+    }
 }
