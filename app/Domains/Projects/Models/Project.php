@@ -9,6 +9,7 @@ use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Integrations\Models\ProjectIntegration;
 use App\Domains\Serp\Models\TrackedKeyword;
 use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -28,6 +29,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property CarbonInterface|null $deleted_at
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
+ * @property-read Collection<int, ProjectActivity> $activities
  */
 class Project extends Model
 {
@@ -52,6 +54,7 @@ class Project extends Model
     protected function casts(): array
     {
         return [
+            'workspace_id' => 'integer',
             'location_code' => 'integer',
             'last_crawled_at' => 'datetime',
         ];
@@ -103,6 +106,14 @@ class Project extends Model
     public function integrations(): HasMany
     {
         return $this->hasMany(ProjectIntegration::class);
+    }
+
+    /**
+     * @return HasMany<ProjectActivity, $this>
+     */
+    public function activities(): HasMany
+    {
+        return $this->hasMany(ProjectActivity::class)->latest('id');
     }
 
     public static function isValidDomain(string $domain): bool

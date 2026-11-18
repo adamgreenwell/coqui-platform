@@ -13,7 +13,9 @@
   "dependencies": {
     "@inertiajs/react": "^3.0.0",
     "@tailwindcss/vite": "^4.1.11",
+    "laravel-echo": "^2.6.3",
     "lucide-react": "^0.475.0",
+    "pusher-js": "^8.6.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "tailwindcss": "^4.0.0"
