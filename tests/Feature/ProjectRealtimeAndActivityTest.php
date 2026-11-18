@@ -321,6 +321,53 @@ class ProjectRealtimeAndActivityTest extends TestCase
         ]);
     }
 
+    public function test_crawl_finalization_handles_soft_deleted_project_cleanly(): void
+    {
+        Event::fake([CrawlProgressUpdated::class, ProjectActivityLogged::class]);
+
+        /** @var User $user */
+        $user = User::factory()->create();
+
+        /** @var Workspace $workspace */
+        $workspace = Workspace::query()->create([
+            'name' => 'Trashed Project Workspace',
+            'slug' => 'trashed-project-workspace',
+            'owner_id' => $user->id,
+        ]);
+        $workspace->members()->attach($user->id, ['role' => 'owner']);
+
+        /** @var Project $project */
+        $project = Project::query()->create([
+            'workspace_id' => $workspace->id,
+            'name' => 'Trashed Crawl Project',
+            'domain' => 'trashed-site.com',
+            'canonical_url' => 'https://trashed-site.com/',
+        ]);
+
+        $crawlRun = $project->crawlRuns()->create([
+            'external_crawl_id' => (string) Str::uuid(),
+            'source' => 'desktop',
+            'seed' => 'https://trashed-site.com/',
+            'seed_kind' => 'url',
+            'status' => 'running',
+            'config' => ['maxDepth' => 1],
+        ]);
+
+        // Project is deleted while crawl is running
+        $project->delete();
+        $this->assertSoftDeleted('projects', ['id' => $project->id]);
+
+        $ingest = app(IngestDesktopCrawlSnapshot::class);
+        $finalized = $ingest->finalize($crawlRun, 'completed');
+
+        $this->assertSame('completed', $finalized->status);
+        $this->assertNotNull($finalized->finalized_at);
+        $this->assertDatabaseHas('project_activities', [
+            'project_id' => $project->id,
+            'event_type' => 'crawl.completed',
+        ]);
+    }
+
     public function test_project_activities_retrieval_and_multi_tenant_isolation(): void
     {
         /** @var User $owner */

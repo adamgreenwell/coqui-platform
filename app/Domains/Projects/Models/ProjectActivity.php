@@ -83,7 +83,7 @@ class ProjectActivity extends Model
             'properties' => $properties,
         ]);
 
-        broadcast(new ProjectActivityLogged($activity));
+        rescue(fn () => broadcast(new ProjectActivityLogged($activity)), report: true);
 
         return $activity;
     }

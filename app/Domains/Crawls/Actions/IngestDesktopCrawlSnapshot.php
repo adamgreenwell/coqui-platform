@@ -150,7 +150,7 @@ class IngestDesktopCrawlSnapshot
         $warningCount = (int) DB::table('crawl_issues')->where('crawl_run_id', $run->id)->where('severity', 'warning')->count();
         $opportunityCount = (int) DB::table('crawl_issues')->where('crawl_run_id', $run->id)->where('severity', 'opportunity')->count();
 
-        broadcast(new CrawlProgressUpdated(
+        rescue(fn () => broadcast(new CrawlProgressUpdated(
             projectId: $run->project_id,
             externalCrawlId: $run->external_crawl_id,
             crawledUrls: $crawledCount,
@@ -159,7 +159,7 @@ class IngestDesktopCrawlSnapshot
             warningCount: $warningCount,
             opportunityCount: $opportunityCount,
             status: 'running',
-        ));
+        )), report: true);
 
         return [
             'urls' => count($urls),
@@ -186,11 +186,11 @@ class IngestDesktopCrawlSnapshot
             'finalized_at' => now(),
         ]);
 
-        $run->project()->update(['last_crawled_at' => now()]);
+        $run->project()->withTrashed()->update(['last_crawled_at' => now()]);
 
         $refreshed = $run->refresh();
 
-        broadcast(new CrawlProgressUpdated(
+        rescue(fn () => broadcast(new CrawlProgressUpdated(
             projectId: $refreshed->project_id,
             externalCrawlId: $refreshed->external_crawl_id,
             crawledUrls: (int) $refreshed->total_urls,
@@ -199,23 +199,26 @@ class IngestDesktopCrawlSnapshot
             warningCount: (int) $refreshed->warning_count,
             opportunityCount: (int) $refreshed->opportunity_count,
             status: $refreshed->status,
-        ));
+        )), report: true);
 
-        ProjectActivity::log(
-            project: $refreshed->project,
-            eventType: 'crawl.completed',
-            title: 'Crawl run completed',
-            description: "Crawl run finalized with {$refreshed->total_urls} URLs and {$refreshed->error_count} errors.",
-            properties: [
-                'crawl_id' => $refreshed->id,
-                'external_crawl_id' => $refreshed->external_crawl_id,
-                'total_urls' => $refreshed->total_urls,
-                'error_count' => $refreshed->error_count,
-                'warning_count' => $refreshed->warning_count,
-                'opportunity_count' => $refreshed->opportunity_count,
-                'source' => $refreshed->source,
-            ]
-        );
+        $project = $refreshed->project;
+        if ($project !== null) {
+            ProjectActivity::log(
+                project: $project,
+                eventType: 'crawl.completed',
+                title: 'Crawl run completed',
+                description: "Crawl run finalized with {$refreshed->total_urls} URLs and {$refreshed->error_count} errors.",
+                properties: [
+                    'crawl_id' => $refreshed->id,
+                    'external_crawl_id' => $refreshed->external_crawl_id,
+                    'total_urls' => $refreshed->total_urls,
+                    'error_count' => $refreshed->error_count,
+                    'warning_count' => $refreshed->warning_count,
+                    'opportunity_count' => $refreshed->opportunity_count,
+                    'source' => $refreshed->source,
+                ]
+            );
+        }
 
         return $refreshed;
     }
