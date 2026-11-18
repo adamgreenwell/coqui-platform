@@ -5,10 +5,26 @@ declare(strict_types=1);
 namespace App\Domains\Serp\Models;
 
 use App\Domains\Projects\Models\Project;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
+/**
+ * @property int $id
+ * @property int $project_id
+ * @property string $keyword
+ * @property string $device
+ * @property int $location_code
+ * @property string $language_code
+ * @property string $cadence
+ * @property int|null $search_volume
+ * @property int|null $keyword_difficulty
+ * @property bool $is_active
+ * @property CarbonInterface|null $last_checked_at
+ * @property CarbonInterface|null $created_at
+ * @property CarbonInterface|null $updated_at
+ */
 class TrackedKeyword extends Model
 {
     /** @var list<string> */
@@ -31,6 +47,7 @@ class TrackedKeyword extends Model
     protected function casts(): array
     {
         return [
+            'project_id' => 'integer',
             'location_code' => 'integer',
             'search_volume' => 'integer',
             'keyword_difficulty' => 'integer',

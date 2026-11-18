@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Domains\Serp\Actions\RecordSerpRankSnapshots;
 use App\Domains\Serp\DataForSeo\DataForSeoClient;
+use App\Domains\Serp\Models\TrackedKeyword;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -64,14 +66,77 @@ class CollectDataForSeoTasksCommand extends Command
             }
 
             if ($result !== null) {
-                DB::table('dataforseo_tasks')
-                    ->where('id', $task->id)
-                    ->update([
-                        'status' => 'collected',
-                        'result_payload' => json_encode($result, JSON_THROW_ON_ERROR),
-                        'collected_at' => now(),
-                        'updated_at' => now(),
-                    ]);
+                /** @var array<string, mixed>|null $firstTask */
+                $firstTask = $result['tasks'][0] ?? null;
+
+                if (! is_array($firstTask)) {
+                    $inProgress++;
+
+                    continue;
+                }
+
+                $taskStatusCode = (int) ($firstTask['status_code'] ?? 20000);
+                $taskResult = $firstTask['result'] ?? null;
+                $statusMessage = strtolower((string) ($firstTask['status_message'] ?? ''));
+
+                $isQueuedOrProcessing = in_array($taskStatusCode, [40601, 40602], true)
+                    || str_contains($statusMessage, 'progress')
+                    || str_contains($statusMessage, 'queue')
+                    || str_contains($statusMessage, 'handed');
+
+                if ($isQueuedOrProcessing) {
+                    $inProgress++;
+
+                    continue;
+                }
+
+                if ($taskStatusCode >= 40000) {
+                    DB::table('dataforseo_tasks')
+                        ->where('id', $task->id)
+                        ->update([
+                            'status' => 'failed',
+                            'result_payload' => json_encode($result, JSON_THROW_ON_ERROR),
+                            'updated_at' => now(),
+                        ]);
+
+                    $this->warn("Task [{$taskId}] failed with status code [{$taskStatusCode}]: {$firstTask['status_message']}");
+
+                    continue;
+                }
+
+                if ($taskStatusCode !== 20000 || empty($taskResult) || ! is_array($taskResult)) {
+                    $inProgress++;
+
+                    continue;
+                }
+
+                DB::transaction(function () use ($task, $result): void {
+                    if ($task->task_type === 'serp_rank_tracking' && is_string($task->request_context)) {
+                        /** @var array<string, mixed> $context */
+                        $context = json_decode($task->request_context, true) ?? [];
+                        $trackedKeywordId = isset($context['tracked_keyword_id']) ? (int) $context['tracked_keyword_id'] : null;
+
+                        if ($trackedKeywordId !== null) {
+                            $trackedKeyword = TrackedKeyword::query()
+                                ->whereHas('project')
+                                ->with('project')
+                                ->find($trackedKeywordId);
+
+                            if ($trackedKeyword !== null && $trackedKeyword->project !== null) {
+                                app(RecordSerpRankSnapshots::class)->handle($trackedKeyword, $result);
+                            }
+                        }
+                    }
+
+                    DB::table('dataforseo_tasks')
+                        ->where('id', $task->id)
+                        ->update([
+                            'status' => 'collected',
+                            'result_payload' => json_encode($result, JSON_THROW_ON_ERROR),
+                            'collected_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                });
 
                 $collected++;
                 $this->line("Task [{$taskId}] collected successfully.");

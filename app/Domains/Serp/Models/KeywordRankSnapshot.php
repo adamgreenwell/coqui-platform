@@ -5,9 +5,26 @@ declare(strict_types=1);
 namespace App\Domains\Serp\Models;
 
 use App\Domains\Projects\Models\Project;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * @property int $id
+ * @property int $tracked_keyword_id
+ * @property int $project_id
+ * @property string $domain
+ * @property int|null $rank_group
+ * @property int|null $rank_absolute
+ * @property string|null $ranking_url
+ * @property string|null $ranking_title
+ * @property bool $has_ai_overview
+ * @property bool $has_featured_snippet
+ * @property array<string, mixed>|null $serp_features
+ * @property CarbonInterface|string $checked_on
+ * @property CarbonInterface|null $created_at
+ * @property CarbonInterface|null $updated_at
+ */
 class KeywordRankSnapshot extends Model
 {
     /** @var list<string> */
@@ -31,6 +48,8 @@ class KeywordRankSnapshot extends Model
     protected function casts(): array
     {
         return [
+            'tracked_keyword_id' => 'integer',
+            'project_id' => 'integer',
             'rank_group' => 'integer',
             'rank_absolute' => 'integer',
             'has_ai_overview' => 'boolean',

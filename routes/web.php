@@ -6,6 +6,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ProjectCompetitorController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\SanctumTokenController;
+use App\Http\Controllers\TrackedKeywordController;
 use App\Http\Controllers\WorkspaceController;
 use App\Http\Controllers\WorkspaceMemberController;
 use Illuminate\Support\Facades\Route;
@@ -43,4 +44,9 @@ Route::middleware(['auth'])->group(function (): void {
     Route::post('/workspaces/{workspace}/projects/{project}/competitors', [ProjectCompetitorController::class, 'store'])->name('workspaces.projects.competitors.store');
     Route::post('/workspaces/{workspace}/projects/{project}/competitors/reorder', [ProjectCompetitorController::class, 'reorder'])->name('workspaces.projects.competitors.reorder');
     Route::delete('/workspaces/{workspace}/projects/{project}/competitors/{competitor}', [ProjectCompetitorController::class, 'destroy'])->name('workspaces.projects.competitors.destroy');
+
+    Route::get('/workspaces/{workspace}/projects/{project}/keywords', [TrackedKeywordController::class, 'index'])->name('workspaces.projects.keywords.index');
+    Route::post('/workspaces/{workspace}/projects/{project}/keywords', [TrackedKeywordController::class, 'store'])->name('workspaces.projects.keywords.store');
+    Route::delete('/workspaces/{workspace}/projects/{project}/keywords/{keyword}', [TrackedKeywordController::class, 'destroy'])->name('workspaces.projects.keywords.destroy');
+    Route::get('/workspaces/{workspace}/projects/{project}/keywords/{keyword}/snapshots', [TrackedKeywordController::class, 'snapshots'])->name('workspaces.projects.keywords.snapshots');
 });

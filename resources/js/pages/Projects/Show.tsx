@@ -282,6 +282,14 @@ export default function ProjectShow({
           </div>
 
           <div className="flex items-center gap-2">
+            <Link
+              href={`/workspaces/${workspace.id}/projects/${project.id}/keywords`}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-medium transition cursor-pointer"
+            >
+              <Search className="h-3.5 w-3.5 text-emerald-400" />
+              <span>Rank Tracker</span>
+            </Link>
+
             {canEdit && (
               <Link
                 href={`/workspaces/${workspace.id}/projects/${project.id}/settings`}
@@ -332,18 +340,24 @@ export default function ProjectShow({
           </div>
 
           {/* Tracked Keywords */}
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-            <div className="flex items-center gap-1.5 text-slate-400 text-xs">
-              <Search className="h-4 w-4 text-amber-400" />
-              <span>Tracked Keywords</span>
+          <Link
+            href={`/workspaces/${workspace.id}/projects/${project.id}/keywords`}
+            className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 hover:border-slate-700 transition block group cursor-pointer"
+          >
+            <div className="flex items-center justify-between text-slate-400 text-xs">
+              <div className="flex items-center gap-1.5">
+                <Search className="h-4 w-4 text-amber-400" />
+                <span>Tracked Keywords</span>
+              </div>
+              <ExternalLink className="h-3 w-3 text-slate-500 group-hover:text-amber-400 transition" />
             </div>
             <div className="mt-3 text-xl font-bold text-white font-mono">
               {trackedKeywordsCount}
             </div>
             <p className="mt-1 text-[11px] text-slate-500">
-              Active ranking monitors
+              Active ranking monitors & SERP intelligence
             </p>
-          </div>
+          </Link>
 
           {/* Monitored Backlinks */}
           <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">

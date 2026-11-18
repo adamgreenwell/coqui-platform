@@ -48,7 +48,7 @@ jobs:
           npm install
           npm run build
       - name: Code style (Pint)
-        run: php vendor/bin/pint --test
+        run: php vendor/bin/pint --test -v
       - name: Static analysis (PHPStan)
         run: php vendor/bin/phpstan analyse --memory-limit=1G
       - name: Tests (PHPUnit)
