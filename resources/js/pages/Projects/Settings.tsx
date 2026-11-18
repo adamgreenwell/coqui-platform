@@ -10,7 +10,7 @@ import {
   Settings,
   Trash2,
 } from 'lucide-react';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent } from 'react';
 import AppLayout, { type WorkspaceSummary } from '../../layouts/AppLayout';
 
 interface CompetitorItem {
@@ -55,8 +55,10 @@ export default function ProjectSettings({
     crawl_cadence: project.crawl_cadence,
   });
 
-  const [newCompetitorDomain, setNewCompetitorDomain] = useState('');
-  const [newCompetitorLabel, setNewCompetitorLabel] = useState('');
+  const competitorForm = useForm({
+    domain: '',
+    label: '',
+  });
 
   const handleUpdateSettings = (e: FormEvent) => {
     e.preventDefault();
@@ -65,16 +67,12 @@ export default function ProjectSettings({
 
   const handleAddCompetitor = (e: FormEvent) => {
     e.preventDefault();
-    router.post(
+    competitorForm.post(
       `/workspaces/${workspace.id}/projects/${project.id}/competitors`,
       {
-        domain: newCompetitorDomain,
-        label: newCompetitorLabel,
-      },
-      {
+        preserveScroll: true,
         onSuccess: () => {
-          setNewCompetitorDomain('');
-          setNewCompetitorLabel('');
+          competitorForm.reset();
         },
       }
     );
@@ -279,29 +277,38 @@ export default function ProjectSettings({
 
           {/* Add Competitor Form */}
           {competitors.length < 5 && (
-            <form onSubmit={handleAddCompetitor} className="flex flex-col sm:flex-row gap-2">
-              <input
-                type="text"
-                required
-                value={newCompetitorDomain}
-                onChange={(e) => setNewCompetitorDomain(e.target.value)}
-                placeholder="Competitor URL (e.g. competitor.com)"
-                className="flex-1 px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
-              />
-              <input
-                type="text"
-                value={newCompetitorLabel}
-                onChange={(e) => setNewCompetitorLabel(e.target.value)}
-                placeholder="Label (optional)"
-                className="w-full sm:w-44 px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
-              />
-              <button
-                type="submit"
-                className="inline-flex items-center justify-center gap-1 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs rounded-lg transition shrink-0 cursor-pointer"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                <span>Add</span>
-              </button>
+            <form onSubmit={handleAddCompetitor} className="space-y-2">
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  required
+                  value={competitorForm.data.domain}
+                  onChange={(e) => competitorForm.setData('domain', e.target.value)}
+                  placeholder="Competitor URL (e.g. competitor.com)"
+                  className="flex-1 px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                />
+                <input
+                  type="text"
+                  value={competitorForm.data.label}
+                  onChange={(e) => competitorForm.setData('label', e.target.value)}
+                  placeholder="Label (optional)"
+                  className="w-full sm:w-44 px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
+                />
+                <button
+                  type="submit"
+                  disabled={competitorForm.processing}
+                  className="inline-flex items-center justify-center gap-1 px-3 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs rounded-lg transition shrink-0 cursor-pointer disabled:opacity-50"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>{competitorForm.processing ? 'Adding...' : 'Add'}</span>
+                </button>
+              </div>
+              {competitorForm.errors.domain && (
+                <p className="text-xs text-red-400">{competitorForm.errors.domain}</p>
+              )}
+              {competitorForm.errors.label && (
+                <p className="text-xs text-red-400">{competitorForm.errors.label}</p>
+              )}
             </form>
           )}
 
