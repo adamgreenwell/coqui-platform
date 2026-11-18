@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Domains\Projects\Models\Workspace;
 use App\Models\User;
+use Carbon\CarbonInterface;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -23,7 +24,7 @@ class WorkspaceMemberController extends Controller
         $members = $workspace->members->map(function (User $member) use ($workspace): array {
             $pivotRole = $member->pivot?->getAttribute('role');
             $pivotCreatedAt = $member->pivot?->getAttribute('created_at');
-            $joinedAt = $pivotCreatedAt instanceof \Carbon\CarbonInterface
+            $joinedAt = $pivotCreatedAt instanceof CarbonInterface
                 ? $pivotCreatedAt->toIso8601String()
                 : (is_string($pivotCreatedAt) ? $pivotCreatedAt : null);
 
