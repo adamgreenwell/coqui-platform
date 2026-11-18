@@ -11,6 +11,7 @@ use App\Domains\Projects\Models\Workspace;
 use App\Domains\Serp\Models\KeywordRankSnapshot;
 use App\Domains\Serp\Models\TrackedKeyword;
 use App\Models\User;
+use Carbon\Carbon;
 use Carbon\CarbonInterface;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -102,8 +103,8 @@ class TrackedKeywordController extends Controller
                 $competitorRanks[$comp['domain']] = [
                     'rank' => $latestCSnap?->rank_group,
                     'url' => $latestCSnap?->ranking_url,
-                    'has_ai_overview' => $latestCSnap?->has_ai_overview ?? false,
-                    'has_featured_snippet' => $latestCSnap?->has_featured_snippet ?? false,
+                    'has_ai_overview' => $latestCSnap !== null && $latestCSnap->has_ai_overview,
+                    'has_featured_snippet' => $latestCSnap !== null && $latestCSnap->has_featured_snippet,
                 ];
             }
 
@@ -117,8 +118,8 @@ class TrackedKeywordController extends Controller
                 'search_volume' => $kw->search_volume,
                 'keyword_difficulty' => $kw->keyword_difficulty,
                 'is_active' => $kw->is_active,
-                'last_checked_at' => $kw->last_checked_at instanceof CarbonInterface
-                    ? $kw->last_checked_at->toIso8601String()
+                'last_checked_at' => $kw->last_checked_at !== null
+                    ? Carbon::parse($kw->last_checked_at)->toIso8601String()
                     : null,
                 'current_rank' => $currentRank,
                 'previous_rank' => $prevRank,
@@ -126,9 +127,9 @@ class TrackedKeywordController extends Controller
                 'delta_type' => $deltaType,
                 'ranking_url' => $latestProjSnap?->ranking_url,
                 'ranking_title' => $latestProjSnap?->ranking_title,
-                'has_ai_overview' => $latestProjSnap?->has_ai_overview ?? false,
-                'has_featured_snippet' => $latestProjSnap?->has_featured_snippet ?? false,
-                'serp_features' => $latestProjSnap?->serp_features ?? null,
+                'has_ai_overview' => $latestProjSnap !== null && $latestProjSnap->has_ai_overview,
+                'has_featured_snippet' => $latestProjSnap !== null && $latestProjSnap->has_featured_snippet,
+                'serp_features' => $latestProjSnap !== null ? $latestProjSnap->serp_features : null,
                 'competitor_ranks' => $competitorRanks,
             ];
         })->all();
