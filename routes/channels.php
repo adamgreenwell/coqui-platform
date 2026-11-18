@@ -21,6 +21,8 @@ Broadcast::channel('project.{projectId}', function (?User $user, int|string $pro
 });
 
 Broadcast::channel('workspace.{workspaceId}', function (?User $user, int|string $workspaceId): bool {
+    dump(['in_workspace_channel' => true, 'user_id' => $user?->id, 'workspaceId' => $workspaceId]);
+
     if ($user === null) {
         return false;
     }
@@ -30,5 +32,8 @@ Broadcast::channel('workspace.{workspaceId}', function (?User $user, int|string 
         return false;
     }
 
-    return (bool) $user->can('view', $workspace);
+    $canView = (bool) $user->can('view', $workspace);
+    dump(['in_workspace_can_view' => $canView]);
+
+    return $canView;
 });

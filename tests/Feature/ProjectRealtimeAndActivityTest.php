@@ -80,6 +80,9 @@ class ProjectRealtimeAndActivityTest extends TestCase
                 dump([
                     'owner_auth_status' => $ownerResponse->status(),
                     'owner_auth_content' => $ownerResponse->content(),
+                    'exception_class' => $ownerResponse->exception ? get_class($ownerResponse->exception) : null,
+                    'exception_message' => $ownerResponse->exception?->getMessage(),
+                    'exception_trace' => $ownerResponse->exception?->getTraceAsString(),
                 ]);
             }
             $ownerResponse->assertOk();
