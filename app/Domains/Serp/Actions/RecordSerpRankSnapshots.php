@@ -1,0 +1,102 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Domains\Serp\Actions;
+
+use App\Domains\Projects\Models\ProjectActivity;
+use App\Domains\Serp\Events\SerpBatchCompleted;
+use App\Domains\Serp\Models\KeywordRankSnapshot;
+use App\Domains\Serp\Models\TrackedKeyword;
+use App\Domains\Serp\Services\SerpResultParser;
+use Carbon\Carbon;
+use Carbon\CarbonInterface;
+use Illuminate\Support\Str;
+
+class RecordSerpRankSnapshots
+{
+    public function __construct(
+        private readonly SerpResultParser $parser = new SerpResultParser,
+    ) {}
+
+    /**
+     * Parse SERP result payload and record snapshots for project and all competitors.
+     *
+     * @param  array<string, mixed>|list<array<string, mixed>>  $serpPayload
+     * @return list<KeywordRankSnapshot>
+     */
+    public function handle(
+        TrackedKeyword $keyword,
+        array $serpPayload,
+        CarbonInterface|string|null $checkedOn = null,
+    ): array {
+        $project = $keyword->project()->with('competitors')->firstOrFail();
+        $projectDomain = $project->domain;
+        $competitorDomains = $project->competitors->pluck('domain')->all();
+
+        $parsed = $this->parser->parse($serpPayload, $projectDomain, $competitorDomains);
+
+        $date = $checkedOn instanceof CarbonInterface
+            ? $checkedOn->toDateString()
+            : ($checkedOn !== null ? Carbon::parse($checkedOn)->toDateString() : now()->toDateString());
+
+        $savedSnapshots = [];
+
+        foreach ($parsed['domain_snapshots'] as $domain => $data) {
+            /** @var KeywordRankSnapshot $snapshot */
+            $snapshot = KeywordRankSnapshot::query()->updateOrCreate(
+                [
+                    'tracked_keyword_id' => $keyword->id,
+                    'domain' => $domain,
+                    'checked_on' => $date,
+                ],
+                [
+                    'project_id' => $project->id,
+                    'rank_group' => $data['rank_group'],
+                    'rank_absolute' => $data['rank_absolute'],
+                    'ranking_url' => $data['ranking_url'],
+                    'ranking_title' => $data['ranking_title'],
+                    'has_ai_overview' => $data['has_ai_overview'],
+                    'has_featured_snippet' => $data['has_featured_snippet'],
+                    'serp_features' => $data['serp_features'],
+                ]
+            );
+
+            $savedSnapshots[] = $snapshot;
+        }
+
+        $keyword->update(['last_checked_at' => now()]);
+
+        // Realtime event broadcast on project.{id} channel
+        $batchId = (string) Str::uuid();
+        rescue(fn () => broadcast(new SerpBatchCompleted(
+            projectId: $project->id,
+            batchId: $batchId,
+            keywordCount: 1,
+            updatedCount: count($savedSnapshots),
+            status: 'completed',
+        )), report: true);
+
+        // Persistent audit log
+        $projectRank = $parsed['domain_snapshots'][$projectDomain]['rank_group'] ?? null;
+        $rankSummary = $projectRank !== null ? "ranked #{$projectRank}" : 'unranked (>100)';
+
+        ProjectActivity::log(
+            project: $project,
+            eventType: 'serp.checked',
+            title: "Rank checked: {$keyword->keyword}",
+            description: "SERP check recorded for '{$keyword->keyword}' ({$keyword->device}) — {$projectDomain} {$rankSummary}.",
+            properties: [
+                'tracked_keyword_id' => $keyword->id,
+                'keyword' => $keyword->keyword,
+                'device' => $keyword->device,
+                'location_code' => $keyword->location_code,
+                'project_rank' => $projectRank,
+                'competitor_count' => count($competitorDomains),
+                'detected_features' => $parsed['detected_features'],
+            ]
+        );
+
+        return $savedSnapshots;
+    }
+}

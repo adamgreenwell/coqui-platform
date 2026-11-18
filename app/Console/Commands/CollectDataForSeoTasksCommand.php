@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Domains\Serp\Actions\RecordSerpRankSnapshots;
 use App\Domains\Serp\DataForSeo\DataForSeoClient;
+use App\Domains\Serp\Models\TrackedKeyword;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -72,6 +74,19 @@ class CollectDataForSeoTasksCommand extends Command
                         'collected_at' => now(),
                         'updated_at' => now(),
                     ]);
+
+                if ($task->task_type === 'serp_rank_tracking' && is_string($task->request_context)) {
+                    /** @var array<string, mixed> $context */
+                    $context = json_decode($task->request_context, true) ?? [];
+                    $trackedKeywordId = isset($context['tracked_keyword_id']) ? (int) $context['tracked_keyword_id'] : null;
+
+                    if ($trackedKeywordId !== null) {
+                        $trackedKeyword = TrackedKeyword::query()->find($trackedKeywordId);
+                        if ($trackedKeyword !== null) {
+                            app(RecordSerpRankSnapshots::class)->handle($trackedKeyword, $result);
+                        }
+                    }
+                }
 
                 $collected++;
                 $this->line("Task [{$taskId}] collected successfully.");
