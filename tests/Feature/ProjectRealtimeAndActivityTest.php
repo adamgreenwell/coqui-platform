@@ -15,6 +15,7 @@ use App\Domains\Serp\Events\SerpBatchCompleted;
 use App\Models\User;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -26,81 +27,96 @@ class ProjectRealtimeAndActivityTest extends TestCase
 
     public function test_workspace_and_project_private_broadcast_channel_authorization(): void
     {
-        /** @var User $owner */
-        $owner = User::factory()->create();
-        /** @var User $member */
-        $member = User::factory()->create();
-        /** @var User $outsider */
-        $outsider = User::factory()->create();
-
-        /** @var Workspace $workspace */
-        $workspace = Workspace::query()->create([
-            'name' => 'Broadcast Test Workspace',
-            'slug' => 'broadcast-test-workspace',
-            'owner_id' => $owner->id,
+        config([
+            'broadcasting.default' => 'reverb',
+            'broadcasting.connections.reverb.key' => 'reverb-test-key',
+            'broadcasting.connections.reverb.secret' => 'reverb-test-secret',
+            'broadcasting.connections.reverb.app_id' => 'reverb-test-app',
         ]);
-        $workspace->members()->attach($owner->id, ['role' => 'owner']);
-        $workspace->members()->attach($member->id, ['role' => 'viewer']);
+        Broadcast::purge();
+        Broadcast::purge('null');
+        Broadcast::purge('reverb');
 
-        /** @var Project $project */
-        $project = Project::query()->create([
-            'workspace_id' => $workspace->id,
-            'name' => 'Broadcast Project',
-            'domain' => 'broadcast-app.com',
-            'canonical_url' => 'https://broadcast-app.com/',
-        ]);
+        try {
+            /** @var User $owner */
+            $owner = User::factory()->create();
+            /** @var User $member */
+            $member = User::factory()->create();
+            /** @var User $outsider */
+            $outsider = User::factory()->create();
 
-        // Workspace private channel authorization
-        $this->actingAs($owner)
-            ->post('/broadcasting/auth', [
-                'channel_name' => "private-workspace.{$workspace->id}",
-                'socket_id' => '1234.5678',
-            ])
-            ->assertOk();
+            /** @var Workspace $workspace */
+            $workspace = Workspace::query()->create([
+                'name' => 'Broadcast Test Workspace',
+                'slug' => 'broadcast-test-workspace',
+                'owner_id' => $owner->id,
+            ]);
+            $workspace->members()->attach($owner->id, ['role' => 'owner']);
+            $workspace->members()->attach($member->id, ['role' => 'viewer']);
 
-        $this->actingAs($member)
-            ->post('/broadcasting/auth', [
-                'channel_name' => "private-workspace.{$workspace->id}",
-                'socket_id' => '1234.5678',
-            ])
-            ->assertOk();
+            /** @var Project $project */
+            $project = Project::query()->create([
+                'workspace_id' => $workspace->id,
+                'name' => 'Broadcast Project',
+                'domain' => 'broadcast-app.com',
+                'canonical_url' => 'https://broadcast-app.com/',
+            ]);
 
-        $this->actingAs($outsider)
-            ->post('/broadcasting/auth', [
-                'channel_name' => "private-workspace.{$workspace->id}",
-                'socket_id' => '1234.5678',
-            ])
-            ->assertForbidden();
+            // Workspace private channel authorization
+            $this->actingAs($owner)
+                ->post('/broadcasting/auth', [
+                    'channel_name' => "private-workspace.{$workspace->id}",
+                    'socket_id' => '1234.5678',
+                ])
+                ->assertOk();
 
-        // Project private channel authorization
-        $this->actingAs($owner)
-            ->post('/broadcasting/auth', [
-                'channel_name' => "private-project.{$project->id}",
-                'socket_id' => '1234.5678',
-            ])
-            ->assertOk();
+            $this->actingAs($member)
+                ->post('/broadcasting/auth', [
+                    'channel_name' => "private-workspace.{$workspace->id}",
+                    'socket_id' => '1234.5678',
+                ])
+                ->assertOk();
 
-        $this->actingAs($member)
-            ->post('/broadcasting/auth', [
-                'channel_name' => "private-project.{$project->id}",
-                'socket_id' => '1234.5678',
-            ])
-            ->assertOk();
+            $this->actingAs($outsider)
+                ->post('/broadcasting/auth', [
+                    'channel_name' => "private-workspace.{$workspace->id}",
+                    'socket_id' => '1234.5678',
+                ])
+                ->assertForbidden();
 
-        $this->actingAs($outsider)
-            ->post('/broadcasting/auth', [
-                'channel_name' => "private-project.{$project->id}",
-                'socket_id' => '1234.5678',
-            ])
-            ->assertForbidden();
+            // Project private channel authorization
+            $this->actingAs($owner)
+                ->post('/broadcasting/auth', [
+                    'channel_name' => "private-project.{$project->id}",
+                    'socket_id' => '1234.5678',
+                ])
+                ->assertOk();
 
-        // Non-existent project channel is forbidden
-        $this->actingAs($owner)
-            ->post('/broadcasting/auth', [
-                'channel_name' => 'private-project.999999',
-                'socket_id' => '1234.5678',
-            ])
-            ->assertForbidden();
+            $this->actingAs($member)
+                ->post('/broadcasting/auth', [
+                    'channel_name' => "private-project.{$project->id}",
+                    'socket_id' => '1234.5678',
+                ])
+                ->assertOk();
+
+            $this->actingAs($outsider)
+                ->post('/broadcasting/auth', [
+                    'channel_name' => "private-project.{$project->id}",
+                    'socket_id' => '1234.5678',
+                ])
+                ->assertForbidden();
+
+            // Non-existent project channel is forbidden
+            $this->actingAs($owner)
+                ->post('/broadcasting/auth', [
+                    'channel_name' => 'private-project.999999',
+                    'socket_id' => '1234.5678',
+                ])
+                ->assertForbidden();
+        } finally {
+            config(['broadcasting.default' => 'null']);
+            Broadcast::purge();
+        }
     }
 
     public function test_standardized_event_payloads_and_channels(): void

@@ -7,20 +7,20 @@ use App\Domains\Projects\Models\Workspace;
 use App\Models\User;
 use Illuminate\Support\Facades\Broadcast;
 
-Broadcast::channel('project.{projectId}', function (User $user, int $projectId): bool {
-    $project = Project::query()->find($projectId);
+Broadcast::channel('project.{projectId}', function (User $user, int|string $projectId): bool {
+    $project = Project::query()->find((int) $projectId);
     if ($project === null) {
         return false;
     }
 
-    return $user->can('view', $project);
+    return (bool) $user->can('view', $project);
 });
 
-Broadcast::channel('workspace.{workspaceId}', function (User $user, int $workspaceId): bool {
-    $workspace = Workspace::query()->find($workspaceId);
+Broadcast::channel('workspace.{workspaceId}', function (User $user, int|string $workspaceId): bool {
+    $workspace = Workspace::query()->find((int) $workspaceId);
     if ($workspace === null) {
         return false;
     }
 
-    return $user->can('view', $workspace);
+    return (bool) $user->can('view', $workspace);
 });
