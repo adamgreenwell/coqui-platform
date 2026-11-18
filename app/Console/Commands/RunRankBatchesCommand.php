@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
-use App\Domains\Projects\Models\Project;
 use App\Domains\Serp\DataForSeo\DataForSeoClient;
 use App\Domains\Serp\Models\TrackedKeyword;
 use Illuminate\Console\Command;
@@ -23,7 +22,10 @@ class RunRankBatchesCommand extends Command
 
     public function handle(DataForSeoClient $client): int
     {
-        if (! config('coqui.dataforseo.scheduled_spend') && ! app()->environment('testing')) {
+        $scheduledSpendEnabled = (bool) config('coqui.dataforseo.scheduled_spend');
+        $isTesting = app()->environment('testing');
+
+        if (! $scheduledSpendEnabled && ! $isTesting) {
             $this->info('Skipped: DATAFORSEO_SCHEDULED_SPEND is disabled.');
 
             return self::SUCCESS;
@@ -46,11 +48,11 @@ class RunRankBatchesCommand extends Command
                 $q->whereNull('last_checked_at')
                     ->orWhere(function ($dailyQ): void {
                         $dailyQ->where('cadence', 'daily')
-                            ->where('last_checked_at', '<=', now()->subHours(24));
+                            ->where('last_checked_at', '<=', now()->subHours(20));
                     })
                     ->orWhere(function ($weeklyQ): void {
                         $weeklyQ->where('cadence', 'weekly')
-                            ->where('last_checked_at', '<=', now()->subDays(7));
+                            ->where('last_checked_at', '<=', now()->subDays(6)->subHours(20));
                     });
             });
         }
@@ -73,7 +75,7 @@ class RunRankBatchesCommand extends Command
 
         $submittedCount = 0;
 
-        foreach ($grouped as $pId => $kwList) {
+        foreach ($grouped as $kwList) {
             $project = $kwList[0]->project;
             if ($project === null || $project->workspace === null) {
                 continue;
@@ -84,7 +86,7 @@ class RunRankBatchesCommand extends Command
 
             foreach ($kwList as $kw) {
                 $token = Str::random(32);
-                $callbackUrl = route('webhooks.dataforseo.postback', ['token' => $token], absolute: true);
+                $callbackUrl = route('webhooks.dataforseo', ['token' => $token]);
 
                 $tasksPayload[] = [
                     'keyword' => $kw->keyword,

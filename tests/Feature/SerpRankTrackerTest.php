@@ -375,7 +375,7 @@ class SerpRankTrackerTest extends TestCase
         ];
 
         // 1. Test Webhook execution
-        $response = $this->postJson(route('webhooks.dataforseo.postback', ['token' => $token]), $webhookPayload);
+        $response = $this->postJson(route('webhooks.dataforseo', ['token' => $token]), $webhookPayload);
         $response->assertOk()->assertJson(['status' => 'accepted']);
 
         $this->assertDatabaseHas('dataforseo_tasks', [
