@@ -214,7 +214,6 @@ class SerpRankTrackerTest extends TestCase
             'domain' => 'coqui.io',
             'rank_group' => 4,
             'ranking_url' => 'https://coqui.io/cloning',
-            'checked_on' => '2026-11-18',
         ]);
 
         $this->assertDatabaseHas('keyword_rank_snapshots', [
@@ -222,7 +221,6 @@ class SerpRankTrackerTest extends TestCase
             'project_id' => $this->project->id,
             'domain' => 'competitor-a.com',
             'rank_group' => 7,
-            'checked_on' => '2026-11-18',
         ]);
 
         $this->assertDatabaseHas('keyword_rank_snapshots', [
@@ -230,8 +228,17 @@ class SerpRankTrackerTest extends TestCase
             'project_id' => $this->project->id,
             'domain' => 'competitor-b.org',
             'rank_group' => null,
-            'checked_on' => '2026-11-18',
         ]);
+
+        $this->assertSame(
+            '2026-11-18',
+            KeywordRankSnapshot::query()
+                ->where('tracked_keyword_id', $keyword->id)
+                ->where('domain', 'coqui.io')
+                ->firstOrFail()
+                ->checked_on
+                ->toDateString()
+        );
 
         $keyword->refresh();
         $this->assertNotNull($keyword->last_checked_at);
@@ -449,7 +456,9 @@ class SerpRankTrackerTest extends TestCase
                 ->where('keywords.0.rank_delta', 3)
                 ->where('keywords.0.delta_type', 'up')
                 ->where('keywords.0.has_ai_overview', true)
-                ->where('keywords.0.competitor_ranks.competitor-a\.com.rank', 4)
+                ->where('keywords.0.competitor_ranks', function ($ranks): bool {
+                    return is_array($ranks) && isset($ranks['competitor-a.com']['rank']) && $ranks['competitor-a.com']['rank'] === 4;
+                })
                 ->where('metrics.total_keywords', 1)
                 ->where('metrics.top_3', 1)
                 ->where('metrics.top_10', 1)
