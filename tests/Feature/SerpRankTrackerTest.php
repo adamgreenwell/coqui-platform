@@ -973,4 +973,58 @@ class SerpRankTrackerTest extends TestCase
             'status' => 'pending',
         ]);
     }
+
+    public function test_collector_marks_nonexistent_40401_tasks_as_failed(): void
+    {
+        $kw = TrackedKeyword::query()->create([
+            'project_id' => $this->project->id,
+            'keyword' => 'lost task keyword',
+            'device' => 'desktop',
+            'location_code' => 2840,
+            'language_code' => 'en',
+            'cadence' => 'daily',
+            'is_active' => true,
+        ]);
+
+        $taskId = (string) Str::uuid();
+
+        DB::table('dataforseo_tasks')->insert([
+            'workspace_id' => $this->workspace->id,
+            'project_id' => $this->project->id,
+            'external_task_id' => $taskId,
+            'endpoint' => '/v3/serp/google/organic/task_post',
+            'task_type' => 'serp_rank_tracking',
+            'status' => 'pending',
+            'postback_token' => Str::random(32),
+            'request_context' => json_encode(['tracked_keyword_id' => $kw->id], JSON_THROW_ON_ERROR),
+            'result_payload' => null,
+            'submitted_at' => now()->subMinutes(15),
+            'created_at' => now()->subMinutes(15),
+            'updated_at' => now()->subMinutes(15),
+        ]);
+
+        // Status code 40401 is "Task Not Found"
+        Http::fake([
+            "https://sandbox.dataforseo.com/v3/serp/google/organic/task_get/advanced/{$taskId}" => Http::response([
+                'status_code' => 20000,
+                'status_message' => 'Ok.',
+                'tasks' => [
+                    [
+                        'id' => $taskId,
+                        'status_code' => 40401,
+                        'status_message' => 'Task Not Found.',
+                        'result' => null,
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $this->artisan('dataforseo:collect-tasks')
+            ->assertSuccessful();
+
+        $this->assertDatabaseHas('dataforseo_tasks', [
+            'external_task_id' => $taskId,
+            'status' => 'failed',
+        ]);
+    }
 }

@@ -79,7 +79,7 @@ class CollectDataForSeoTasksCommand extends Command
                 $taskResult = $firstTask['result'] ?? null;
                 $statusMessage = strtolower((string) ($firstTask['status_message'] ?? ''));
 
-                $isQueuedOrProcessing = in_array($taskStatusCode, [40401, 40601, 40602], true)
+                $isQueuedOrProcessing = in_array($taskStatusCode, [40601, 40602], true)
                     || str_contains($statusMessage, 'progress')
                     || str_contains($statusMessage, 'queue')
                     || str_contains($statusMessage, 'handed');
