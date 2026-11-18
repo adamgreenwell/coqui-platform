@@ -16,7 +16,12 @@ class ProjectPolicy
 
     public function update(User $user, Project $project): bool
     {
-        return $this->belongsToWorkspace($user, $project);
+        return $this->hasRoleInWorkspace($user, $project, ['owner', 'admin', 'editor']);
+    }
+
+    public function delete(User $user, Project $project): bool
+    {
+        return $this->hasRoleInWorkspace($user, $project, ['owner', 'admin']);
     }
 
     private function belongsToWorkspace(User $user, Project $project): bool
@@ -26,6 +31,26 @@ class ProjectPolicy
                 $query->where('owner_id', $user->id)
                     ->orWhereHas('members', fn ($members) => $members->where('users.id', $user->id));
             })
+            ->exists();
+    }
+
+    /**
+     * @param  list<string>  $roles
+     */
+    private function hasRoleInWorkspace(User $user, Project $project, array $roles): bool
+    {
+        $workspace = $project->workspace;
+        if ($workspace === null) {
+            return false;
+        }
+
+        if ($workspace->owner_id === $user->id) {
+            return true;
+        }
+
+        return $workspace->members()
+            ->where('users.id', $user->id)
+            ->whereIn('workspace_memberships.role', $roles)
             ->exists();
     }
 }

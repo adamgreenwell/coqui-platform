@@ -19,6 +19,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $tracked_keyword_limit
  * @property int $cloud_crawl_url_limit
  * @property int $owner_id
+ * @property int|null $projects_count
+ * @property int|null $members_count
  */
 class Workspace extends Model
 {
