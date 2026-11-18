@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domains\Crawls\Models;
 
 use App\Domains\Projects\Models\Project;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -22,6 +23,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * @property int $error_count
  * @property int $warning_count
  * @property int $opportunity_count
+ * @property CarbonInterface|null $finalized_at
+ * @property CarbonInterface|null $created_at
+ * @property CarbonInterface|null $updated_at
  */
 class CrawlRun extends Model
 {
