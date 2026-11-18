@@ -89,7 +89,7 @@ return [
     */
     'mcp' => [
         'path' => env('COQUI_MCP_PATH', '/mcp/coqui'),
-        'require_auth' => (bool) env('COQUI_MCP_REQUIRE_AUTH', false),
+        'require_auth' => (bool) env('COQUI_MCP_REQUIRE_AUTH', env('APP_ENV') === 'production'),
     ],
 
     /*
