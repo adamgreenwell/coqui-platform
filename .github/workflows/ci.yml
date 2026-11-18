@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  plan:
+    name: Roadmap & contract sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install JS dependencies
+        run: npm install
+      - name: Build roadmap artifacts
+        run: npm run plan:build
+      - name: Typecheck & build frontend
+        run: |
+          npm run types:check
+          npm run build
+
+  laravel:
+    name: Pint + Larastan + PHPUnit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_sqlite, mbstring, bcmath, intl
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install dependencies
+        run: |
+          composer install --no-interaction --prefer-dist
+          npm install
+          npm run build
+      - name: Code style (Pint)
+        run: php vendor/bin/pint --test
+      - name: Static analysis (PHPStan)
+        run: php vendor/bin/phpstan analyse --memory-limit=1G
+      - name: Tests (PHPUnit)
+        run: php artisan test

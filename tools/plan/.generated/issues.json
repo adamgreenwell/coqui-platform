@@ -1,0 +1,577 @@
+{
+  "epics": [
+    {
+      "key": "E01",
+      "type": "epic",
+      "title": "EPIC E01: Laravel 13 Foundation, Workspaces & Coolify Stack",
+      "body": "## Outcome\nA working Laravel 13 platform deployed on bare-metal Coolify where users can register workspaces, create SEO projects with competitors, and connect Coqui Desktop via Sanctum tokens.\n\n## Summary\nApplication scaffold, PostgreSQL 17 and Redis infrastructure, Horizon/Reverb workers, workspace multi-tenancy, Sanctum authentication for Coqui Desktop, and Coolify Docker Compose deployment.\n\n**Phase:** 1 | **Size:** XL | **Priority:** P0\n\n## Features in this epic\n- [ ] F-01 - Laravel 13 & Coolify Docker Compose stack\n- [ ] F-02 - Workspaces, RBAC, and Sanctum desktop auth\n- [ ] F-03 - Project and competitor registry\n- [ ] F-04 - Reverb realtime event stream & activity log\n\n## Definition of done\n- All child features closed with acceptance criteria met\n- Automated tests covering domain logic and API contracts passing in CI\n- Verified on the bare-metal Coolify staging stack",
+      "labels": [
+        "type/epic",
+        "epic/foundation",
+        "phase/1",
+        "size/XL",
+        "priority/P0"
+      ],
+      "milestone": "Phase 1 - Foundation & DataForSEO Core",
+      "phase": 1,
+      "size": "XL",
+      "priority": "P0",
+      "epic": "E01"
+    },
+    {
+      "key": "E02",
+      "type": "epic",
+      "title": "EPIC E02: DataForSEO Client, Shared Cache & Spend Guard",
+      "body": "## Outcome\nEvery DataForSEO call goes through a single audited, budget-guarded client that maximizes Standard-queue savings and prevents duplicate paid lookups across projects.\n\n## Summary\nUnified DataForSEO REST v3 client (SERP, Labs, Backlinks), Standard-queue postback webhook ingestion, cross-project response caching, and strict daily/monthly budget caps.\n\n**Phase:** 1 | **Size:** XL | **Priority:** P0\n\n## Features in this epic\n- [ ] D-01 - DataForSEO v3 HTTP client, sandbox toggle & archive\n- [ ] D-02 - Global cross-project DataForSEO cache repository\n- [ ] D-03 - DataForSEO Spend Guard & daily/monthly budget caps\n- [ ] D-04 - Standard-queue task postback webhook & collector\n\n## Definition of done\n- All child features closed with acceptance criteria met\n- Automated tests covering domain logic and API contracts passing in CI\n- Verified on the bare-metal Coolify staging stack",
+      "labels": [
+        "type/epic",
+        "epic/dataforseo-core",
+        "phase/1",
+        "size/XL",
+        "priority/P0"
+      ],
+      "milestone": "Phase 1 - Foundation & DataForSEO Core",
+      "phase": 1,
+      "size": "XL",
+      "priority": "P0",
+      "epic": "E02"
+    },
+    {
+      "key": "E03",
+      "type": "epic",
+      "title": "EPIC E03: Rank Tracking, Keyword Explorer & GSC/Bing Overlay",
+      "body": "## Outcome\nUsers track keyword rankings over time (including AI Overviews and SERP features), uncover competitor keyword gaps, and compare DataForSEO positions with actual GSC/Bing clicks and impressions.\n\n## Summary\nScheduled desktop/mobile rank tracking by location, keyword research and competitor content gap discovery via DataForSEO Labs, and first-party Search Console + Bing Webmaster performance overlays.\n\n**Phase:** 2 | **Size:** XL | **Priority:** P0\n\n## Features in this epic\n- [ ] S-01 - Automated multi-device rank tracker & SERP feature parser\n- [ ] S-02 - Keyword Explorer & search volume batching\n- [ ] S-03 - Competitor keyword gap & domain intersection\n- [ ] S-04 - Google Search Console & Bing Webmaster first-party overlay\n\n## Definition of done\n- All child features closed with acceptance criteria met\n- Automated tests covering domain logic and API contracts passing in CI\n- Verified on the bare-metal Coolify staging stack",
+      "labels": [
+        "type/epic",
+        "epic/serp-intelligence",
+        "phase/2",
+        "size/XL",
+        "priority/P0"
+      ],
+      "milestone": "Phase 2 - Rank Tracking & Keyword Intelligence",
+      "phase": 2,
+      "size": "XL",
+      "priority": "P0",
+      "epic": "E03"
+    },
+    {
+      "key": "E04",
+      "type": "epic",
+      "title": "EPIC E04: Coqui Desktop Sync & coqui-worker Cloud Crawler",
+      "body": "## Outcome\nLocal Coqui Desktop crawls upload cleanly to the cloud for sharing and historical diffs, while coqui-worker handles unattended scheduled crawls and real-time SERP content briefs.\n\n## Summary\nBidirectional JSON sync protocol matching coqui-core structs, chunked crawl ingestion and historical diffing, a headless Rust coqui-worker container for scheduled cloud audits, and live SERP top-10 content scraping.\n\n**Phase:** 3 | **Size:** XL | **Priority:** P1\n\n## Features in this epic\n- [ ] C-01 - Coqui Desktop sync API & chunked snapshot ingestion\n- [ ] C-02 - Historical crawl comparison & technical diff viewer\n- [ ] C-03 - Headless coqui-worker Rust container & Redis job bridge\n- [ ] C-04 - Live SERP Top-10 content brief & competitor page scraper\n\n## Definition of done\n- All child features closed with acceptance criteria met\n- Automated tests covering domain logic and API contracts passing in CI\n- Verified on the bare-metal Coolify staging stack",
+      "labels": [
+        "type/epic",
+        "epic/hybrid-crawler",
+        "phase/3",
+        "size/XL",
+        "priority/P1"
+      ],
+      "milestone": "Phase 3 - Hybrid Crawler & Desktop Sync",
+      "phase": 3,
+      "size": "XL",
+      "priority": "P1",
+      "epic": "E04"
+    },
+    {
+      "key": "E05",
+      "type": "epic",
+      "title": "EPIC E05: Backlink Intelligence & Active Link-Rot Watchlist",
+      "body": "## Outcome\nUsers get full macro backlink discovery from DataForSEO without maintaining a web-scale index, plus near-real-time link-rot alerts on their highest-value earned links.\n\n## Summary\nDomain backlink overview, referring domains and anchor distributions from DataForSEO, paired with targeted coqui-worker checks that verify priority backlinks for removal, 404s, or nofollow flips.\n\n**Phase:** 4 | **Size:** L | **Priority:** P1\n\n## Features in this epic\n- [ ] B-01 - Backlink profile overview & referring domains explorer\n- [ ] B-02 - New & lost backlinks timeline\n- [ ] B-03 - Active backlink watchlist & link-rot monitor\n- [ ] B-04 - Competitor link intersect & broken backlink reclaim\n\n## Definition of done\n- All child features closed with acceptance criteria met\n- Automated tests covering domain logic and API contracts passing in CI\n- Verified on the bare-metal Coolify staging stack",
+      "labels": [
+        "type/epic",
+        "epic/backlinks",
+        "phase/4",
+        "size/L",
+        "priority/P1"
+      ],
+      "milestone": "Phase 4 - Backlink Intelligence & Link-Rot Monitor",
+      "phase": 4,
+      "size": "L",
+      "priority": "P1",
+      "epic": "E05"
+    },
+    {
+      "key": "E06",
+      "type": "epic",
+      "title": "EPIC E06: Runnr Hosting Webhooks, Bot Telemetry & Traffic Attribution",
+      "body": "## Outcome\nSites hosted on Runnr gain zero-config deploy protection and server-log crawl budget analytics that standalone SEO platforms cannot match.\n\n## Summary\nPost-deploy SEO smoke tests triggered by Runnr hosting webhooks, edge/access log bot telemetry (Googlebot, Bingbot, AI bots), GA4/Plausible traffic attribution, and platform billing readiness.\n\n**Phase:** 5 | **Size:** L | **Priority:** P1\n\n## Features in this epic\n- [ ] H-01 - Runnr hosting post-deploy SEO smoke tests\n- [ ] H-02 - Server access log bot & AI crawler telemetry\n- [ ] H-03 - GA4 & Plausible organic traffic attribution\n- [ ] H-04 - Subscription billing, plan tiers & usage metering\n\n## Definition of done\n- All child features closed with acceptance criteria met\n- Automated tests covering domain logic and API contracts passing in CI\n- Verified on the bare-metal Coolify staging stack",
+      "labels": [
+        "type/epic",
+        "epic/hosting-moat",
+        "phase/5",
+        "size/L",
+        "priority/P1"
+      ],
+      "milestone": "Phase 5 - Hosting Platform & Analytics Moat",
+      "phase": 5,
+      "size": "L",
+      "priority": "P1",
+      "epic": "E06"
+    }
+  ],
+  "features": [
+    {
+      "key": "F-01",
+      "type": "feature",
+      "title": "F-01 Laravel 13 & Coolify Docker Compose stack",
+      "body": "## Summary\nProduction-ready Laravel 13 skeleton running PHP 8.4-FPM + Nginx, PostgreSQL 17, Redis 7, Horizon, Reverb, and Scheduler as a unified Coolify Docker Compose stack.\n\n**Epic:** E01 - Laravel 13 Foundation, Workspaces & Coolify Stack\n**Phase:** 1 | **Size:** L | **Priority:** P0 | **Area:** coolify\n\n## Scope\n- Multi-stage Dockerfile with PHP 8.4, pdo_pgsql, redis, pcntl, bcmath, gd, intl, and Node 22 asset build\n- docker-compose.yml with app, nginx, horizon, reverb, scheduler, postgres (pg17), redis, and optional coqui-worker profile\n- Laravel 13 bootstrap/app.php routing, /up health endpoint, and Horizon/Reverb service configuration\n- GitHub Actions CI running Pint, PHPUnit, and roadmap build verification\n\n## Acceptance criteria\n- [ ] Stack boots cleanly under Docker Compose / Coolify with passing /up health check\n- [ ] Horizon processes queued jobs on Redis and Reverb accepts WebSocket connections\n- [ ] CI workflow validates formatting, PHPUnit tests, and plan artifact generation on every push\n\n## Dependencies\n- None\n\n<!--EPIC:E01-->",
+      "labels": [
+        "type/feature",
+        "epic/foundation",
+        "area/coolify",
+        "phase/1",
+        "size/L",
+        "priority/P0"
+      ],
+      "milestone": "Phase 1 - Foundation & DataForSEO Core",
+      "phase": 1,
+      "size": "L",
+      "priority": "P0",
+      "epic": "E01"
+    },
+    {
+      "key": "F-02",
+      "type": "feature",
+      "title": "F-02 Workspaces, RBAC, and Sanctum desktop auth",
+      "body": "## Summary\nMulti-tenant workspaces with role-based membership and Laravel Sanctum personal access tokens / device linking for the Coqui desktop application.\n\n**Epic:** E01 - Laravel 13 Foundation, Workspaces & Coolify Stack\n**Phase:** 1 | **Size:** M | **Priority:** P0 | **Area:** platform\n\n## Scope\n- Workspaces and workspace_memberships tables with owner, admin, editor, and viewer roles\n- Fortify authentication + Inertia React workspace switcher shell\n- Sanctum token issuance UI and scoped API abilities (crawls:sync, projects:read)\n- Audit trail of workspace membership changes and active desktop tokens\n\n## Acceptance criteria\n- [ ] Users can belong to multiple workspaces and switch active context without cross-tenant data leakage\n- [ ] A Sanctum token generated in the web UI authenticates Coqui Desktop API requests and can be revoked immediately\n- [ ] Authorization policies enforce workspace ownership across all Project and Crawl endpoints\n\n## Dependencies\n- F-01\n\n<!--EPIC:E01-->",
+      "labels": [
+        "type/feature",
+        "epic/foundation",
+        "area/platform",
+        "phase/1",
+        "size/M",
+        "priority/P0"
+      ],
+      "milestone": "Phase 1 - Foundation & DataForSEO Core",
+      "phase": 1,
+      "size": "M",
+      "priority": "P0",
+      "epic": "E01"
+    },
+    {
+      "key": "F-03",
+      "type": "feature",
+      "title": "F-03 Project and competitor registry",
+      "body": "## Summary\nCore SEO Project domain representing a canonical root domain, target market/locale defaults, and up to 5 tracked competitor domains.\n\n**Epic:** E01 - Laravel 13 Foundation, Workspaces & Coolify Stack\n**Phase:** 1 | **Size:** M | **Priority:** P0 | **Area:** platform\n\n## Scope\n- projects and project_competitors migrations with normalized host extraction and unique constraints\n- Default DataForSEO location_code (e.g. 2840 US) and language_code (e.g. en) per project\n- Project dashboard overview card summarizing latest crawl health, tracked keyword visibility, and backlink baseline\n- Project settings UI to manage canonical host, target locale, and competitor domains\n\n## Acceptance criteria\n- [ ] Creating a project normalizes protocol/trailing slashes to a canonical domain and host\n- [ ] Users can add, reorder, and remove competitor domains with duplicate-domain validation\n- [ ] Project deletion cascades cleanly or soft-deletes child runs without orphaned records\n\n## Dependencies\n- F-02\n\n<!--EPIC:E01-->",
+      "labels": [
+        "type/feature",
+        "epic/foundation",
+        "area/platform",
+        "phase/1",
+        "size/M",
+        "priority/P0"
+      ],
+      "milestone": "Phase 1 - Foundation & DataForSEO Core",
+      "phase": 1,
+      "size": "M",
+      "priority": "P0",
+      "epic": "E01"
+    },
+    {
+      "key": "F-04",
+      "type": "feature",
+      "title": "F-04 Reverb realtime event stream & activity log",
+      "body": "## Summary\nBroadcast channels for streaming live crawl progress, DataForSEO batch completions, and deploy smoke-test alerts to active project dashboards.\n\n**Epic:** E01 - Laravel 13 Foundation, Workspaces & Coolify Stack\n**Phase:** 1 | **Size:** S | **Priority:** P1 | **Area:** platform\n\n## Scope\n- Private workspace/project broadcast authorization in routes/channels.php\n- Standardized event payloads for CrawlProgressUpdated, SerpBatchCompleted, and BacklinkAlertTriggered\n- Persistent project activity feed recording syncs, scheduled runs, and failures\n\n## Acceptance criteria\n- [ ] Authorized workspace members subscribe to project.{id} over Reverb without exposing other tenants\n- [ ] UI updates live when a background Horizon job completes a SERP batch or ingests a desktop crawl\n\n## Dependencies\n- F-01\n- F-02\n\n<!--EPIC:E01-->",
+      "labels": [
+        "type/feature",
+        "epic/foundation",
+        "area/platform",
+        "phase/1",
+        "size/S",
+        "priority/P1"
+      ],
+      "milestone": "Phase 1 - Foundation & DataForSEO Core",
+      "phase": 1,
+      "size": "S",
+      "priority": "P1",
+      "epic": "E01"
+    },
+    {
+      "key": "D-01",
+      "type": "feature",
+      "title": "D-01 DataForSEO v3 HTTP client, sandbox toggle & archive",
+      "body": "## Summary\nResilient HTTP client for DataForSEO REST v3 supporting sandbox vs production switching, idempotent retries on free reads, and raw payload archival.\n\n**Epic:** E02 - DataForSEO Client, Shared Cache & Spend Guard\n**Phase:** 1 | **Size:** L | **Priority:** P0 | **Area:** dataforseo\n\n## Scope\n- config/coqui.php configuration for login, password, base_url (defaulting to sandbox), timeouts, and pricing table\n- DataForSeoClient encapsulating auth headers, endpoint routing, and structured error/cost extraction\n- dataforseo_responses archive table storing endpoint, request hash, HTTP status, actual cost, and JSONB payload\n- Artisan smoke command (dataforseo:smoke) verifying credentials and account balance via appendix/user_data\n\n## Acceptance criteria\n- [ ] Live/POST endpoints never automatically retry on ambiguous timeouts to prevent double-billing\n- [ ] Every DataForSEO API response records the vendor-reported cost field in dataforseo_spend_ledger\n- [ ] Switching DATAFORSEO_API_BASE_URL to sandbox.dataforseo.com exercises full wiring at $0 cost\n\n## Dependencies\n- F-01\n\n<!--EPIC:E02-->",
+      "labels": [
+        "type/feature",
+        "epic/dataforseo-core",
+        "area/dataforseo",
+        "phase/1",
+        "size/L",
+        "priority/P0"
+      ],
+      "milestone": "Phase 1 - Foundation & DataForSEO Core",
+      "phase": 1,
+      "size": "L",
+      "priority": "P0",
+      "epic": "E02"
+    },
+    {
+      "key": "D-02",
+      "type": "feature",
+      "title": "D-02 Global cross-project DataForSEO cache repository",
+      "body": "## Summary\nShared PostgreSQL cache keyed by normalized query signature (endpoint + keyword/domain + location + language) with configurable TTLs so duplicate lookups cost $0.\n\n**Epic:** E02 - DataForSEO Client, Shared Cache & Spend Guard\n**Phase:** 1 | **Size:** M | **Priority:** P0 | **Area:** dataforseo\n\n## Scope\n- dataforseo_cache table indexed by cache_key hash and expires_at\n- Configurable TTL tiers: 30 days for keyword volume/overview, 14 days for domain metrics, 7 days for SERP snapshots\n- Cache hit/miss telemetry surfaced in admin spend diagnostics\n- Bypass flag (--fresh) limited to explicit user-triggered refreshes with budget checks\n\n## Acceptance criteria\n- [ ] Two projects looking up the same keyword in the same locale trigger only one DataForSEO Labs call within TTL\n- [ ] Expired cache entries fall back cleanly to fresh API calls without blocking concurrent readers\n\n## Dependencies\n- D-01\n\n<!--EPIC:E02-->",
+      "labels": [
+        "type/feature",
+        "epic/dataforseo-core",
+        "area/dataforseo",
+        "phase/1",
+        "size/M",
+        "priority/P0"
+      ],
+      "milestone": "Phase 1 - Foundation & DataForSEO Core",
+      "phase": 1,
+      "size": "M",
+      "priority": "P0",
+      "epic": "E02"
+    },
+    {
+      "key": "D-03",
+      "type": "feature",
+      "title": "D-03 DataForSEO Spend Guard & daily/monthly budget caps",
+      "body": "## Summary\nPre-flight cost estimator and hard circuit-breaker blocking automated or user-triggered purchases when daily, monthly, or per-workspace limits are reached.\n\n**Epic:** E02 - DataForSEO Client, Shared Cache & Spend Guard\n**Phase:** 1 | **Size:** M | **Priority:** P0 | **Area:** dataforseo\n\n## Scope\n- DATAFORSEO_SCHEDULED_SPEND global kill-switch (default false outside production)\n- Per-workspace quota ledger plus global account daily/monthly spend caps\n- Pre-purchase cost estimation using config/coqui.php prices before submitting tasks\n- Structured refusal exceptions and admin alerts when balance or cap thresholds are breached\n\n## Acceptance criteria\n- [ ] Automated scheduled jobs never spend funds unless DATAFORSEO_SCHEDULED_SPEND=true\n- [ ] Requests exceeding remaining daily cap or workspace credits are rejected before hitting DataForSEO\n- [ ] Spend ledger reconciles recorded call costs against appendix/user_data balance checks\n\n## Dependencies\n- D-01\n\n<!--EPIC:E02-->",
+      "labels": [
+        "type/feature",
+        "epic/dataforseo-core",
+        "area/dataforseo",
+        "phase/1",
+        "size/M",
+        "priority/P0"
+      ],
+      "milestone": "Phase 1 - Foundation & DataForSEO Core",
+      "phase": 1,
+      "size": "M",
+      "priority": "P0",
+      "epic": "E02"
+    },
+    {
+      "key": "D-04",
+      "type": "feature",
+      "title": "D-04 Standard-queue task postback webhook & collector",
+      "body": "## Summary\nAsynchronous task lifecycle handling Standard-queue DataForSEO submissions via signed postback webhooks with a fallback scheduled collector.\n\n**Epic:** E02 - DataForSEO Client, Shared Cache & Spend Guard\n**Phase:** 1 | **Size:** L | **Priority:** P0 | **Area:** dataforseo\n\n## Scope\n- dataforseo_tasks table tracking task_id, endpoint, status (pending|collected|failed), payload hash, and postback token\n- Signed webhook endpoint POST /api/webhooks/dataforseo dispatching collection jobs onto Horizon\n- Fallback Artisan command (dataforseo:collect-tasks) polling tasks_ready for any uncollected tasks older than threshold\n- Idempotent result ingestion ensuring duplicate webhooks do not duplicate rank snapshots\n\n## Acceptance criteria\n- [ ] Standard SERP tasks submit with postback_url and transition to collected upon webhook delivery\n- [ ] Tasks whose webhook was missed are automatically recovered by dataforseo:collect-tasks within 15 minutes\n- [ ] Duplicate postback deliveries for the same task_id are safely ignored\n\n## Dependencies\n- D-01\n- D-03\n\n<!--EPIC:E02-->",
+      "labels": [
+        "type/feature",
+        "epic/dataforseo-core",
+        "area/dataforseo",
+        "phase/1",
+        "size/L",
+        "priority/P0"
+      ],
+      "milestone": "Phase 1 - Foundation & DataForSEO Core",
+      "phase": 1,
+      "size": "L",
+      "priority": "P0",
+      "epic": "E02"
+    },
+    {
+      "key": "S-01",
+      "type": "feature",
+      "title": "S-01 Automated multi-device rank tracker & SERP feature parser",
+      "body": "## Summary\nNightly and weekly Horizon batches submitting Standard SERP checks for tracked keywords across desktop/mobile and parsing positions, URLs, and SERP features.\n\n**Epic:** E03 - Rank Tracking, Keyword Explorer & GSC/Bing Overlay\n**Phase:** 2 | **Size:** XL | **Priority:** P0 | **Area:** serp\n\n## Scope\n- tracked_keywords and keyword_rank_snapshots tables capturing position, rank_group, ranking_url, title, and SERP feature flags\n- Parser extracting Organic results, AI Overviews, Featured Snippets, Local Pack, and People Also Ask\n- Competitor rank visibility extracted from the same SERP response at $0 extra API cost\n- UI rank chart showing visibility score, position distribution, and SERP volatility timeline\n\n## Acceptance criteria\n- [ ] One DataForSEO SERP task records positions for the project domain and all configured competitor domains simultaneously\n- [ ] Keywords track desktop and mobile separately with location_code precision\n- [ ] AI Overview citations and Featured Snippet ownership are stored per snapshot\n\n## Dependencies\n- F-03\n- D-02\n- D-04\n\n<!--EPIC:E03-->",
+      "labels": [
+        "type/feature",
+        "epic/serp-intelligence",
+        "area/serp",
+        "phase/2",
+        "size/XL",
+        "priority/P0"
+      ],
+      "milestone": "Phase 2 - Rank Tracking & Keyword Intelligence",
+      "phase": 2,
+      "size": "XL",
+      "priority": "P0",
+      "epic": "E03"
+    },
+    {
+      "key": "S-02",
+      "type": "feature",
+      "title": "S-02 Keyword Explorer & search volume batching",
+      "body": "## Summary\nInteractive keyword research workspace backed by DataForSEO Labs keyword_overview and related_keywords with 700-keyword batching and caching.\n\n**Epic:** E03 - Rank Tracking, Keyword Explorer & GSC/Bing Overlay\n**Phase:** 2 | **Size:** L | **Priority:** P0 | **Area:** serp\n\n## Scope\n- Batch up to 700 keywords per Labs keyword_overview request and persist metrics to shared cache\n- Search volume, 12-month trend sparklines, CPC, competition, keyword difficulty, and search intent tags\n- Related keywords and keyword suggestions explorer with filtering and CSV export\n- One-click \"Add to Rank Tracker\" action directly from explorer rows\n\n## Acceptance criteria\n- [ ] Entering 50 keywords serves cached keywords instantly and queries DataForSEO only for cache misses\n- [ ] Keyword Explorer displays volume, KD, intent, and 12-month trend without exceeding workspace credit caps\n\n## Dependencies\n- D-02\n- D-03\n\n<!--EPIC:E03-->",
+      "labels": [
+        "type/feature",
+        "epic/serp-intelligence",
+        "area/serp",
+        "phase/2",
+        "size/L",
+        "priority/P0"
+      ],
+      "milestone": "Phase 2 - Rank Tracking & Keyword Intelligence",
+      "phase": 2,
+      "size": "L",
+      "priority": "P0",
+      "epic": "E03"
+    },
+    {
+      "key": "S-03",
+      "type": "feature",
+      "title": "S-03 Competitor keyword gap & domain intersection",
+      "body": "## Summary\nIdentify high-opportunity keywords where one or more project competitors rank in top 20 while the project domain is absent or outranked.\n\n**Epic:** E03 - Rank Tracking, Keyword Explorer & GSC/Bing Overlay\n**Phase:** 2 | **Size:** L | **Priority:** P1 | **Area:** serp\n\n## Scope\n- DataForSEO Labs domain_intersection integration comparing project domain vs selected competitors\n- Filter modes: Missing (competitors rank, you do not), Weak (competitors outrank you), Shared\n- Traffic opportunity scoring combining search volume, competitor rank, and keyword difficulty\n- Ability to cluster gaps into content briefs or promote directly to Tracked Keywords\n\n## Acceptance criteria\n- [ ] Users can compare their domain against 1 to 3 competitors and view missing vs weak keyword tabs\n- [ ] Results are cached per domain-pair signature for 14 days to prevent redundant API spend\n\n## Dependencies\n- F-03\n- S-02\n\n<!--EPIC:E03-->",
+      "labels": [
+        "type/feature",
+        "epic/serp-intelligence",
+        "area/serp",
+        "phase/2",
+        "size/L",
+        "priority/P1"
+      ],
+      "milestone": "Phase 2 - Rank Tracking & Keyword Intelligence",
+      "phase": 2,
+      "size": "L",
+      "priority": "P1",
+      "epic": "E03"
+    },
+    {
+      "key": "S-04",
+      "type": "feature",
+      "title": "S-04 Google Search Console & Bing Webmaster first-party overlay",
+      "body": "## Summary\nOAuth connection to Google Search Console and Bing Webmaster Tools pulling real clicks, impressions, CTR, and average position at zero API cost.\n\n**Epic:** E03 - Rank Tracking, Keyword Explorer & GSC/Bing Overlay\n**Phase:** 2 | **Size:** L | **Priority:** P1 | **Area:** integrations\n\n## Scope\n- Encrypted OAuth token storage in project_integrations with automatic token refresh\n- Nightly Horizon job syncing daily GSC query + page performance (respecting 4-day finalization lag)\n- Bing Webmaster API client pulling query stats and crawl errors\n- Unified Rank Tracker view blending GSC clicks/impressions alongside DataForSEO tracked positions\n\n## Acceptance criteria\n- [ ] Projects with connected GSC show actual clicks, impressions, and CTR next to tracked keywords\n- [ ] Token expiration or revoked permissions surface an actionable reconnect banner without failing other jobs\n\n## Dependencies\n- F-03\n\n<!--EPIC:E03-->",
+      "labels": [
+        "type/feature",
+        "epic/serp-intelligence",
+        "area/integrations",
+        "phase/2",
+        "size/L",
+        "priority/P1"
+      ],
+      "milestone": "Phase 2 - Rank Tracking & Keyword Intelligence",
+      "phase": 2,
+      "size": "L",
+      "priority": "P1",
+      "epic": "E03"
+    },
+    {
+      "key": "C-01",
+      "type": "feature",
+      "title": "C-01 Coqui Desktop sync API & chunked snapshot ingestion",
+      "body": "## Summary\nAuthenticated JSON sync API accepting CrawlSummary, CrawlConfig (with secret scrubbing), UrlRecord, LinkRecord, and Issue batches directly from the Coqui Tauri app.\n\n**Epic:** E04 - Coqui Desktop Sync & coqui-worker Cloud Crawler\n**Phase:** 3 | **Size:** XL | **Priority:** P0 | **Area:** crawler\n\n## Scope\n- POST /api/v1/crawls/sync initializing a cloud CrawlRun matching coqui-core CrawlSummary fields\n- POST /api/v1/crawls/{id}/chunks ingesting batched UrlRecord, LinkRecord, and Issue arrays in transactions\n- POST /api/v1/crawls/{id}/finalize sealing counts, computing issue aggregates, and broadcasting completion\n- Strict scrubbing of authPassword and sensitive Authorization headers from synced CrawlConfig JSON\n\n## Acceptance criteria\n- [ ] Payloads serialized from coqui-core Rust structs with camelCase keys validate and persist losslessly\n- [ ] Syncing a 50,000-URL desktop crawl streams cleanly in 1,000-row chunks without PHP memory exhaustion\n- [ ] authPassword and sensitive header values are never persisted in crawl_runs.config\n\n## Dependencies\n- F-02\n- F-03\n\n<!--EPIC:E04-->",
+      "labels": [
+        "type/feature",
+        "epic/hybrid-crawler",
+        "area/crawler",
+        "phase/3",
+        "size/XL",
+        "priority/P0"
+      ],
+      "milestone": "Phase 3 - Hybrid Crawler & Desktop Sync",
+      "phase": 3,
+      "size": "XL",
+      "priority": "P0",
+      "epic": "E04"
+    },
+    {
+      "key": "C-02",
+      "type": "feature",
+      "title": "C-02 Historical crawl comparison & technical diff viewer",
+      "body": "## Summary\nCompare any two crawl snapshots (desktop or cloud) for a project to highlight newly broken URLs, status transitions, title/canonical changes, and issue deltas.\n\n**Epic:** E04 - Coqui Desktop Sync & coqui-worker Cloud Crawler\n**Phase:** 3 | **Size:** L | **Priority:** P1 | **Area:** crawler\n\n## Scope\n- SQL diff queries comparing URL sets and status/indexability fields between baseline and target crawl_run\n- Issue delta breakdown: New Issues, Resolved Issues, Persistent Issues\n- Shareable read-only report link with optional token expiry for client/team review\n- Overlay GSC clicks onto broken/redirected URLs to prioritize fixes by traffic impact\n\n## Acceptance criteria\n- [ ] Diffing two 10k-URL crawls computes new/removed URLs and status-code changes in under 2 seconds\n- [ ] Each issue delta links directly to affected URLs with before/after field values\n\n## Dependencies\n- C-01\n\n<!--EPIC:E04-->",
+      "labels": [
+        "type/feature",
+        "epic/hybrid-crawler",
+        "area/crawler",
+        "phase/3",
+        "size/L",
+        "priority/P1"
+      ],
+      "milestone": "Phase 3 - Hybrid Crawler & Desktop Sync",
+      "phase": 3,
+      "size": "L",
+      "priority": "P1",
+      "epic": "E04"
+    },
+    {
+      "key": "C-03",
+      "type": "feature",
+      "title": "C-03 Headless coqui-worker Rust container & Redis job bridge",
+      "body": "## Summary\nLightweight Docker worker running a headless binary built on coqui-core/coqui-crawl to execute scheduled cloud audits and targeted URL checks.\n\n**Epic:** E04 - Coqui Desktop Sync & coqui-worker Cloud Crawler\n**Phase:** 3 | **Size:** XL | **Priority:** P1 | **Area:** crawler\n\n## Scope\n- Internal HTTP/Queue bridge dispatching bounded CrawlConfig jobs from Laravel Horizon to coqui-worker\n- Weekly scheduled cloud crawl per active project (capped by workspace URL tier, e.g. 500-5,000 URLs)\n- SSRF protection blocking private/loopback IP ranges in cloud worker HTTP transport\n- Progress heartbeats pushed back to Laravel and broadcast over Reverb\n\n## Acceptance criteria\n- [ ] A scheduled Laravel job triggers coqui-worker, streams extracted URLs/issues back via internal API, and marks the run completed\n- [ ] coqui-worker refuses requests targeting RFC1918, loopback, or link-local metadata IPs\n- [ ] Container memory footprint remains bounded under 256MB during 2,000-URL crawls\n\n## Dependencies\n- F-01\n- C-01\n\n<!--EPIC:E04-->",
+      "labels": [
+        "type/feature",
+        "epic/hybrid-crawler",
+        "area/crawler",
+        "phase/3",
+        "size/XL",
+        "priority/P1"
+      ],
+      "milestone": "Phase 3 - Hybrid Crawler & Desktop Sync",
+      "phase": 3,
+      "size": "XL",
+      "priority": "P1",
+      "epic": "E04"
+    },
+    {
+      "key": "C-04",
+      "type": "feature",
+      "title": "C-04 Live SERP Top-10 content brief & competitor page scraper",
+      "body": "## Summary\nGiven a target keyword SERP, dispatch coqui-worker to fetch the top 10 ranking URLs and extract headings, word counts, schema types, and topic coverage.\n\n**Epic:** E04 - Coqui Desktop Sync & coqui-worker Cloud Crawler\n**Phase:** 3 | **Size:** L | **Priority:** P1 | **Area:** crawler\n\n## Scope\n- On-demand action from Keyword Explorer or Rank Tracker taking the top 10 organic SERP URLs\n- Targeted 10-URL fetch in coqui-worker extracting H1-H3 outline, word count, meta tags, JSON-LD types, and internal/external link counts\n- Side-by-side SERP Competitor Structure matrix and downloadable Markdown content brief\n\n## Acceptance criteria\n- [ ] Scraping top-10 SERP pages completes within 10 seconds and renders structured outlines for all reachable URLs\n- [ ] Failed/blocked competitor fetches (403/timeout) degrade gracefully without failing the whole brief\n\n## Dependencies\n- S-01\n- C-03\n\n<!--EPIC:E04-->",
+      "labels": [
+        "type/feature",
+        "epic/hybrid-crawler",
+        "area/crawler",
+        "phase/3",
+        "size/L",
+        "priority/P1"
+      ],
+      "milestone": "Phase 3 - Hybrid Crawler & Desktop Sync",
+      "phase": 3,
+      "size": "L",
+      "priority": "P1",
+      "epic": "E04"
+    },
+    {
+      "key": "B-01",
+      "type": "feature",
+      "title": "B-01 Backlink profile overview & referring domains explorer",
+      "body": "## Summary\nDomain authority metrics, referring domain counts, anchor text cloud, and link attribute breakdown powered by DataForSEO Backlinks API.\n\n**Epic:** E05 - Backlink Intelligence & Active Link-Rot Watchlist\n**Phase:** 4 | **Size:** L | **Priority:** P1 | **Area:** backlinks\n\n## Scope\n- DataForSEO backlinks/summary, referring_domains, and anchors integration with 14-day project caching\n- Filterable Referring Domains table (domain rank, spam score, backlink count, dofollow/nofollow ratio)\n- Top linked pages view joining backlink authority with crawled internal status codes\n\n## Acceptance criteria\n- [ ] Projects display backlink summary, top anchors, and sortable referring domains from cached DataForSEO data\n- [ ] Joining backlink targets against latest CrawlRun highlights high-authority 404 pages needing redirects\n\n## Dependencies\n- D-02\n- D-03\n- C-01\n\n<!--EPIC:E05-->",
+      "labels": [
+        "type/feature",
+        "epic/backlinks",
+        "area/backlinks",
+        "phase/4",
+        "size/L",
+        "priority/P1"
+      ],
+      "milestone": "Phase 4 - Backlink Intelligence & Link-Rot Monitor",
+      "phase": 4,
+      "size": "L",
+      "priority": "P1",
+      "epic": "E05"
+    },
+    {
+      "key": "B-02",
+      "type": "feature",
+      "title": "B-02 New & lost backlinks timeline",
+      "body": "## Summary\nTrack referring domain velocity and inspect newly acquired or dropped backlinks over weekly/monthly snapshots.\n\n**Epic:** E05 - Backlink Intelligence & Active Link-Rot Watchlist\n**Phase:** 4 | **Size:** M | **Priority:** P2 | **Area:** backlinks\n\n## Scope\n- DataForSEO backlinks/history and timeseries_summary storage per project\n- New vs Lost backlinks delta table with first_seen / last_seen dates\n- Slack/email digest alerts on sudden backlink drops or spam spikes\n\n## Acceptance criteria\n- [ ] Users can inspect new and lost referring domains across configurable date windows\n- [ ] Historical timeseries renders domain link velocity without re-querying DataForSEO on page reload\n\n## Dependencies\n- B-01\n\n<!--EPIC:E05-->",
+      "labels": [
+        "type/feature",
+        "epic/backlinks",
+        "area/backlinks",
+        "phase/4",
+        "size/M",
+        "priority/P2"
+      ],
+      "milestone": "Phase 4 - Backlink Intelligence & Link-Rot Monitor",
+      "phase": 4,
+      "size": "M",
+      "priority": "P2",
+      "epic": "E05"
+    },
+    {
+      "key": "B-03",
+      "type": "feature",
+      "title": "B-03 Active backlink watchlist & link-rot monitor",
+      "body": "## Summary\nUser-curated watchlist of high-value backlinks verified weekly by coqui-worker to catch link removal, rel=\"nofollow\" flips, 404s, or noindex tags faster than global indexes.\n\n**Epic:** E05 - Backlink Intelligence & Active Link-Rot Watchlist\n**Phase:** 4 | **Size:** L | **Priority:** P1 | **Area:** backlinks\n\n## Scope\n- monitored_backlinks table storing source_url, target_url, expected_rel, expected_anchor, last_status, and state (active|lost|rel_changed|error)\n- Import watchlist URLs from DataForSEO Backlinks API or CSV upload (100-500 links per project)\n- coqui-worker single-page verification mode checking HTTP status, meta robots, anchor presence, and rel attributes\n- Immediate notification and diff log when a live backlink changes state\n\n## Acceptance criteria\n- [ ] coqui-worker accurately detects removed links, 404/5xx responses, rel=nofollow/sponsored changes, and page-level noindex\n- [ ] Checking 250 watchlist URLs runs at $0 DataForSEO API cost using polite host-level rate limiting\n\n## Dependencies\n- C-03\n- B-01\n\n<!--EPIC:E05-->",
+      "labels": [
+        "type/feature",
+        "epic/backlinks",
+        "area/backlinks",
+        "phase/4",
+        "size/L",
+        "priority/P1"
+      ],
+      "milestone": "Phase 4 - Backlink Intelligence & Link-Rot Monitor",
+      "phase": 4,
+      "size": "L",
+      "priority": "P1",
+      "epic": "E05"
+    },
+    {
+      "key": "B-04",
+      "type": "feature",
+      "title": "B-04 Competitor link intersect & broken backlink reclaim",
+      "body": "## Summary\nDiscover domains linking to multiple competitors but not your site, plus broken outbound backlinks on competitor domains.\n\n**Epic:** E05 - Backlink Intelligence & Active Link-Rot Watchlist\n**Phase:** 4 | **Size:** M | **Priority:** P2 | **Area:** backlinks\n\n## Scope\n- DataForSEO backlinks/domain_intersection query across project + up to 3 competitors\n- Filter by domain rank, spam score ceiling, and number of linked competitors\n- Broken backlinks view surfacing dead target pages with live referring domains for outreach\n\n## Acceptance criteria\n- [ ] Link Intersect lists referring domains linking to >= 2 competitors while excluding the project domain\n- [ ] Results cache per competitor set to prevent duplicate DataForSEO Backlinks charges\n\n## Dependencies\n- F-03\n- B-01\n\n<!--EPIC:E05-->",
+      "labels": [
+        "type/feature",
+        "epic/backlinks",
+        "area/backlinks",
+        "phase/4",
+        "size/M",
+        "priority/P2"
+      ],
+      "milestone": "Phase 4 - Backlink Intelligence & Link-Rot Monitor",
+      "phase": 4,
+      "size": "M",
+      "priority": "P2",
+      "epic": "E05"
+    },
+    {
+      "key": "H-01",
+      "type": "feature",
+      "title": "H-01 Runnr hosting post-deploy SEO smoke tests",
+      "body": "## Summary\nSigned webhook integration for Runnr hosting deployments that triggers an immediate targeted coqui-worker smoke check against critical URLs, robots.txt, and sitemaps.\n\n**Epic:** E06 - Runnr Hosting Webhooks, Bot Telemetry & Traffic Attribution\n**Phase:** 5 | **Size:** L | **Priority:** P1 | **Area:** integrations\n\n## Scope\n- POST /api/webhooks/runnr/deploy verifying HMAC signature and mapping site_id to Coqui Project\n- Targeted 50-200 URL smoke crawl checking robots.txt disallow regressions, accidental global noindex, 5xx errors, and canonical host flips\n- Deploy Smoke Test status badge and webhook callback back to Runnr deployment log\n\n## Acceptance criteria\n- [ ] A Runnr deploy webhook triggers a smoke crawl and reports pass/fail within 60 seconds\n- [ ] Accidental Disallow: / or staging noindex leaked to production triggers an immediate high-severity alert\n\n## Dependencies\n- C-03\n\n<!--EPIC:E06-->",
+      "labels": [
+        "type/feature",
+        "epic/hosting-moat",
+        "area/integrations",
+        "phase/5",
+        "size/L",
+        "priority/P1"
+      ],
+      "milestone": "Phase 5 - Hosting Platform & Analytics Moat",
+      "phase": 5,
+      "size": "L",
+      "priority": "P1",
+      "epic": "E06"
+    },
+    {
+      "key": "H-02",
+      "type": "feature",
+      "title": "H-02 Server access log bot & AI crawler telemetry",
+      "body": "## Summary\nIngest aggregated edge/server log telemetry from Runnr-hosted sites to chart Googlebot, Bingbot, and AI bot (GPTBot, ClaudeBot, PerplexityBot) crawl hits and status codes.\n\n**Epic:** E06 - Runnr Hosting Webhooks, Bot Telemetry & Traffic Attribution\n**Phase:** 5 | **Size:** L | **Priority:** P1 | **Area:** integrations\n\n## Scope\n- POST /api/v1/telemetry/bot-logs endpoint accepting batched hourly bot hit summaries\n- bot_crawl_logs partitioned/indexed table tracking bot_family, status_bucket (2xx/3xx/4xx/5xx), hits, bytes, and top crawled paths\n- Crawl Budget dashboard highlighting wasted bot hits on 404s, redirect chains, and parameterized URLs\n\n## Acceptance criteria\n- [ ] Hosted sites visualize daily Googlebot vs AI crawler hit volume and error rates without running an external crawler\n- [ ] High-frequency 404 paths hit by Googlebot are automatically flagged for redirect remediation\n\n## Dependencies\n- H-01\n\n<!--EPIC:E06-->",
+      "labels": [
+        "type/feature",
+        "epic/hosting-moat",
+        "area/integrations",
+        "phase/5",
+        "size/L",
+        "priority/P1"
+      ],
+      "milestone": "Phase 5 - Hosting Platform & Analytics Moat",
+      "phase": 5,
+      "size": "L",
+      "priority": "P1",
+      "epic": "E06"
+    },
+    {
+      "key": "H-03",
+      "type": "feature",
+      "title": "H-03 GA4 & Plausible organic traffic attribution",
+      "body": "## Summary\nConnect GA4 Data API and Plausible Stats API to overlay landing-page organic traffic, engagement, and AI-assistant referral sessions onto crawl URLs.\n\n**Epic:** E06 - Runnr Hosting Webhooks, Bot Telemetry & Traffic Attribution\n**Phase:** 5 | **Size:** M | **Priority:** P2 | **Area:** integrations\n\n## Scope\n- GA4 and Plausible adapters syncing daily landing-page metrics into project analytics snapshots\n- AI assistant referral grouping (ChatGPT, Perplexity, Claude, Gemini) tracked alongside organic search\n- Page Performance view joining CrawlUrl health + GSC clicks + GA4/Plausible sessions by normalized URL path\n\n## Acceptance criteria\n- [ ] Crawl URL tables display organic sessions and AI referrals alongside technical SEO issues\n- [ ] Projects can configure either GA4, Plausible, or both seamlessly\n\n## Dependencies\n- S-04\n- C-01\n\n<!--EPIC:E06-->",
+      "labels": [
+        "type/feature",
+        "epic/hosting-moat",
+        "area/integrations",
+        "phase/5",
+        "size/M",
+        "priority/P2"
+      ],
+      "milestone": "Phase 5 - Hosting Platform & Analytics Moat",
+      "phase": 5,
+      "size": "M",
+      "priority": "P2",
+      "epic": "E06"
+    },
+    {
+      "key": "H-04",
+      "type": "feature",
+      "title": "H-04 Subscription billing, plan tiers & usage metering",
+      "body": "## Summary\nLaravel Cashier + Pennant feature gating aligning subscription tiers with variable DataForSEO COGS (tracked keywords, SERP credits, cloud crawl URL caps) and Runnr bundle perks.\n\n**Epic:** E06 - Runnr Hosting Webhooks, Bot Telemetry & Traffic Attribution\n**Phase:** 5 | **Size:** L | **Priority:** P2 | **Area:** platform\n\n## Scope\n- Plan tiers (Free/Desktop Sync, Pro, Agency, Runnr Hosting Add-on) enforced via Laravel Pennant features\n- Monthly allowance resets and DataForSEO credit metering tied to workspace Spend Guard\n- Cashier Stripe checkout, customer portal, and webhook synchronization\n\n## Acceptance criteria\n- [ ] Workspaces cannot exceed plan limits on tracked keywords or cloud crawl URLs\n- [ ] Runnr-hosted projects automatically unlock native deploy smoke tests and bot telemetry entitlements\n\n## Dependencies\n- D-03\n- H-01\n\n<!--EPIC:E06-->",
+      "labels": [
+        "type/feature",
+        "epic/hosting-moat",
+        "area/platform",
+        "phase/5",
+        "size/L",
+        "priority/P2"
+      ],
+      "milestone": "Phase 5 - Hosting Platform & Analytics Moat",
+      "phase": 5,
+      "size": "L",
+      "priority": "P2",
+      "epic": "E06"
+    }
+  ],
+  "phaseNames": {
+    "1": "Phase 1 - Foundation & DataForSEO Core",
+    "2": "Phase 2 - Rank Tracking & Keyword Intelligence",
+    "3": "Phase 3 - Hybrid Crawler & Desktop Sync",
+    "4": "Phase 4 - Backlink Intelligence & Link-Rot Monitor",
+    "5": "Phase 5 - Hosting Platform & Analytics Moat"
+  }
+}

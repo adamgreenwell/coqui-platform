@@ -1,0 +1,32 @@
+{
+  "$schema": "https://www.schemastore.org/package.json",
+  "name": "coquiseo/coqui-platform-ui",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "types:check": "tsc --noEmit",
+    "test:js": "vitest run",
+    "plan:build": "node tools/plan/build.mjs"
+  },
+  "dependencies": {
+    "@inertiajs/react": "^3.0.0",
+    "@tailwindcss/vite": "^4.1.11",
+    "lucide-react": "^0.475.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "tailwindcss": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.5",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "concurrently": "^9.0.1",
+    "laravel-vite-plugin": "^3.0.0",
+    "typescript": "^5.7.2",
+    "vite": "^8.0.0",
+    "vitest": "^4.1.10"
+  }
+}
