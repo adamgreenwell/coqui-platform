@@ -130,6 +130,29 @@ class DataForSeoClient
     }
 
     /**
+     * Retrieve completed task results for a Standard-queue task (free read).
+     *
+     * @return array<string, mixed>|null Returns decoded response if ready, null if still in progress.
+     */
+    public function getTaskResult(string $externalTaskId, string $endpoint = '/v3/serp/google/organic/task_get/advanced'): ?array
+    {
+        $path = rtrim($endpoint, '/').'/'.$externalTaskId;
+
+        try {
+            $response = $this->getFree($path);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        $statusCode = (int) ($response['status_code'] ?? 0);
+        if ($statusCode === 20000) {
+            return $response;
+        }
+
+        return null;
+    }
+
+    /**
      * Never retry paid POST calls automatically on timeouts to prevent double-billing.
      *
      * @param  array<int, array<string, mixed>>  $payload

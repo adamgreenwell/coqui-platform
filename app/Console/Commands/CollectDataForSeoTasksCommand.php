@@ -4,22 +4,83 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Domains\Serp\DataForSeo\DataForSeoClient;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 class CollectDataForSeoTasksCommand extends Command
 {
-    protected $signature = 'dataforseo:collect-tasks';
+    protected $signature = 'dataforseo:collect-tasks
+                            {--limit=50 : Maximum number of uncollected tasks to poll}
+                            {--threshold=5 : Minimum age in minutes for pending tasks to poll}
+                            {--force : Poll all pending tasks regardless of age}';
 
     protected $description = 'Collect completed DataForSEO standard-queue tasks missed by webhooks.';
 
-    public function handle(): int
+    public function handle(DataForSeoClient $client): int
     {
-        $pendingCount = DB::table('dataforseo_tasks')
-            ->where('status', 'pending')
-            ->count();
+        $limit = max(1, (int) $this->option('limit'));
+        $thresholdMinutes = max(0, (int) $this->option('threshold'));
+        $force = (bool) $this->option('force');
 
-        $this->info("Pending DataForSEO tasks: {$pendingCount}");
+        $query = DB::table('dataforseo_tasks')
+            ->where('status', 'pending');
+
+        if (! $force && $thresholdMinutes > 0) {
+            $query->where('submitted_at', '<=', now()->subMinutes($thresholdMinutes));
+        }
+
+        $pendingTasks = $query
+            ->orderBy('submitted_at')
+            ->limit($limit)
+            ->get();
+
+        if ($pendingTasks->isEmpty()) {
+            $this->info('No pending DataForSEO tasks require collection.');
+
+            return self::SUCCESS;
+        }
+
+        $this->info("Checking {$pendingTasks->count()} pending DataForSEO tasks...");
+
+        $collected = 0;
+        $inProgress = 0;
+
+        foreach ($pendingTasks as $task) {
+            $taskId = (string) $task->external_task_id;
+            $endpoint = (string) $task->endpoint;
+
+            $getEndpoint = str_contains($endpoint, 'task_post')
+                ? str_replace('task_post', 'task_get/advanced', $endpoint)
+                : '/v3/serp/google/organic/task_get/advanced';
+
+            try {
+                $result = $client->getTaskResult($taskId, $getEndpoint);
+            } catch (Throwable $e) {
+                $this->warn("Failed checking task [{$taskId}]: {$e->getMessage()}");
+
+                continue;
+            }
+
+            if ($result !== null) {
+                DB::table('dataforseo_tasks')
+                    ->where('id', $task->id)
+                    ->update([
+                        'status' => 'collected',
+                        'result_payload' => json_encode($result, JSON_THROW_ON_ERROR),
+                        'collected_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+
+                $collected++;
+                $this->line("Task [{$taskId}] collected successfully.");
+            } else {
+                $inProgress++;
+            }
+        }
+
+        $this->info("Collection summary: {$collected} collected, {$inProgress} still in progress.");
 
         return self::SUCCESS;
     }
