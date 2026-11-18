@@ -9,6 +9,7 @@ use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectCompetitor;
 use App\Domains\Projects\Models\Workspace;
 use App\Models\User;
+use Carbon\CarbonInterface;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -149,8 +150,8 @@ class ProjectController extends Controller
                 'errorCount' => $latestCrawl->error_count,
                 'warningCount' => $latestCrawl->warning_count,
                 'opportunityCount' => $latestCrawl->opportunity_count,
-                'finalizedAt' => $latestCrawl->finalized_at?->toIso8601String(),
-                'createdAt' => $latestCrawl->created_at?->toIso8601String(),
+                'finalizedAt' => $latestCrawl->finalized_at instanceof CarbonInterface ? $latestCrawl->finalized_at->toIso8601String() : null,
+                'createdAt' => $latestCrawl->created_at instanceof CarbonInterface ? $latestCrawl->created_at->toIso8601String() : null,
             ] : null,
             'trackedKeywordsCount' => $project->trackedKeywords()->count(),
             'monitoredBacklinksCount' => $project->monitoredBacklinks()->count(),
