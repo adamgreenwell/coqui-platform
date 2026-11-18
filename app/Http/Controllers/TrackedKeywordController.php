@@ -12,7 +12,6 @@ use App\Domains\Serp\Models\KeywordRankSnapshot;
 use App\Domains\Serp\Models\TrackedKeyword;
 use App\Models\User;
 use Carbon\Carbon;
-use Carbon\CarbonInterface;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
