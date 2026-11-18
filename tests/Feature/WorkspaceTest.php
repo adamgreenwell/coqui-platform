@@ -237,8 +237,9 @@ class WorkspaceTest extends TestCase
             ])
             ->assertCreated();
 
-        // Revoke token immediately
+        // Revoke token immediately and clear test guard cache
         $user->tokens()->delete();
+        $this->app['auth']->forgetGuards();
 
         // Subsequent request fails with 401 Unauthorized
         $this->withHeader('Authorization', "Bearer {$plainToken}")
