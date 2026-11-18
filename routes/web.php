@@ -35,6 +35,7 @@ Route::middleware(['auth'])->group(function (): void {
     Route::get('/workspaces/{workspace}/projects/create', [ProjectController::class, 'create'])->name('workspaces.projects.create');
     Route::post('/workspaces/{workspace}/projects', [ProjectController::class, 'store'])->name('workspaces.projects.store');
     Route::get('/workspaces/{workspace}/projects/{project}', [ProjectController::class, 'show'])->name('workspaces.projects.show');
+    Route::get('/workspaces/{workspace}/projects/{project}/activities', [ProjectController::class, 'activities'])->name('workspaces.projects.activities');
     Route::get('/workspaces/{workspace}/projects/{project}/settings', [ProjectController::class, 'edit'])->name('workspaces.projects.settings');
     Route::put('/workspaces/{workspace}/projects/{project}', [ProjectController::class, 'update'])->name('workspaces.projects.update');
     Route::delete('/workspaces/{workspace}/projects/{project}', [ProjectController::class, 'destroy'])->name('workspaces.projects.destroy');

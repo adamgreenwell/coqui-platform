@@ -6,10 +6,12 @@ namespace App\Http\Controllers;
 
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Projects\Models\Project;
+use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\ProjectCompetitor;
 use App\Domains\Projects\Models\Workspace;
 use App\Models\User;
 use Carbon\CarbonInterface;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -96,6 +98,18 @@ class ProjectController extends Controller
                     }
                 });
 
+                /** @var User|null $user */
+                $user = $request->user();
+
+                ProjectActivity::log(
+                    project: $existingProject,
+                    eventType: 'project.restored',
+                    title: 'Project restored',
+                    description: "Project {$existingProject->name} was restored from trash.",
+                    properties: ['domain' => $existingProject->domain],
+                    user: $user,
+                );
+
                 return redirect()->route('workspaces.projects.show', [$workspace, $existingProject])
                     ->with('success', "Project [{$existingProject->name}] restored successfully.");
             }
@@ -138,6 +152,23 @@ class ProjectController extends Controller
             return $proj;
         });
 
+        /** @var User|null $user */
+        $user = $request->user();
+
+        ProjectActivity::log(
+            project: $project,
+            eventType: 'project.created',
+            title: 'Project created',
+            description: "Project {$project->name} registered with domain {$project->domain}.",
+            properties: [
+                'domain' => $project->domain,
+                'canonical_url' => $project->canonical_url,
+                'location_code' => $project->location_code,
+                'language_code' => $project->language_code,
+            ],
+            user: $user,
+        );
+
         return redirect()->route('workspaces.projects.show', [$workspace, $project])
             ->with('success', "Project [{$project->name}] created successfully.");
     }
@@ -162,6 +193,23 @@ class ProjectController extends Controller
                 'domain' => $c->domain,
                 'label' => $c->label,
                 'sort_order' => $c->sort_order,
+            ])
+            ->all();
+
+        /** @var list<array{id: int, eventType: string, title: string, description: string|null, properties: array<string, mixed>|null, userName: string|null, createdAt: string}> $activities */
+        $activities = $project->activities()
+            ->with('user')
+            ->latest('id')
+            ->limit(20)
+            ->get()
+            ->map(fn (ProjectActivity $a): array => [
+                'id' => $a->id,
+                'eventType' => $a->event_type,
+                'title' => $a->title,
+                'description' => $a->description,
+                'properties' => $a->properties,
+                'userName' => $a->user?->name,
+                'createdAt' => $a->created_at->toIso8601String(),
             ])
             ->all();
 
@@ -198,6 +246,7 @@ class ProjectController extends Controller
             'trackedKeywordsCount' => $project->trackedKeywords()->count(),
             'monitoredBacklinksCount' => $project->monitoredBacklinks()->count(),
             'competitors' => $competitors,
+            'activities' => $activities,
             'canEdit' => $user->can('update', $project),
             'canDelete' => $user->can('delete', $project),
         ]);
@@ -258,7 +307,37 @@ class ProjectController extends Controller
             'crawl_cadence' => (string) $validated['crawl_cadence'],
         ]);
 
+        /** @var User|null $user */
+        $user = $request->user();
+
+        ProjectActivity::log(
+            project: $project,
+            eventType: 'project.updated',
+            title: 'Settings updated',
+            description: 'Project configuration updated.',
+            properties: [
+                'name' => $project->name,
+                'location_code' => $project->location_code,
+                'language_code' => $project->language_code,
+                'crawl_cadence' => $project->crawl_cadence,
+            ],
+            user: $user,
+        );
+
         return back()->with('success', 'Project settings updated successfully.');
+    }
+
+    public function activities(Workspace $workspace, Project $project): JsonResponse
+    {
+        abort_if($project->workspace_id !== $workspace->id, 404);
+        Gate::authorize('view', $project);
+
+        $activities = $project->activities()
+            ->with('user')
+            ->latest('id')
+            ->paginate(20);
+
+        return response()->json($activities);
     }
 
     public function destroy(Workspace $workspace, Project $project): RedirectResponse

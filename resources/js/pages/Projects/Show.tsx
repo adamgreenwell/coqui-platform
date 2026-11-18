@@ -1,5 +1,6 @@
 import { Head, Link, router, useForm } from '@inertiajs/react';
 import {
+  Activity,
   AlertTriangle,
   ArrowLeft,
   CheckCircle2,
@@ -10,13 +11,16 @@ import {
   Key,
   Laptop,
   Plus,
+  Radio,
+  RefreshCw,
   Search,
   Settings,
   Shield,
   Trash2,
   Users,
 } from 'lucide-react';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
+import { getEcho } from '../../echo';
 import AppLayout, { type WorkspaceSummary } from '../../layouts/AppLayout';
 
 interface ProjectDetails {
@@ -52,6 +56,16 @@ interface CompetitorItem {
   sort_order: number;
 }
 
+interface ActivityItem {
+  id: number;
+  eventType: string;
+  title: string;
+  description?: string | null;
+  properties?: Record<string, unknown> | null;
+  userName?: string | null;
+  createdAt: string;
+}
+
 interface ProjectShowProps {
   workspace: WorkspaceSummary;
   project: ProjectDetails;
@@ -59,8 +73,58 @@ interface ProjectShowProps {
   trackedKeywordsCount: number;
   monitoredBacklinksCount: number;
   competitors: CompetitorItem[];
+  activities?: ActivityItem[];
   canEdit: boolean;
   canDelete: boolean;
+}
+
+function getActivityIcon(type: string) {
+  if (type.startsWith('crawl.')) {
+    return <RefreshCw className="h-3.5 w-3.5 text-emerald-400" />;
+  }
+  if (type.startsWith('competitor.')) {
+    return <Users className="h-3.5 w-3.5 text-purple-400" />;
+  }
+  if (type.startsWith('serp.')) {
+    return <Search className="h-3.5 w-3.5 text-amber-400" />;
+  }
+  if (type.startsWith('backlink.')) {
+    return <Shield className="h-3.5 w-3.5 text-sky-400" />;
+  }
+  return <FolderKanban className="h-3.5 w-3.5 text-slate-400" />;
+}
+
+function formatRelativeTime(dateString: string): string {
+  try {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffSec = Math.floor((now.getTime() - date.getTime()) / 1000);
+
+    if (diffSec < 60) return 'just now';
+    if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+    if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+    return `${Math.floor(diffSec / 86400)}d ago`;
+  } catch {
+    return dateString;
+  }
+}
+
+function formatProperties(props: Record<string, unknown>): string {
+  const parts: string[] = [];
+  if (typeof props.total_urls === 'number') parts.push(`${props.total_urls} URLs`);
+  if (typeof props.error_count === 'number') parts.push(`${props.error_count} errors`);
+  if (typeof props.domain === 'string') parts.push(props.domain);
+  if (typeof props.keyword_count === 'number') parts.push(`${props.keyword_count} keywords`);
+  if (typeof props.severity === 'string') parts.push(`severity: ${props.severity}`);
+
+  if (parts.length > 0) return parts.join(' • ');
+
+  try {
+    const str = JSON.stringify(props);
+    return str.length > 50 ? `${str.slice(0, 50)}...` : str;
+  } catch {
+    return '';
+  }
 }
 
 export default function ProjectShow({
@@ -70,14 +134,92 @@ export default function ProjectShow({
   trackedKeywordsCount,
   monitoredBacklinksCount,
   competitors,
+  activities = [],
   canEdit,
   canDelete,
 }: ProjectShowProps) {
   const [addCompetitorModal, setAddCompetitorModal] = useState(false);
+  const [liveActivities, setLiveActivities] = useState<ActivityItem[]>(activities);
+  const [liveCrawl, setLiveCrawl] = useState<LatestCrawlSummary | null>(latestCrawl || null);
+  const [activeFilter, setActiveFilter] = useState<'all' | 'crawls' | 'competitors' | 'project'>('all');
 
   const { data, setData, post, processing, errors, reset } = useForm({
     domain: '',
     label: '',
+  });
+
+  useEffect(() => {
+    setLiveActivities(activities);
+  }, [activities]);
+
+  useEffect(() => {
+    setLiveCrawl(latestCrawl || null);
+  }, [latestCrawl]);
+
+  useEffect(() => {
+    const echo = getEcho();
+    if (!echo) return;
+
+    const channel = echo.private(`project.${project.id}`);
+
+    channel.listen('.ProjectActivityLogged', (e: {
+      id: number;
+      event_type: string;
+      title: string;
+      description?: string | null;
+      properties?: Record<string, unknown> | null;
+      user_name?: string | null;
+      created_at: string;
+    }) => {
+      const mapped: ActivityItem = {
+        id: e.id,
+        eventType: e.event_type,
+        title: e.title,
+        description: e.description,
+        properties: e.properties,
+        userName: e.user_name,
+        createdAt: e.created_at,
+      };
+
+      setLiveActivities((prev) => [mapped, ...prev.filter((a) => a.id !== mapped.id)]);
+    });
+
+    channel.listen('.CrawlProgressUpdated', (e: {
+      external_crawl_id: string;
+      crawled_urls: number;
+      total_urls: number;
+      error_count: number;
+      warning_count: number;
+      opportunity_count: number;
+      status: string;
+      updated_at: string;
+    }) => {
+      setLiveCrawl((prev) => ({
+        id: prev?.id || 0,
+        externalCrawlId: e.external_crawl_id,
+        status: e.status,
+        source: prev?.source || 'desktop',
+        totalUrls: e.total_urls,
+        errorCount: e.error_count,
+        warningCount: e.warning_count,
+        opportunityCount: e.opportunity_count,
+        finalizedAt: e.status === 'completed' ? e.updated_at : prev?.finalizedAt,
+        createdAt: prev?.createdAt || e.updated_at,
+      }));
+    });
+
+    return () => {
+      channel.stopListening('.ProjectActivityLogged');
+      channel.stopListening('.CrawlProgressUpdated');
+    };
+  }, [project.id]);
+
+  const filteredActivities = liveActivities.filter((act) => {
+    if (activeFilter === 'all') return true;
+    if (activeFilter === 'crawls') return act.eventType.startsWith('crawl.');
+    if (activeFilter === 'competitors') return act.eventType.startsWith('competitor.');
+    if (activeFilter === 'project') return act.eventType.startsWith('project.');
+    return true;
   });
 
   const handleAddCompetitor = (e: FormEvent) => {
@@ -161,21 +303,21 @@ export default function ProjectShow({
                 <Globe className="h-4 w-4 text-emerald-400" />
                 <span>Crawl Health</span>
               </span>
-              {latestCrawl && (
+              {liveCrawl && (
                 <span className="capitalize px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 border border-slate-700">
-                  {latestCrawl.status}
+                  {liveCrawl.status}
                 </span>
               )}
             </div>
             <div className="mt-3">
-              {latestCrawl ? (
+              {liveCrawl ? (
                 <>
                   <div className="text-xl font-bold text-white font-mono">
-                    {latestCrawl.totalUrls.toLocaleString()} URLs
+                    {liveCrawl.totalUrls.toLocaleString()} URLs
                   </div>
                   <div className="mt-1 flex items-center gap-3 text-xs">
-                    <span className="text-red-400">{latestCrawl.errorCount} errors</span>
-                    <span className="text-amber-400">{latestCrawl.warningCount} warnings</span>
+                    <span className="text-red-400">{liveCrawl.errorCount} errors</span>
+                    <span className="text-amber-400">{liveCrawl.warningCount} warnings</span>
                   </div>
                 </>
               ) : (
@@ -302,6 +444,98 @@ export default function ProjectShow({
                   ))}
                 </tbody>
               </table>
+            )}
+          </div>
+        </div>
+
+        {/* Realtime Event Stream & Activity Feed */}
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-semibold text-white">Project Activity & Realtime Stream</h2>
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-[10px] font-mono text-emerald-400">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Reverb: project.{project.id}</span>
+                </span>
+              </div>
+              <p className="text-xs text-slate-400">
+                Streaming live crawl ingestion, SERP batches, competitor updates, and system activities.
+              </p>
+            </div>
+
+            {/* Filter buttons */}
+            <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg p-0.5 self-start sm:self-auto text-xs">
+              <button
+                type="button"
+                onClick={() => setActiveFilter('all')}
+                className={`px-2.5 py-1 rounded-md transition ${activeFilter === 'all' ? 'bg-slate-800 text-white font-medium' : 'text-slate-400 hover:text-white'}`}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveFilter('crawls')}
+                className={`px-2.5 py-1 rounded-md transition ${activeFilter === 'crawls' ? 'bg-slate-800 text-white font-medium' : 'text-slate-400 hover:text-white'}`}
+              >
+                Crawls
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveFilter('competitors')}
+                className={`px-2.5 py-1 rounded-md transition ${activeFilter === 'competitors' ? 'bg-slate-800 text-white font-medium' : 'text-slate-400 hover:text-white'}`}
+              >
+                Competitors
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveFilter('project')}
+                className={`px-2.5 py-1 rounded-md transition ${activeFilter === 'project' ? 'bg-slate-800 text-white font-medium' : 'text-slate-400 hover:text-white'}`}
+              >
+                Project
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 overflow-hidden shadow-sm">
+            {filteredActivities.length === 0 ? (
+              <div className="p-8 text-center text-slate-500 text-xs">
+                No activity recorded yet for this project. Activity will appear in real time as crawls sync or settings change.
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-800/80">
+                {filteredActivities.map((act) => (
+                  <div key={act.id} className="p-4 hover:bg-slate-800/20 transition flex items-start gap-3">
+                    <div className="mt-0.5 p-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60 shrink-0">
+                      {getActivityIcon(act.eventType)}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-semibold text-white">{act.title}</span>
+                          <span className="rounded bg-slate-800/80 border border-slate-700 px-1.5 py-0.2 text-[10px] font-mono text-slate-400">
+                            {act.eventType}
+                          </span>
+                        </div>
+                        <span className="text-[11px] text-slate-500 whitespace-nowrap shrink-0">
+                          {formatRelativeTime(act.createdAt)}
+                        </span>
+                      </div>
+                      {act.description && (
+                        <p className="mt-0.5 text-xs text-slate-400">{act.description}</p>
+                      )}
+                      <div className="mt-1.5 flex items-center gap-3 text-[11px] text-slate-500">
+                        <span>By {act.userName || 'System / Coqui Worker'}</span>
+                        {act.properties && Object.keys(act.properties).length > 0 && (
+                          <span className="font-mono text-[10px] text-slate-400 bg-slate-950/60 border border-slate-800 rounded px-1.5 py-0.5">
+                            {formatProperties(act.properties)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </div>
