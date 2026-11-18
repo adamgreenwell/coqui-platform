@@ -24,10 +24,10 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property string $language_code
  * @property string $crawl_cadence
  * @property string|null $runnr_site_id
- * @property \Carbon\CarbonInterface|null $last_crawled_at
- * @property \Carbon\CarbonInterface|null $deleted_at
- * @property \Carbon\CarbonInterface|null $created_at
- * @property \Carbon\CarbonInterface|null $updated_at
+ * @property CarbonInterface|null $last_crawled_at
+ * @property CarbonInterface|null $deleted_at
+ * @property CarbonInterface|null $created_at
+ * @property CarbonInterface|null $updated_at
  */
 class Project extends Model
 {

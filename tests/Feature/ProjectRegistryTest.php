@@ -6,7 +6,6 @@ namespace Tests\Feature;
 
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Projects\Models\Project;
-use App\Domains\Projects\Models\ProjectCompetitor;
 use App\Domains\Projects\Models\Workspace;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
