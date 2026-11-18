@@ -447,23 +447,24 @@ class SerpRankTrackerTest extends TestCase
             ->get(route('workspaces.projects.keywords.index', [$this->workspace, $this->project]));
 
         $response->assertOk()
-            ->assertInertia(fn (Assert $page) => $page
-                ->component('Keywords/Index')
-                ->has('keywords', 1)
-                ->where('keywords.0.keyword', 'realistic voice cloning')
-                ->where('keywords.0.current_rank', 2)
-                ->where('keywords.0.previous_rank', 5)
-                ->where('keywords.0.rank_delta', 3)
-                ->where('keywords.0.delta_type', 'up')
-                ->where('keywords.0.has_ai_overview', true)
-                ->where('keywords.0.competitor_ranks', function ($ranks): bool {
-                    return is_array($ranks) && isset($ranks['competitor-a.com']['rank']) && $ranks['competitor-a.com']['rank'] === 4;
-                })
-                ->where('metrics.total_keywords', 1)
-                ->where('metrics.top_3', 1)
-                ->where('metrics.top_10', 1)
-                ->where('metrics.avg_rank', 2)
-            );
+            ->assertInertia(function (Assert $page): void {
+                $page->component('Keywords/Index')
+                    ->has('keywords', 1)
+                    ->where('keywords.0.keyword', 'realistic voice cloning')
+                    ->where('keywords.0.current_rank', 2)
+                    ->where('keywords.0.previous_rank', 5)
+                    ->where('keywords.0.rank_delta', 3)
+                    ->where('keywords.0.delta_type', 'up')
+                    ->where('keywords.0.has_ai_overview', true)
+                    ->where('metrics.total_keywords', 1)
+                    ->where('metrics.top_3', 1)
+                    ->where('metrics.top_10', 1)
+                    ->where('metrics.avg_rank', 2);
+
+                /** @var list<array{competitor_ranks: array<string, array{rank: int|null}>}> $keywords */
+                $keywords = $page->toArray()['props']['keywords'];
+                $this->assertSame(4, $keywords[0]['competitor_ranks']['competitor-a.com']['rank']);
+            });
     }
 
     public function test_user_can_bulk_store_tracked_keywords_and_activity_is_logged(): void

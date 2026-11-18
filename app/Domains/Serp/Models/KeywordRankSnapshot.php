@@ -48,6 +48,8 @@ class KeywordRankSnapshot extends Model
     protected function casts(): array
     {
         return [
+            'tracked_keyword_id' => 'integer',
+            'project_id' => 'integer',
             'rank_group' => 'integer',
             'rank_absolute' => 'integer',
             'has_ai_overview' => 'boolean',

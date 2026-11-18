@@ -47,6 +47,7 @@ class TrackedKeyword extends Model
     protected function casts(): array
     {
         return [
+            'project_id' => 'integer',
             'location_code' => 'integer',
             'search_volume' => 'integer',
             'keyword_difficulty' => 'integer',

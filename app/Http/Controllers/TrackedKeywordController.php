@@ -64,10 +64,10 @@ class TrackedKeywordController extends Controller
                 ->orderByDesc('checked_on')
                 ->get();
 
-        $snapshotsByKeyword = $allSnapshots->groupBy('tracked_keyword_id');
+        $snapshotsByKeyword = $allSnapshots->groupBy(fn (KeywordRankSnapshot $s): int => (int) $s->tracked_keyword_id);
 
         $items = $trackedKeywords->map(function (TrackedKeyword $kw) use ($snapshotsByKeyword, $project, $competitors): array {
-            $kwSnaps = $snapshotsByKeyword->get($kw->id, collect());
+            $kwSnaps = $snapshotsByKeyword->get((int) $kw->id, collect());
             $domainSnaps = $kwSnaps->groupBy('domain');
 
             $projectSnaps = $domainSnaps->get($project->domain, collect())->sortByDesc('checked_on')->values();
