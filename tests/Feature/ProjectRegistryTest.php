@@ -245,12 +245,14 @@ class ProjectRegistryTest extends TestCase
             ->post("/workspaces/{$workspace->id}/projects", [
                 'name' => 'Restored Project',
                 'url' => 'https://delete-me.com',
+                'competitors' => ['https://new-competitor.com'],
             ])
             ->assertRedirect("/workspaces/{$workspace->id}/projects/{$project->id}");
 
         $restored = Project::query()->findOrFail($project->id);
         $this->assertFalse($restored->trashed());
         $this->assertSame('Restored Project', $restored->name);
+        $this->assertTrue($restored->competitors()->where('domain', 'new-competitor.com')->exists());
 
         // Delete again before testing force delete cascade
         $this->actingAs($user)

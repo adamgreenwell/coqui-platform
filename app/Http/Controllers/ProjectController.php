@@ -61,14 +61,40 @@ class ProjectController extends Controller
         $existingProject = $workspace->projects()->withTrashed()->where('domain', $domain)->first();
         if ($existingProject !== null) {
             if ($existingProject->trashed()) {
-                $existingProject->restore();
-                $existingProject->update([
-                    'name' => (string) $validated['name'],
-                    'canonical_url' => $canonicalUrl,
-                    'location_code' => (int) ($validated['location_code'] ?? 2840),
-                    'language_code' => (string) ($validated['language_code'] ?? 'en'),
-                    'crawl_cadence' => (string) ($validated['crawl_cadence'] ?? 'weekly'),
-                ]);
+                DB::transaction(function () use ($existingProject, $validated, $domain, $canonicalUrl): void {
+                    $existingProject->restore();
+                    $existingProject->update([
+                        'name' => (string) $validated['name'],
+                        'canonical_url' => $canonicalUrl,
+                        'location_code' => (int) ($validated['location_code'] ?? 2840),
+                        'language_code' => (string) ($validated['language_code'] ?? 'en'),
+                        'crawl_cadence' => (string) ($validated['crawl_cadence'] ?? 'weekly'),
+                    ]);
+
+                    /** @var list<string> $rawCompetitors */
+                    $rawCompetitors = ! empty($validated['competitors']) ? (array) $validated['competitors'] : [];
+                    $currentCount = $existingProject->competitors()->count();
+                    $maxOrder = (int) ($existingProject->competitors()->max('sort_order') ?? 0);
+
+                    foreach ($rawCompetitors as $rawComp) {
+                        if ($currentCount >= 5) {
+                            break;
+                        }
+
+                        $compDomain = Project::normalizeDomain($rawComp);
+                        if ($compDomain === '' || $compDomain === $domain) {
+                            continue;
+                        }
+
+                        if (! $existingProject->competitors()->where('domain', $compDomain)->exists()) {
+                            $existingProject->competitors()->create([
+                                'domain' => $compDomain,
+                                'sort_order' => ++$maxOrder,
+                            ]);
+                            $currentCount++;
+                        }
+                    }
+                });
 
                 return redirect()->route('workspaces.projects.show', [$workspace, $existingProject])
                     ->with('success', "Project [{$existingProject->name}] restored successfully.");
