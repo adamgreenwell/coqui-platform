@@ -1027,4 +1027,44 @@ class SerpRankTrackerTest extends TestCase
             'status' => 'failed',
         ]);
     }
+
+    public function test_run_rank_batches_escapes_plus_and_percent_in_keywords(): void
+    {
+        config()->set('coqui.dataforseo.scheduled_spend', true);
+
+        $kw = TrackedKeyword::query()->create([
+            'project_id' => $this->project->id,
+            'keyword' => 'C++ 100% tutorial',
+            'device' => 'desktop',
+            'location_code' => 2840,
+            'language_code' => 'en',
+            'cadence' => 'daily',
+            'is_active' => true,
+        ]);
+
+        $taskId = (string) Str::uuid();
+
+        Http::fake([
+            'https://sandbox.dataforseo.com/v3/serp/google/organic/task_post' => Http::response([
+                'status_code' => 20000,
+                'status_message' => 'Ok.',
+                'tasks' => [
+                    ['id' => $taskId, 'status_code' => 20000],
+                ],
+            ], 200),
+        ]);
+
+        $this->artisan('dataforseo:run-rank-batches', ['--project' => $this->project->id])
+            ->assertSuccessful();
+
+        Http::assertSent(function ($request): bool {
+            $data = $request->data();
+
+            return isset($data[0]['keyword'])
+                && $data[0]['keyword'] === 'C%2B%2B 100%25 tutorial';
+        });
+
+        // The stored keyword in database must remain unchanged
+        $this->assertSame('C++ 100% tutorial', $kw->fresh()->keyword);
+    }
 }

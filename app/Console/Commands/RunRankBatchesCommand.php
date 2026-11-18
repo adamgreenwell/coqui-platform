@@ -123,8 +123,10 @@ class RunRankBatchesCommand extends Command
                     $token = Str::random(32);
                     $callbackUrl = route('webhooks.dataforseo', ['token' => $token]);
 
+                    $escapedKeyword = str_replace(['%', '+'], ['%25', '%2B'], $kw->keyword);
+
                     $tasksPayload[] = [
-                        'keyword' => $kw->keyword,
+                        'keyword' => $escapedKeyword,
                         'device' => $kw->device,
                         'location_code' => $kw->location_code,
                         'language_code' => $kw->language_code,
