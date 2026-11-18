@@ -15,6 +15,7 @@ use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
@@ -57,10 +58,16 @@ class TrackedKeywordController extends Controller
 
         $keywordIds = $trackedKeywords->pluck('id')->all();
 
+        $subQuery = KeywordRankSnapshot::query()
+            ->select('*')
+            ->selectRaw('ROW_NUMBER() OVER (PARTITION BY tracked_keyword_id, domain ORDER BY checked_on DESC) as rn')
+            ->whereIn('tracked_keyword_id', $keywordIds);
+
         $allSnapshots = empty($keywordIds)
             ? collect()
             : KeywordRankSnapshot::query()
-                ->whereIn('tracked_keyword_id', $keywordIds)
+                ->fromSub($subQuery, 'ranked_snapshots')
+                ->where('rn', '<=', 2)
                 ->orderByDesc('checked_on')
                 ->get();
 
@@ -270,29 +277,41 @@ class TrackedKeywordController extends Controller
             ]);
         }
 
-        $createdCount = 0;
         foreach ($keywordList as $kw) {
-            $existing = TrackedKeyword::query()
-                ->where('project_id', $project->id)
-                ->where('keyword', $kw)
-                ->where('device', $device)
-                ->where('location_code', $locationCode)
-                ->where('language_code', $languageCode)
-                ->exists();
-
-            if (! $existing) {
-                TrackedKeyword::query()->create([
-                    'project_id' => $project->id,
-                    'keyword' => $kw,
-                    'device' => $device,
-                    'location_code' => $locationCode,
-                    'language_code' => $languageCode,
-                    'cadence' => $cadence,
-                    'is_active' => true,
+            if (mb_strlen($kw) > 255) {
+                throw ValidationException::withMessages([
+                    'keywords' => "The keyword '{$kw}' exceeds the maximum allowed length of 255 characters.",
                 ]);
-                $createdCount++;
             }
         }
+
+        $createdCount = DB::transaction(function () use ($keywordList, $project, $device, $locationCode, $languageCode, $cadence): int {
+            $count = 0;
+            foreach ($keywordList as $kw) {
+                $existing = TrackedKeyword::query()
+                    ->where('project_id', $project->id)
+                    ->where('keyword', $kw)
+                    ->where('device', $device)
+                    ->where('location_code', $locationCode)
+                    ->where('language_code', $languageCode)
+                    ->exists();
+
+                if (! $existing) {
+                    TrackedKeyword::query()->create([
+                        'project_id' => $project->id,
+                        'keyword' => $kw,
+                        'device' => $device,
+                        'location_code' => $locationCode,
+                        'language_code' => $languageCode,
+                        'cadence' => $cadence,
+                        'is_active' => true,
+                    ]);
+                    $count++;
+                }
+            }
+
+            return $count;
+        });
 
         ProjectActivity::log(
             project: $project,

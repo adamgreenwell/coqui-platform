@@ -55,7 +55,7 @@ class RecordSerpRankSnapshots
                     'rank_group' => $data['rank_group'],
                     'rank_absolute' => $data['rank_absolute'],
                     'ranking_url' => $data['ranking_url'],
-                    'ranking_title' => $data['ranking_title'],
+                    'ranking_title' => $data['ranking_title'] !== null ? Str::limit((string) $data['ranking_title'], 255, '') : null,
                     'has_ai_overview' => $data['has_ai_overview'],
                     'has_featured_snippet' => $data['has_featured_snippet'],
                     'serp_features' => $data['serp_features'],

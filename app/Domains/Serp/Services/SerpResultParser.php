@@ -42,8 +42,21 @@ class SerpResultParser
         foreach ($allDomains as $domain) {
             $matchingItem = $this->findBestMatchingItem($items, $domain);
 
-            $hasAiOverview = in_array($domain, $aiOverviewCitedDomains, true);
-            $hasFeaturedSnippet = in_array($domain, $featuredSnippetOwners, true);
+            $hasAiOverview = false;
+            foreach ($aiOverviewCitedDomains as $citedDomain) {
+                if ($this->domainMatches($citedDomain, $domain)) {
+                    $hasAiOverview = true;
+                    break;
+                }
+            }
+
+            $hasFeaturedSnippet = false;
+            foreach ($featuredSnippetOwners as $snippetDomain) {
+                if ($this->domainMatches($snippetDomain, $domain)) {
+                    $hasFeaturedSnippet = true;
+                    break;
+                }
+            }
 
             $snapshots[$domain] = [
                 'domain' => $domain,

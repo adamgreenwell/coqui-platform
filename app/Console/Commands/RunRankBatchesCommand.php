@@ -15,7 +15,7 @@ class RunRankBatchesCommand extends Command
 {
     protected $signature = 'dataforseo:run-rank-batches
                             {--project= : Optional project ID to process}
-                            {--limit=100 : Maximum keywords to submit}
+                            {--limit= : Optional maximum keywords to submit}
                             {--force : Force dispatch ignoring cadence timing}';
 
     protected $description = 'Submit due rank tracking batches to DataForSEO standard queue.';
@@ -32,10 +32,11 @@ class RunRankBatchesCommand extends Command
         }
 
         $projectId = $this->option('project') ? (int) $this->option('project') : null;
-        $limit = max(1, (int) $this->option('limit'));
+        $limit = $this->option('limit') !== null ? max(1, (int) $this->option('limit')) : null;
         $force = (bool) $this->option('force');
 
         $query = TrackedKeyword::query()
+            ->whereHas('project')
             ->with(['project.workspace'])
             ->where('is_active', true);
 
@@ -57,7 +58,37 @@ class RunRankBatchesCommand extends Command
             });
         }
 
-        $keywords = $query->limit($limit)->get();
+        /** @var list<int> $pendingKeywordIds */
+        $pendingKeywordIds = DB::table('dataforseo_tasks')
+            ->where('task_type', 'serp_rank_tracking')
+            ->whereIn('status', ['pending', 'processing'])
+            ->pluck('request_context')
+            ->map(function ($context): ?int {
+                if (! $context) {
+                    return null;
+                }
+                /** @var array<string, mixed> $data */
+                $data = is_string($context) ? json_decode($context, true) : (array) $context;
+
+                return isset($data['tracked_keyword_id']) ? (int) $data['tracked_keyword_id'] : null;
+            })
+            ->filter()
+            ->values()
+            ->all();
+
+        if (! empty($pendingKeywordIds)) {
+            $query->whereNotIn('id', $pendingKeywordIds);
+        }
+
+        $query->orderByRaw('(CASE WHEN last_checked_at IS NULL THEN 0 ELSE 1 END) ASC')
+            ->orderBy('last_checked_at', 'asc')
+            ->orderBy('id', 'asc');
+
+        if ($limit !== null) {
+            $query->limit($limit);
+        }
+
+        $keywords = $query->get();
 
         if ($keywords->isEmpty()) {
             $this->info('No tracked keywords are currently due for rank tracking.');
@@ -81,66 +112,73 @@ class RunRankBatchesCommand extends Command
                 continue;
             }
 
-            $tasksPayload = [];
-            $tokenMap = [];
+            /** @var list<list<TrackedKeyword>> $chunks */
+            $chunks = array_chunk($kwList, 100);
 
-            foreach ($kwList as $kw) {
-                $token = Str::random(32);
-                $callbackUrl = route('webhooks.dataforseo', ['token' => $token]);
+            foreach ($chunks as $chunk) {
+                $tasksPayload = [];
+                $tokenMap = [];
 
-                $tasksPayload[] = [
-                    'keyword' => $kw->keyword,
-                    'device' => $kw->device,
-                    'location_code' => $kw->location_code,
-                    'language_code' => $kw->language_code,
-                    'postback_url' => $callbackUrl,
-                    'tag' => "kw:{$kw->id}",
-                ];
+                foreach ($chunk as $kw) {
+                    $token = Str::random(32);
+                    $callbackUrl = route('webhooks.dataforseo', ['token' => $token]);
 
-                $tokenMap[$kw->id] = $token;
-            }
-
-            try {
-                $response = $client->submitStandardSerpTasks($tasksPayload, $project, isScheduled: true);
-            } catch (Throwable $e) {
-                $this->error("Failed submitting SERP tasks for project {$project->id}: {$e->getMessage()}");
-
-                continue;
-            }
-
-            $returnedTasks = $response['tasks'] ?? [];
-
-            foreach ($returnedTasks as $index => $taskData) {
-                $externalTaskId = (string) ($taskData['id'] ?? '');
-                $kw = $kwList[$index] ?? null;
-
-                if ($externalTaskId === '' || $kw === null) {
-                    continue;
-                }
-
-                $token = $tokenMap[$kw->id] ?? Str::random(32);
-
-                DB::table('dataforseo_tasks')->insert([
-                    'workspace_id' => $project->workspace_id,
-                    'project_id' => $project->id,
-                    'external_task_id' => $externalTaskId,
-                    'endpoint' => '/v3/serp/google/organic/task_post',
-                    'task_type' => 'serp_rank_tracking',
-                    'status' => 'pending',
-                    'postback_token' => $token,
-                    'request_context' => json_encode([
-                        'tracked_keyword_id' => $kw->id,
+                    $tasksPayload[] = [
                         'keyword' => $kw->keyword,
                         'device' => $kw->device,
                         'location_code' => $kw->location_code,
-                    ], JSON_THROW_ON_ERROR),
-                    'result_payload' => null,
-                    'submitted_at' => now(),
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
+                        'language_code' => $kw->language_code,
+                        'depth' => 100,
+                        'postback_url' => $callbackUrl,
+                        'postback_data' => 'advanced',
+                        'tag' => "kw:{$kw->id}",
+                    ];
 
-                $submittedCount++;
+                    $tokenMap[$kw->id] = $token;
+                }
+
+                try {
+                    $response = $client->submitStandardSerpTasks($tasksPayload, $project, isScheduled: true);
+                } catch (Throwable $e) {
+                    $this->error("Failed submitting SERP tasks for project {$project->id}: {$e->getMessage()}");
+
+                    continue;
+                }
+
+                $returnedTasks = $response['tasks'] ?? [];
+
+                foreach ($returnedTasks as $index => $taskData) {
+                    $externalTaskId = (string) ($taskData['id'] ?? '');
+                    $kw = $chunk[$index] ?? null;
+
+                    if ($externalTaskId === '' || $kw === null) {
+                        continue;
+                    }
+
+                    $token = $tokenMap[$kw->id] ?? Str::random(32);
+
+                    DB::table('dataforseo_tasks')->insert([
+                        'workspace_id' => $project->workspace_id,
+                        'project_id' => $project->id,
+                        'external_task_id' => $externalTaskId,
+                        'endpoint' => '/v3/serp/google/organic/task_post',
+                        'task_type' => 'serp_rank_tracking',
+                        'status' => 'pending',
+                        'postback_token' => $token,
+                        'request_context' => json_encode([
+                            'tracked_keyword_id' => $kw->id,
+                            'keyword' => $kw->keyword,
+                            'device' => $kw->device,
+                            'location_code' => $kw->location_code,
+                        ], JSON_THROW_ON_ERROR),
+                        'result_payload' => null,
+                        'submitted_at' => now(),
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+
+                    $submittedCount++;
+                }
             }
         }
 

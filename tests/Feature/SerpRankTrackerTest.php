@@ -89,22 +89,22 @@ class SerpRankTrackerTest extends TestCase
                                 [
                                     'type' => 'ai_overview',
                                     'references' => [
-                                        ['domain' => 'coqui.io', 'url' => 'https://coqui.io/docs/voice'],
+                                        ['domain' => 'blog.coqui.io', 'url' => 'https://blog.coqui.io/docs/voice'],
                                         ['domain' => 'reference-source.com', 'url' => 'https://reference-source.com/speech'],
                                     ],
                                     'items' => [
                                         [
                                             'type' => 'ai_overview_element',
                                             'references' => [
-                                                ['domain' => 'competitor-b.org', 'url' => 'https://competitor-b.org/voice-overview'],
+                                                ['domain' => 'voice.competitor-b.org', 'url' => 'https://voice.competitor-b.org/overview'],
                                             ],
                                         ],
                                     ],
                                 ],
                                 [
                                     'type' => 'featured_snippet',
-                                    'domain' => 'competitor-a.com',
-                                    'url' => 'https://competitor-a.com/features',
+                                    'domain' => 'features.competitor-a.com',
+                                    'url' => 'https://features.competitor-a.com/features',
                                     'rank_group' => 1,
                                     'rank_absolute' => 1,
                                     'title' => 'Top Voice Tools by Comp A',
@@ -620,5 +620,106 @@ class SerpRankTrackerTest extends TestCase
         $this->actingAs($outsider)
             ->getJson(route('workspaces.projects.keywords.snapshots', [$this->workspace, $this->project, $kw]))
             ->assertForbidden();
+    }
+
+    public function test_run_rank_batches_excludes_soft_deleted_projects_and_keywords_with_pending_tasks(): void
+    {
+        config()->set('coqui.dataforseo.scheduled_spend', true);
+
+        // 1. Keyword for an active project
+        $eligibleKw = TrackedKeyword::query()->create([
+            'project_id' => $this->project->id,
+            'keyword' => 'eligible active keyword',
+            'device' => 'desktop',
+            'location_code' => 2840,
+            'language_code' => 'en',
+            'cadence' => 'daily',
+            'is_active' => true,
+        ]);
+
+        // 2. Keyword with an outstanding pending DataForSEO task
+        $pendingKw = TrackedKeyword::query()->create([
+            'project_id' => $this->project->id,
+            'keyword' => 'pending task keyword',
+            'device' => 'desktop',
+            'location_code' => 2840,
+            'language_code' => 'en',
+            'cadence' => 'daily',
+            'is_active' => true,
+        ]);
+
+        DB::table('dataforseo_tasks')->insert([
+            'workspace_id' => $this->workspace->id,
+            'project_id' => $this->project->id,
+            'external_task_id' => (string) Str::uuid(),
+            'endpoint' => '/v3/serp/google/organic/task_post',
+            'task_type' => 'serp_rank_tracking',
+            'status' => 'pending',
+            'postback_token' => Str::random(32),
+            'request_context' => json_encode(['tracked_keyword_id' => $pendingKw->id], JSON_THROW_ON_ERROR),
+            'result_payload' => null,
+            'submitted_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        // 3. Keyword belonging to a soft-deleted project
+        $deletedProject = Project::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'name' => 'Deleted Project',
+            'domain' => 'deleted.com',
+            'canonical_url' => 'https://deleted.com/',
+        ]);
+        $deletedProjectKw = TrackedKeyword::query()->create([
+            'project_id' => $deletedProject->id,
+            'keyword' => 'deleted project keyword',
+            'device' => 'desktop',
+            'location_code' => 2840,
+            'language_code' => 'en',
+            'cadence' => 'daily',
+            'is_active' => true,
+        ]);
+        $deletedProject->delete(); // soft delete
+
+        $taskId = (string) Str::uuid();
+
+        Http::fake([
+            'https://sandbox.dataforseo.com/v3/serp/google/organic/task_post' => Http::response([
+                'status_code' => 20000,
+                'status_message' => 'Ok.',
+                'tasks' => [
+                    ['id' => $taskId, 'status_code' => 20000],
+                ],
+            ], 200),
+        ]);
+
+        $this->artisan('dataforseo:run-rank-batches')
+            ->assertSuccessful()
+            ->expectsOutputToContain('Found 1 keywords due for rank tracking')
+            ->expectsOutputToContain('Successfully submitted 1 SERP rank tracking tasks');
+
+        Http::assertSent(function ($request) use ($eligibleKw): bool {
+            $data = $request->data();
+
+            return count($data) === 1
+                && $data[0]['keyword'] === $eligibleKw->keyword
+                && $data[0]['postback_data'] === 'advanced'
+                && $data[0]['depth'] === 100;
+        });
+    }
+
+    public function test_bulk_keyword_store_rejects_keywords_exceeding_255_chars(): void
+    {
+        $oversizedKeyword = str_repeat('a', 256);
+
+        $response = $this->actingAs($this->owner)
+            ->post(route('workspaces.projects.keywords.store', [$this->workspace, $this->project]), [
+                'keywords' => "valid-keyword\n{$oversizedKeyword}",
+            ]);
+
+        $response->assertSessionHasErrors(['keywords']);
+        $this->assertDatabaseMissing('tracked_keywords', [
+            'keyword' => 'valid-keyword',
+        ]);
     }
 }

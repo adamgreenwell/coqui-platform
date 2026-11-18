@@ -36,27 +36,49 @@ class DataForSeoWebhookController extends Controller
 
         $payload = $request->all();
 
-        DB::table('dataforseo_tasks')
-            ->where('id', $task->id)
-            ->update([
-                'status' => 'collected',
-                'result_payload' => json_encode($payload, JSON_THROW_ON_ERROR),
-                'collected_at' => now(),
-                'updated_at' => now(),
-            ]);
+        /** @var array<string, mixed>|null $firstTask */
+        $firstTask = $payload['tasks'][0] ?? null;
+        if (is_array($firstTask)) {
+            $taskStatusCode = (int) ($firstTask['status_code'] ?? 20000);
+            if ($taskStatusCode >= 40000) {
+                DB::table('dataforseo_tasks')
+                    ->where('id', $task->id)
+                    ->update([
+                        'status' => 'failed',
+                        'result_payload' => json_encode($payload, JSON_THROW_ON_ERROR),
+                        'updated_at' => now(),
+                    ]);
 
-        if ($task->task_type === 'serp_rank_tracking' && is_string($task->request_context)) {
-            /** @var array<string, mixed> $context */
-            $context = json_decode($task->request_context, true) ?? [];
-            $trackedKeywordId = isset($context['tracked_keyword_id']) ? (int) $context['tracked_keyword_id'] : null;
-
-            if ($trackedKeywordId !== null) {
-                $trackedKeyword = TrackedKeyword::query()->find($trackedKeywordId);
-                if ($trackedKeyword !== null) {
-                    app(RecordSerpRankSnapshots::class)->handle($trackedKeyword, $payload);
-                }
+                return response()->json([
+                    'status' => 'failed',
+                    'message' => $firstTask['status_message'] ?? 'DataForSEO task failed.',
+                ], 422);
             }
         }
+
+        DB::transaction(function () use ($task, $payload): void {
+            if ($task->task_type === 'serp_rank_tracking' && is_string($task->request_context)) {
+                /** @var array<string, mixed> $context */
+                $context = json_decode($task->request_context, true) ?? [];
+                $trackedKeywordId = isset($context['tracked_keyword_id']) ? (int) $context['tracked_keyword_id'] : null;
+
+                if ($trackedKeywordId !== null) {
+                    $trackedKeyword = TrackedKeyword::query()->find($trackedKeywordId);
+                    if ($trackedKeyword !== null) {
+                        app(RecordSerpRankSnapshots::class)->handle($trackedKeyword, $payload);
+                    }
+                }
+            }
+
+            DB::table('dataforseo_tasks')
+                ->where('id', $task->id)
+                ->update([
+                    'status' => 'collected',
+                    'result_payload' => json_encode($payload, JSON_THROW_ON_ERROR),
+                    'collected_at' => now(),
+                    'updated_at' => now(),
+                ]);
+        });
 
         return response()->json(['status' => 'accepted']);
     }
