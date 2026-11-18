@@ -37,7 +37,7 @@ Coqui SEO splits the web into two layers so you get Ahrefs/Moz-class intelligenc
 - [Development plan & 5-phase roadmap](docs/development-plan.md)
 - [Desktop ↔ Cloud sync contract](docs/desktop-sync-contract.md)
 - [Roadmap matrix CSV](docs/reference/roadmap-matrix.csv)
-- [Backlog issues](https://github.com/adamgreenwell/coqui-platform/issues)
+- [Backlog issues](https://github.com/adamgreenwell/coqui-platform/issues) and [Project board](https://github.com/users/adamgreenwell/projects/17/views/1?layout_template=board)
 
 ## Local & Coolify Setup
 

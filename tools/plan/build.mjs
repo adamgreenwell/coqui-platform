@@ -147,7 +147,7 @@ const devPlan = [
   '',
   '**Coqui SEO Platform** (`coquiseo.com` / `app.coquiseo.com`) is the cloud SEO, SERP intelligence, and hybrid crawl platform built with **Laravel 13** to complement the [Coqui](https://github.com/adamgreenwell/coqui) Rust/Tauri desktop crawler and integrate natively with the Runnr hosting platform.',
   '',
-  '- **Backlog:** 6 epics and 24 feature issues tracked on the Coqui SEO Platform GitHub Project board.',
+  '- **Backlog:** 6 epics and 24 feature issues tracked on the [Coqui SEO Platform project board](https://github.com/users/adamgreenwell/projects/17/views/1?layout_template=board).',
   '- **Stack:** Laravel 13 (PHP 8.4), Inertia v3 + React 19, PostgreSQL 17, Redis + Laravel Horizon, Laravel Reverb, Sanctum, and a headless Rust `coqui-worker` sidecar.',
   '- **MVP Infrastructure:** Bare-metal server running Coolify via Docker Compose, transitioning to horizontally scaled worker/DB nodes at public launch.',
   '',
