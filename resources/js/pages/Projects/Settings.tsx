@@ -289,9 +289,10 @@ export default function ProjectSettings({
                 />
                 <input
                   type="text"
+                  maxLength={100}
                   value={competitorForm.data.label}
                   onChange={(e) => competitorForm.setData('label', e.target.value)}
-                  placeholder="Label (optional)"
+                  placeholder="Label (max 100 chars)"
                   className="w-full sm:w-44 px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                 />
                 <button

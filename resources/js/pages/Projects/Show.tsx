@@ -365,16 +365,18 @@ export default function ProjectShow({
 
                 <div>
                   <label htmlFor="comp-label" className="block text-xs font-medium text-slate-300">
-                    Label <span className="text-slate-500">(Optional)</span>
+                    Label <span className="text-slate-500">(Optional, max 100 chars)</span>
                   </label>
                   <input
                     id="comp-label"
                     type="text"
+                    maxLength={100}
                     value={data.label}
                     onChange={(e) => setData('label', e.target.value)}
                     className="mt-1 block w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/50"
                     placeholder="Primary Competitor"
                   />
+                  {errors.label && <p className="mt-1 text-xs text-red-400">{errors.label}</p>}
                 </div>
 
                 <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-800">
