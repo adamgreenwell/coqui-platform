@@ -3,6 +3,8 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\ProjectCompetitorController;
+use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\SanctumTokenController;
 use App\Http\Controllers\WorkspaceController;
 use App\Http\Controllers\WorkspaceMemberController;
@@ -29,4 +31,15 @@ Route::middleware(['auth'])->group(function (): void {
     Route::get('/workspaces/{workspace}/tokens', [SanctumTokenController::class, 'index'])->name('workspaces.tokens.index');
     Route::post('/workspaces/{workspace}/tokens', [SanctumTokenController::class, 'store'])->name('workspaces.tokens.store');
     Route::delete('/workspaces/{workspace}/tokens/{token}', [SanctumTokenController::class, 'destroy'])->name('workspaces.tokens.destroy');
+
+    Route::get('/workspaces/{workspace}/projects/create', [ProjectController::class, 'create'])->name('workspaces.projects.create');
+    Route::post('/workspaces/{workspace}/projects', [ProjectController::class, 'store'])->name('workspaces.projects.store');
+    Route::get('/workspaces/{workspace}/projects/{project}', [ProjectController::class, 'show'])->name('workspaces.projects.show');
+    Route::get('/workspaces/{workspace}/projects/{project}/settings', [ProjectController::class, 'edit'])->name('workspaces.projects.settings');
+    Route::put('/workspaces/{workspace}/projects/{project}', [ProjectController::class, 'update'])->name('workspaces.projects.update');
+    Route::delete('/workspaces/{workspace}/projects/{project}', [ProjectController::class, 'destroy'])->name('workspaces.projects.destroy');
+
+    Route::post('/workspaces/{workspace}/projects/{project}/competitors', [ProjectCompetitorController::class, 'store'])->name('workspaces.projects.competitors.store');
+    Route::post('/workspaces/{workspace}/projects/{project}/competitors/reorder', [ProjectCompetitorController::class, 'reorder'])->name('workspaces.projects.competitors.reorder');
+    Route::delete('/workspaces/{workspace}/projects/{project}/competitors/{competitor}', [ProjectCompetitorController::class, 'destroy'])->name('workspaces.projects.competitors.destroy');
 });

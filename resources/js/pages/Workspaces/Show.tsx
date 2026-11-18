@@ -193,28 +193,52 @@ export default function WorkspaceShow({
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h2 className="text-base font-semibold text-white">Active Projects</h2>
+            <Link
+              href={`/workspaces/${workspace.id}/projects/create`}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs transition shadow-lg shadow-emerald-500/10 cursor-pointer"
+            >
+              <Plus className="h-3.5 w-3.5" />
+              <span>New Project</span>
+            </Link>
           </div>
 
           {projects.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/20 p-8 text-center">
+            <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-900/20 p-8 text-center space-y-3">
               <FolderKanban className="mx-auto h-8 w-8 text-slate-600" />
-              <h3 className="mt-3 text-sm font-semibold text-white">No projects yet</h3>
-              <p className="mt-1 text-xs text-slate-400 max-w-sm mx-auto">
-                Add a domain or connect Coqui Desktop using a personal access token to automatically sync crawls into this workspace.
-              </p>
+              <div>
+                <h3 className="text-sm font-semibold text-white">No projects yet</h3>
+                <p className="mt-1 text-xs text-slate-400 max-w-sm mx-auto">
+                  Add a domain or connect Coqui Desktop using a personal access token to automatically sync crawls into this workspace.
+                </p>
+              </div>
+              <div>
+                <Link
+                  href={`/workspaces/${workspace.id}/projects/create`}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs transition cursor-pointer"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Create First Project</span>
+                </Link>
+              </div>
             </div>
           ) : (
             <div className="rounded-xl border border-slate-800 bg-slate-900/60 overflow-hidden divide-y divide-slate-800">
               {projects.map((p) => (
-                <div key={p.id} className="p-4 flex items-center justify-between hover:bg-slate-800/40 transition">
+                <Link
+                  key={p.id}
+                  href={`/workspaces/${workspace.id}/projects/${p.id}`}
+                  className="p-4 flex items-center justify-between hover:bg-slate-800/50 transition group block"
+                >
                   <div>
-                    <h4 className="text-sm font-semibold text-white">{p.name}</h4>
+                    <h4 className="text-sm font-semibold text-white group-hover:text-emerald-300 transition">
+                      {p.name}
+                    </h4>
                     <p className="text-xs text-slate-400 font-mono">{p.domain}</p>
                   </div>
                   <div className="text-right text-xs text-slate-500">
                     {p.last_crawled_at ? `Crawled ${new Date(p.last_crawled_at).toLocaleDateString()}` : 'Never crawled'}
                   </div>
-                </div>
+                </Link>
               ))}
             </div>
           )}

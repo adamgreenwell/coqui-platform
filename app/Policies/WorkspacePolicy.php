@@ -34,6 +34,11 @@ class WorkspacePolicy
         return $this->hasRole($user, $workspace, ['owner', 'admin', 'editor']);
     }
 
+    public function createProjects(User $user, Workspace $workspace): bool
+    {
+        return $this->hasRole($user, $workspace, ['owner', 'admin', 'editor']);
+    }
+
     private function isMember(User $user, Workspace $workspace): bool
     {
         if ($workspace->owner_id === $user->id) {

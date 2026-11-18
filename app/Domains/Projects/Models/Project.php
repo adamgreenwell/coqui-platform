@@ -8,6 +8,7 @@ use App\Domains\Backlinks\Models\MonitoredBacklink;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Integrations\Models\ProjectIntegration;
 use App\Domains\Serp\Models\TrackedKeyword;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -23,6 +24,10 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property string $language_code
  * @property string $crawl_cadence
  * @property string|null $runnr_site_id
+ * @property \Carbon\CarbonInterface|null $last_crawled_at
+ * @property \Carbon\CarbonInterface|null $deleted_at
+ * @property \Carbon\CarbonInterface|null $created_at
+ * @property \Carbon\CarbonInterface|null $updated_at
  */
 class Project extends Model
 {
@@ -110,5 +115,14 @@ class Project extends Model
         $host = parse_url($trimmed, PHP_URL_HOST);
 
         return strtolower(preg_replace('/^www\./i', '', is_string($host) ? $host : $input) ?? $input);
+    }
+
+    public static function normalizeCanonicalUrl(string $input): string
+    {
+        $domain = static::normalizeDomain($input);
+        $scheme = parse_url(trim($input), PHP_URL_SCHEME);
+        $protocol = is_string($scheme) && strtolower($scheme) === 'http' ? 'http' : 'https';
+
+        return "{$protocol}://{$domain}/";
     }
 }
