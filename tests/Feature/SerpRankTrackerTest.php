@@ -92,6 +92,14 @@ class SerpRankTrackerTest extends TestCase
                                         ['domain' => 'coqui.io', 'url' => 'https://coqui.io/docs/voice'],
                                         ['domain' => 'reference-source.com', 'url' => 'https://reference-source.com/speech'],
                                     ],
+                                    'items' => [
+                                        [
+                                            'type' => 'ai_overview_element',
+                                            'references' => [
+                                                ['domain' => 'competitor-b.org', 'url' => 'https://competitor-b.org/voice-overview'],
+                                            ],
+                                        ],
+                                    ],
                                 ],
                                 [
                                     'type' => 'featured_snippet',
@@ -151,12 +159,12 @@ class SerpRankTrackerTest extends TestCase
         $this->assertTrue($compASnap['has_featured_snippet']);
         $this->assertFalse($compASnap['has_ai_overview']);
 
-        // Check competitor B snapshot (unranked >100)
+        // Check competitor B snapshot (unranked >100, but cited in nested AIO)
         $compBSnap = $res['domain_snapshots']['competitor-b.org'];
         $this->assertNull($compBSnap['rank_group']);
         $this->assertNull($compBSnap['rank_absolute']);
         $this->assertNull($compBSnap['ranking_url']);
-        $this->assertFalse($compBSnap['has_ai_overview']);
+        $this->assertTrue($compBSnap['has_ai_overview']);
         $this->assertFalse($compBSnap['has_featured_snippet']);
     }
 

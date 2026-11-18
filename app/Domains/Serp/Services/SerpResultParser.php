@@ -175,6 +175,21 @@ class SerpResultParser
                         if ($domain !== '') {
                             $domains[] = $this->normalizeDomain($domain);
                         }
+
+                        // Element-specific nested references array
+                        if (isset($subItem['references']) && is_array($subItem['references'])) {
+                            foreach ($subItem['references'] as $subRef) {
+                                if (is_array($subRef)) {
+                                    $refDomain = (string) ($subRef['domain'] ?? '');
+                                    if ($refDomain === '' && isset($subRef['url'])) {
+                                        $refDomain = (string) parse_url((string) $subRef['url'], PHP_URL_HOST);
+                                    }
+                                    if ($refDomain !== '') {
+                                        $domains[] = $this->normalizeDomain($refDomain);
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
