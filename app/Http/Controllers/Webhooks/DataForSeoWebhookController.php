@@ -17,12 +17,9 @@ class DataForSeoWebhookController extends Controller
     {
         /** @var array<string, mixed> $payload */
         $payload = [];
-        $rawContent = $request->getContent();
+        $rawContent = (string) $request->getContent();
 
-        if (is_string($rawContent) && (
-            $request->header('Content-Encoding') === 'gzip'
-            || str_starts_with($rawContent, "\x1f\x8b")
-        )) {
+        if ($request->header('Content-Encoding') === 'gzip' || str_starts_with($rawContent, "\x1f\x8b")) {
             $decompressed = @gzdecode($rawContent);
             if ($decompressed !== false) {
                 /** @var array<string, mixed>|null $decoded */
