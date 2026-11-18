@@ -33,7 +33,7 @@ class ProjectCompetitorController extends Controller
 
         if ($compDomain === '') {
             return back()->withErrors([
-                'domain' => 'Please provide a valid competitor domain.',
+                'domain' => 'Please provide a valid competitor domain or URL (e.g. competitor.com).',
             ]);
         }
 

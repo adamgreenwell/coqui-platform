@@ -105,21 +105,43 @@ class Project extends Model
         return $this->hasMany(ProjectIntegration::class);
     }
 
+    public static function isValidDomain(string $domain): bool
+    {
+        return filter_var($domain, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME) !== false
+            && str_contains($domain, '.')
+            && ! str_starts_with($domain, '.')
+            && ! str_ends_with($domain, '.')
+            && ! str_contains($domain, ' ');
+    }
+
     public static function normalizeDomain(string $input): string
     {
         $trimmed = trim($input);
+        if ($trimmed === '' || $trimmed === 'https://' || $trimmed === 'http://') {
+            return '';
+        }
+
         if (! str_contains($trimmed, '://')) {
             $trimmed = 'https://'.$trimmed;
         }
 
         $host = parse_url($trimmed, PHP_URL_HOST);
+        if (! is_string($host) || $host === '') {
+            return '';
+        }
 
-        return strtolower(preg_replace('/^www\./i', '', is_string($host) ? $host : $input) ?? $input);
+        $domain = strtolower(preg_replace('/^www\./i', '', $host) ?? $host);
+
+        return static::isValidDomain($domain) ? $domain : '';
     }
 
     public static function normalizeCanonicalUrl(string $input): string
     {
         $domain = static::normalizeDomain($input);
+        if ($domain === '') {
+            return '';
+        }
+
         $scheme = parse_url(trim($input), PHP_URL_SCHEME);
         $protocol = is_string($scheme) && strtolower($scheme) === 'http' ? 'http' : 'https';
 

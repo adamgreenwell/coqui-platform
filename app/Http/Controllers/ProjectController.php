@@ -49,15 +49,31 @@ class ProjectController extends Controller
         ]);
 
         $domain = Project::normalizeDomain((string) $validated['url']);
-        $canonicalUrl = Project::normalizeCanonicalUrl((string) $validated['url']);
-
         if ($domain === '') {
             throw ValidationException::withMessages([
-                'url' => 'A valid domain or website URL is required.',
+                'url' => 'Please provide a valid website domain or URL (e.g. example.com).',
             ]);
         }
 
-        if ($workspace->projects()->where('domain', $domain)->exists()) {
+        $canonicalUrl = Project::normalizeCanonicalUrl((string) $validated['url']);
+
+        /** @var Project|null $existingProject */
+        $existingProject = $workspace->projects()->withTrashed()->where('domain', $domain)->first();
+        if ($existingProject !== null) {
+            if ($existingProject->trashed()) {
+                $existingProject->restore();
+                $existingProject->update([
+                    'name' => (string) $validated['name'],
+                    'canonical_url' => $canonicalUrl,
+                    'location_code' => (int) ($validated['location_code'] ?? 2840),
+                    'language_code' => (string) ($validated['language_code'] ?? 'en'),
+                    'crawl_cadence' => (string) ($validated['crawl_cadence'] ?? 'weekly'),
+                ]);
+
+                return redirect()->route('workspaces.projects.show', [$workspace, $existingProject])
+                    ->with('success', "Project [{$existingProject->name}] restored successfully.");
+            }
+
             throw ValidationException::withMessages([
                 'url' => "A project with domain [{$domain}] already exists in this workspace.",
             ]);

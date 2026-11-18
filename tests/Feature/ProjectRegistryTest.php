@@ -52,6 +52,21 @@ class ProjectRegistryTest extends TestCase
         $this->assertCount(2, $project->competitors);
         $this->assertTrue($project->competitors()->where('domain', 'rival-one.co.uk')->exists());
         $this->assertTrue($project->competitors()->where('domain', 'rival-two.co.uk')->exists());
+
+        // Malformed inputs are rejected
+        $this->actingAs($user)
+            ->post("/workspaces/{$workspace->id}/projects", [
+                'name' => 'Malformed URL',
+                'url' => 'https://',
+            ])
+            ->assertSessionHasErrors(['url']);
+
+        $this->actingAs($user)
+            ->post("/workspaces/{$workspace->id}/projects", [
+                'name' => 'Space in domain',
+                'url' => 'not a domain at all',
+            ])
+            ->assertSessionHasErrors(['url']);
     }
 
     public function test_project_domain_is_unique_within_workspace_but_allowed_across_different_workspaces(): void
@@ -224,6 +239,23 @@ class ProjectRegistryTest extends TestCase
         $this->actingAs($user)
             ->get("/workspaces/{$workspace->id}/projects/{$project->id}")
             ->assertNotFound();
+
+        // Re-creating project with same domain restores it cleanly without unique constraint failure
+        $this->actingAs($user)
+            ->post("/workspaces/{$workspace->id}/projects", [
+                'name' => 'Restored Project',
+                'url' => 'https://delete-me.com',
+            ])
+            ->assertRedirect("/workspaces/{$workspace->id}/projects/{$project->id}");
+
+        $restored = Project::query()->findOrFail($project->id);
+        $this->assertFalse($restored->trashed());
+        $this->assertSame('Restored Project', $restored->name);
+
+        // Delete again before testing force delete cascade
+        $this->actingAs($user)
+            ->delete("/workspaces/{$workspace->id}/projects/{$project->id}")
+            ->assertRedirect("/workspaces/{$workspace->id}");
 
         // Force delete cleanly cascades and leaves no orphaned competitor or crawl records
         $project->forceDelete();
