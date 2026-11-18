@@ -37,6 +37,9 @@ class ProjectRealtimeAndActivityTest extends TestCase
         Broadcast::purge('null');
         Broadcast::purge('reverb');
 
+        // Re-register channel routes on the active reverb broadcaster
+        require base_path('routes/channels.php');
+
         try {
             /** @var User $owner */
             $owner = User::factory()->create();
@@ -71,21 +74,12 @@ class ProjectRealtimeAndActivityTest extends TestCase
             $this->assertFalse($outsider->can('view', $project));
 
             // Workspace private channel authorization
-            $ownerResponse = $this->actingAs($owner)
+            $this->actingAs($owner)
                 ->post('/broadcasting/auth', [
                     'channel_name' => "private-workspace.{$workspace->id}",
                     'socket_id' => '1234.5678',
-                ]);
-            if ($ownerResponse->status() !== 200) {
-                dump([
-                    'owner_auth_status' => $ownerResponse->status(),
-                    'owner_auth_content' => $ownerResponse->content(),
-                    'exception_class' => $ownerResponse->exception ? get_class($ownerResponse->exception) : null,
-                    'exception_message' => $ownerResponse->exception?->getMessage(),
-                    'exception_trace' => $ownerResponse->exception?->getTraceAsString(),
-                ]);
-            }
-            $ownerResponse->assertOk();
+                ])
+                ->assertOk();
 
             $this->actingAs($member)
                 ->post('/broadcasting/auth', [
