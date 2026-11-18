@@ -1,13 +1,13 @@
 # Development Roadmap
 
-Work is organized into **6 Epics** and **24 Feature Issues** tracked on [GitHub Project #17](https://github.com/users/adamgreenwell/projects/17/views/1?layout_template=board) and generated from `tools/plan/*.mjs`.
+Work is organized into **6 Epics** and **27 Feature Issues** tracked on [GitHub Project #17](https://github.com/users/adamgreenwell/projects/17/views/1?layout_template=board) and generated from `tools/plan/*.mjs`.
 
 ## Epics Overview
 
 | Epic | Phase | Priority | Title |
 | --- | --- | --- | --- |
 | `E01` | Phase 1 | P0 | Laravel 13 Foundation, Workspaces & Coolify Stack |
-| `E02` | Phase 1 | P0 | DataForSEO Client, Shared Cache & Spend Guard |
+| `E02` | Phase 1 | P0 | DataForSEO & SE Ranking Multi-Provider Core |
 | `E03` | Phase 2 | P0 | Rank Tracking, Keyword Explorer & GSC/Bing Overlay |
 | `E04` | Phase 3 | P1 | Coqui Desktop Sync & `coqui-worker` Cloud Crawler |
 | `E05` | Phase 4 | P1 | Backlink Intelligence & Active Link-Rot Watchlist |
@@ -15,15 +15,18 @@ Work is organized into **6 Epics** and **24 Feature Issues** tracked on [GitHub 
 
 ## Feature Matrix by Phase
 
-### Phase 1 — Foundation & DataForSEO Core
+### Phase 1 — Foundation & Multi-Provider Core
 - `F-01` Laravel 13 & Coolify Docker Compose stack
 - `F-02` Workspaces, RBAC, and Sanctum desktop auth
 - `F-03` Project and competitor registry
 - `F-04` Reverb realtime event stream & activity log
+- `F-05` Public MCP server (`laravel/mcp`) & Laravel Boost integration
 - `D-01` DataForSEO v3 HTTP client, sandbox toggle & archive
 - `D-02` Global cross-project DataForSEO cache repository
 - `D-03` DataForSEO Spend Guard & daily/monthly budget caps
 - `D-04` Standard-queue task postback webhook & collector
+- `D-05` SE Ranking Data API client, credit spend guard & payload bisector
+- `D-06` Multi-provider SEO router (SE Ranking keywords/domains + DataForSEO SERPs/backlinks)
 
 ### Phase 2 — Rank Tracking & Keyword Intelligence
 - `S-01` Automated multi-device rank tracker & SERP feature parser

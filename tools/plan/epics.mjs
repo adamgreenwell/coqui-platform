@@ -18,11 +18,11 @@ export const epics = [
   {
     id: 'E02',
     slug: 'dataforseo-core',
-    title: 'DataForSEO Client, Shared Cache & Spend Guard',
+    title: 'DataForSEO & SE Ranking Multi-Provider Core',
     summary:
-      'Unified DataForSEO REST v3 client (SERP, Labs, Backlinks), Standard-queue postback webhook ingestion, cross-project response caching, and strict daily/monthly budget caps.',
+      'Unified DataForSEO v3 and SE Ranking Data API clients, Standard-queue postback ingestion, cross-project response caching, strict credit/USD spend guards, and provider routing.',
     outcome:
-      'Every DataForSEO call goes through a single audited, budget-guarded client that maximizes Standard-queue savings and prevents duplicate paid lookups across projects.',
+      'Every DataForSEO and SE Ranking call goes through audited, budget-guarded clients that route keywords and domain checks to the lowest-cost provider while reserving SERP queues and backlinks for DataForSEO.',
     phase: 1,
     size: 'XL',
     priority: 'P0',

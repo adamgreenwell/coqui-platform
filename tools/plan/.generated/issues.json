@@ -4,7 +4,7 @@
       "key": "E01",
       "type": "epic",
       "title": "EPIC E01: Laravel 13 Foundation, Workspaces & Coolify Stack",
-      "body": "## Outcome\nA working Laravel 13 platform deployed on bare-metal Coolify where users can register workspaces, create SEO projects with competitors, and connect Coqui Desktop via Sanctum tokens.\n\n## Summary\nApplication scaffold, PostgreSQL 17 and Redis infrastructure, Horizon/Reverb workers, workspace multi-tenancy, Sanctum authentication for Coqui Desktop, and Coolify Docker Compose deployment.\n\n**Phase:** 1 | **Size:** XL | **Priority:** P0\n\n## Features in this epic\n- [ ] F-01 - Laravel 13 & Coolify Docker Compose stack\n- [ ] F-02 - Workspaces, RBAC, and Sanctum desktop auth\n- [ ] F-03 - Project and competitor registry\n- [ ] F-04 - Reverb realtime event stream & activity log\n\n## Definition of done\n- All child features closed with acceptance criteria met\n- Automated tests covering domain logic and API contracts passing in CI\n- Verified on the bare-metal Coolify staging stack",
+      "body": "## Outcome\nA working Laravel 13 platform deployed on bare-metal Coolify where users can register workspaces, create SEO projects with competitors, and connect Coqui Desktop via Sanctum tokens.\n\n## Summary\nApplication scaffold, PostgreSQL 17 and Redis infrastructure, Horizon/Reverb workers, workspace multi-tenancy, Sanctum authentication for Coqui Desktop, and Coolify Docker Compose deployment.\n\n**Phase:** 1 | **Size:** XL | **Priority:** P0\n\n## Features in this epic\n- [ ] F-01 - Laravel 13 & Coolify Docker Compose stack\n- [ ] F-02 - Workspaces, RBAC, and Sanctum desktop auth\n- [ ] F-03 - Project and competitor registry\n- [ ] F-04 - Reverb realtime event stream & activity log\n- [ ] F-05 - Public MCP server (laravel/mcp) & Laravel Boost integration\n\n## Definition of done\n- All child features closed with acceptance criteria met\n- Automated tests covering domain logic and API contracts passing in CI\n- Verified on the bare-metal Coolify staging stack",
       "labels": [
         "type/epic",
         "epic/foundation",
@@ -21,8 +21,8 @@
     {
       "key": "E02",
       "type": "epic",
-      "title": "EPIC E02: DataForSEO Client, Shared Cache & Spend Guard",
-      "body": "## Outcome\nEvery DataForSEO call goes through a single audited, budget-guarded client that maximizes Standard-queue savings and prevents duplicate paid lookups across projects.\n\n## Summary\nUnified DataForSEO REST v3 client (SERP, Labs, Backlinks), Standard-queue postback webhook ingestion, cross-project response caching, and strict daily/monthly budget caps.\n\n**Phase:** 1 | **Size:** XL | **Priority:** P0\n\n## Features in this epic\n- [ ] D-01 - DataForSEO v3 HTTP client, sandbox toggle & archive\n- [ ] D-02 - Global cross-project DataForSEO cache repository\n- [ ] D-03 - DataForSEO Spend Guard & daily/monthly budget caps\n- [ ] D-04 - Standard-queue task postback webhook & collector\n\n## Definition of done\n- All child features closed with acceptance criteria met\n- Automated tests covering domain logic and API contracts passing in CI\n- Verified on the bare-metal Coolify staging stack",
+      "title": "EPIC E02: DataForSEO & SE Ranking Multi-Provider Core",
+      "body": "## Outcome\nEvery DataForSEO and SE Ranking call goes through audited, budget-guarded clients that route keywords and domain checks to the lowest-cost provider while reserving SERP queues and backlinks for DataForSEO.\n\n## Summary\nUnified DataForSEO v3 and SE Ranking Data API clients, Standard-queue postback ingestion, cross-project response caching, strict credit/USD spend guards, and provider routing.\n\n**Phase:** 1 | **Size:** XL | **Priority:** P0\n\n## Features in this epic\n- [ ] D-01 - DataForSEO v3 HTTP client, sandbox toggle & archive\n- [ ] D-02 - Global cross-project DataForSEO cache repository\n- [ ] D-03 - DataForSEO Spend Guard & daily/monthly budget caps\n- [ ] D-04 - Standard-queue task postback webhook & collector\n- [ ] D-05 - SE Ranking Data API client, credit spend guard & payload bisector\n- [ ] D-06 - Multi-provider SEO router (SE Ranking keywords/domains + DataForSEO SERPs/backlinks)\n\n## Definition of done\n- All child features closed with acceptance criteria met\n- Automated tests covering domain logic and API contracts passing in CI\n- Verified on the bare-metal Coolify staging stack",
       "labels": [
         "type/epic",
         "epic/dataforseo-core",
@@ -187,10 +187,29 @@
       "epic": "E01"
     },
     {
+      "key": "F-05",
+      "type": "feature",
+      "title": "F-05 Public MCP server (laravel/mcp) & Laravel Boost integration",
+      "body": "## Summary\nPublic-facing Model Context Protocol server powered by laravel/mcp and Laravel Boost tooling so external AI agents can inspect project SEO status, crawl issues, and keyword routing.\n\n**Epic:** E01 - Laravel 13 Foundation, Workspaces & Coolify Stack\n**Phase:** 1 | **Size:** M | **Priority:** P1 | **Area:** platform\n\n## Scope\n- Install laravel/mcp and laravel/boost with boost.json agent configuration\n- Implement CoquiSeoServer exposing InspectProjectSeoTool, LookupKeywordMetricsTool, and ListCrawlIssuesTool\n- Expose Streamable HTTP / JSON-RPC transport at /mcp/coqui in routes/ai.php with optional Sanctum auth toggle\n- Register stdio local server coqui-seo for CLI/IDE agent integrations\n\n## Acceptance criteria\n- [ ] POST /mcp/coqui responds cleanly to tools/list and tool execution calls with structured JSON responses\n- [ ] Optional COQUI_MCP_REQUIRE_AUTH toggle gates public endpoint with Sanctum tokens when enabled\n- [ ] Boost guidelines and MCP registry stay aligned with domain models and provider routing\n\n## Dependencies\n- F-01\n- F-03\n\n<!--EPIC:E01-->",
+      "labels": [
+        "type/feature",
+        "epic/foundation",
+        "area/platform",
+        "phase/1",
+        "size/M",
+        "priority/P1"
+      ],
+      "milestone": "Phase 1 - Foundation & DataForSEO Core",
+      "phase": 1,
+      "size": "M",
+      "priority": "P1",
+      "epic": "E01"
+    },
+    {
       "key": "D-01",
       "type": "feature",
       "title": "D-01 DataForSEO v3 HTTP client, sandbox toggle & archive",
-      "body": "## Summary\nResilient HTTP client for DataForSEO REST v3 supporting sandbox vs production switching, idempotent retries on free reads, and raw payload archival.\n\n**Epic:** E02 - DataForSEO Client, Shared Cache & Spend Guard\n**Phase:** 1 | **Size:** L | **Priority:** P0 | **Area:** dataforseo\n\n## Scope\n- config/coqui.php configuration for login, password, base_url (defaulting to sandbox), timeouts, and pricing table\n- DataForSeoClient encapsulating auth headers, endpoint routing, and structured error/cost extraction\n- dataforseo_responses archive table storing endpoint, request hash, HTTP status, actual cost, and JSONB payload\n- Artisan smoke command (dataforseo:smoke) verifying credentials and account balance via appendix/user_data\n\n## Acceptance criteria\n- [ ] Live/POST endpoints never automatically retry on ambiguous timeouts to prevent double-billing\n- [ ] Every DataForSEO API response records the vendor-reported cost field in dataforseo_spend_ledger\n- [ ] Switching DATAFORSEO_API_BASE_URL to sandbox.dataforseo.com exercises full wiring at $0 cost\n\n## Dependencies\n- F-01\n\n<!--EPIC:E02-->",
+      "body": "## Summary\nResilient HTTP client for DataForSEO REST v3 supporting sandbox vs production switching, idempotent retries on free reads, and raw payload archival.\n\n**Epic:** E02 - DataForSEO & SE Ranking Multi-Provider Core\n**Phase:** 1 | **Size:** L | **Priority:** P0 | **Area:** dataforseo\n\n## Scope\n- config/coqui.php configuration for login, password, base_url (defaulting to sandbox), timeouts, and pricing table\n- DataForSeoClient encapsulating auth headers, endpoint routing, and structured error/cost extraction\n- dataforseo_responses archive table storing endpoint, request hash, HTTP status, actual cost, and JSONB payload\n- Artisan smoke command (dataforseo:smoke) verifying credentials and account balance via appendix/user_data\n\n## Acceptance criteria\n- [ ] Live/POST endpoints never automatically retry on ambiguous timeouts to prevent double-billing\n- [ ] Every DataForSEO API response records the vendor-reported cost field in dataforseo_spend_ledger\n- [ ] Switching DATAFORSEO_API_BASE_URL to sandbox.dataforseo.com exercises full wiring at $0 cost\n\n## Dependencies\n- F-01\n\n<!--EPIC:E02-->",
       "labels": [
         "type/feature",
         "epic/dataforseo-core",
@@ -209,7 +228,7 @@
       "key": "D-02",
       "type": "feature",
       "title": "D-02 Global cross-project DataForSEO cache repository",
-      "body": "## Summary\nShared PostgreSQL cache keyed by normalized query signature (endpoint + keyword/domain + location + language) with configurable TTLs so duplicate lookups cost $0.\n\n**Epic:** E02 - DataForSEO Client, Shared Cache & Spend Guard\n**Phase:** 1 | **Size:** M | **Priority:** P0 | **Area:** dataforseo\n\n## Scope\n- dataforseo_cache table indexed by cache_key hash and expires_at\n- Configurable TTL tiers: 30 days for keyword volume/overview, 14 days for domain metrics, 7 days for SERP snapshots\n- Cache hit/miss telemetry surfaced in admin spend diagnostics\n- Bypass flag (--fresh) limited to explicit user-triggered refreshes with budget checks\n\n## Acceptance criteria\n- [ ] Two projects looking up the same keyword in the same locale trigger only one DataForSEO Labs call within TTL\n- [ ] Expired cache entries fall back cleanly to fresh API calls without blocking concurrent readers\n\n## Dependencies\n- D-01\n\n<!--EPIC:E02-->",
+      "body": "## Summary\nShared PostgreSQL cache keyed by normalized query signature (endpoint + keyword/domain + location + language) with configurable TTLs so duplicate lookups cost $0.\n\n**Epic:** E02 - DataForSEO & SE Ranking Multi-Provider Core\n**Phase:** 1 | **Size:** M | **Priority:** P0 | **Area:** dataforseo\n\n## Scope\n- dataforseo_cache table indexed by cache_key hash and expires_at\n- Configurable TTL tiers: 30 days for keyword volume/overview, 14 days for domain metrics, 7 days for SERP snapshots\n- Cache hit/miss telemetry surfaced in admin spend diagnostics\n- Bypass flag (--fresh) limited to explicit user-triggered refreshes with budget checks\n\n## Acceptance criteria\n- [ ] Two projects looking up the same keyword in the same locale trigger only one DataForSEO Labs call within TTL\n- [ ] Expired cache entries fall back cleanly to fresh API calls without blocking concurrent readers\n\n## Dependencies\n- D-01\n\n<!--EPIC:E02-->",
       "labels": [
         "type/feature",
         "epic/dataforseo-core",
@@ -228,7 +247,7 @@
       "key": "D-03",
       "type": "feature",
       "title": "D-03 DataForSEO Spend Guard & daily/monthly budget caps",
-      "body": "## Summary\nPre-flight cost estimator and hard circuit-breaker blocking automated or user-triggered purchases when daily, monthly, or per-workspace limits are reached.\n\n**Epic:** E02 - DataForSEO Client, Shared Cache & Spend Guard\n**Phase:** 1 | **Size:** M | **Priority:** P0 | **Area:** dataforseo\n\n## Scope\n- DATAFORSEO_SCHEDULED_SPEND global kill-switch (default false outside production)\n- Per-workspace quota ledger plus global account daily/monthly spend caps\n- Pre-purchase cost estimation using config/coqui.php prices before submitting tasks\n- Structured refusal exceptions and admin alerts when balance or cap thresholds are breached\n\n## Acceptance criteria\n- [ ] Automated scheduled jobs never spend funds unless DATAFORSEO_SCHEDULED_SPEND=true\n- [ ] Requests exceeding remaining daily cap or workspace credits are rejected before hitting DataForSEO\n- [ ] Spend ledger reconciles recorded call costs against appendix/user_data balance checks\n\n## Dependencies\n- D-01\n\n<!--EPIC:E02-->",
+      "body": "## Summary\nPre-flight cost estimator and hard circuit-breaker blocking automated or user-triggered purchases when daily, monthly, or per-workspace limits are reached.\n\n**Epic:** E02 - DataForSEO & SE Ranking Multi-Provider Core\n**Phase:** 1 | **Size:** M | **Priority:** P0 | **Area:** dataforseo\n\n## Scope\n- DATAFORSEO_SCHEDULED_SPEND global kill-switch (default false outside production)\n- Per-workspace quota ledger plus global account daily/monthly spend caps\n- Pre-purchase cost estimation using config/coqui.php prices before submitting tasks\n- Structured refusal exceptions and admin alerts when balance or cap thresholds are breached\n\n## Acceptance criteria\n- [ ] Automated scheduled jobs never spend funds unless DATAFORSEO_SCHEDULED_SPEND=true\n- [ ] Requests exceeding remaining daily cap or workspace credits are rejected before hitting DataForSEO\n- [ ] Spend ledger reconciles recorded call costs against appendix/user_data balance checks\n\n## Dependencies\n- D-01\n\n<!--EPIC:E02-->",
       "labels": [
         "type/feature",
         "epic/dataforseo-core",
@@ -247,7 +266,7 @@
       "key": "D-04",
       "type": "feature",
       "title": "D-04 Standard-queue task postback webhook & collector",
-      "body": "## Summary\nAsynchronous task lifecycle handling Standard-queue DataForSEO submissions via signed postback webhooks with a fallback scheduled collector.\n\n**Epic:** E02 - DataForSEO Client, Shared Cache & Spend Guard\n**Phase:** 1 | **Size:** L | **Priority:** P0 | **Area:** dataforseo\n\n## Scope\n- dataforseo_tasks table tracking task_id, endpoint, status (pending|collected|failed), payload hash, and postback token\n- Signed webhook endpoint POST /api/webhooks/dataforseo dispatching collection jobs onto Horizon\n- Fallback Artisan command (dataforseo:collect-tasks) polling tasks_ready for any uncollected tasks older than threshold\n- Idempotent result ingestion ensuring duplicate webhooks do not duplicate rank snapshots\n\n## Acceptance criteria\n- [ ] Standard SERP tasks submit with postback_url and transition to collected upon webhook delivery\n- [ ] Tasks whose webhook was missed are automatically recovered by dataforseo:collect-tasks within 15 minutes\n- [ ] Duplicate postback deliveries for the same task_id are safely ignored\n\n## Dependencies\n- D-01\n- D-03\n\n<!--EPIC:E02-->",
+      "body": "## Summary\nAsynchronous task lifecycle handling Standard-queue DataForSEO submissions via signed postback webhooks with a fallback scheduled collector.\n\n**Epic:** E02 - DataForSEO & SE Ranking Multi-Provider Core\n**Phase:** 1 | **Size:** L | **Priority:** P0 | **Area:** dataforseo\n\n## Scope\n- dataforseo_tasks table tracking task_id, endpoint, status (pending|collected|failed), payload hash, and postback token\n- Signed webhook endpoint POST /api/webhooks/dataforseo dispatching collection jobs onto Horizon\n- Fallback Artisan command (dataforseo:collect-tasks) polling tasks_ready for any uncollected tasks older than threshold\n- Idempotent result ingestion ensuring duplicate webhooks do not duplicate rank snapshots\n\n## Acceptance criteria\n- [ ] Standard SERP tasks submit with postback_url and transition to collected upon webhook delivery\n- [ ] Tasks whose webhook was missed are automatically recovered by dataforseo:collect-tasks within 15 minutes\n- [ ] Duplicate postback deliveries for the same task_id are safely ignored\n\n## Dependencies\n- D-01\n- D-03\n\n<!--EPIC:E02-->",
       "labels": [
         "type/feature",
         "epic/dataforseo-core",
@@ -259,6 +278,44 @@
       "milestone": "Phase 1 - Foundation & DataForSEO Core",
       "phase": 1,
       "size": "L",
+      "priority": "P0",
+      "epic": "E02"
+    },
+    {
+      "key": "D-05",
+      "type": "feature",
+      "title": "D-05 SE Ranking Data API client, credit spend guard & payload bisector",
+      "body": "## Summary\nStandalone SE Ranking Data API adapter (Authorization: Token) with flat-batch keyword exports, payload-size bisection, 429 retry backoff, credit ledger, and append-only domain archive.\n\n**Epic:** E02 - DataForSEO & SE Ranking Multi-Provider Core\n**Phase:** 1 | **Size:** L | **Priority:** P0 | **Area:** dataforseo\n\n## Scope\n- SeRankingClient supporting /v1/keywords/export and /v1/domain/overview/db using standalone API credits\n- Automatic batch bisection down to 50 keywords when HTTP 400/413/414/422 hits the ~26KB payload limit\n- SeRankingSpendGuard enforcing SERANKING_SCHEDULED_SPEND kill-switch and daily/monthly credit caps\n- Append-only hash-deduplicated seranking_archive preserving point-in-time monthly domain captures\n\n## Acceptance criteria\n- [ ] A batch failing payload size checks automatically bisects and recovers without dropping valid keywords\n- [ ] 429 responses honor Retry-After up to 5 attempts without recording failed credit charges\n- [ ] Domain overview snapshots append by payload hash rather than overwriting prior months\n\n## Dependencies\n- F-01\n- D-02\n\n<!--EPIC:E02-->",
+      "labels": [
+        "type/feature",
+        "epic/dataforseo-core",
+        "area/dataforseo",
+        "phase/1",
+        "size/L",
+        "priority/P0"
+      ],
+      "milestone": "Phase 1 - Foundation & DataForSEO Core",
+      "phase": 1,
+      "size": "L",
+      "priority": "P0",
+      "epic": "E02"
+    },
+    {
+      "key": "D-06",
+      "type": "feature",
+      "title": "D-06 Multi-provider SEO router (SE Ranking keywords/domains + DataForSEO SERPs/backlinks)",
+      "body": "## Summary\nIntelligent query router partitioning ASCII vs non-ASCII/numeric keywords across SE Ranking flat batches and DataForSEO Labs while keeping Backlinks and SERP tracking exclusively on DataForSEO.\n\n**Epic:** E02 - DataForSEO & SE Ranking Multi-Provider Core\n**Phase:** 1 | **Size:** M | **Priority:** P0 | **Area:** dataforseo\n\n## Scope\n- SeRankingAcceptanceRule filtering machine queries, bare numbers, and non-ASCII terms before SE Ranking calls\n- SeoProviderRouter dispatching accepted batches to SE Ranking and rejected/overflow queries to DataForSEO\n- Unified response normalization with explicit provider provenance and credit/USD spend attribution\n- Clear separation ensuring Backlinks API and SERP Standard queues always use DataForSEO (no SE Ranking seat plan required)\n\n## Acceptance criteria\n- [ ] A mixed batch containing standard terms, non-ASCII trademarks, and bare years succeeds without failing SE Ranking\n- [ ] When SE Ranking API key is unconfigured, 100% of keyword lookups route seamlessly to DataForSEO\n- [ ] Backlinks and raw SERP tracking never depend on an SE Ranking regular subscription\n\n## Dependencies\n- D-01\n- D-05\n\n<!--EPIC:E02-->",
+      "labels": [
+        "type/feature",
+        "epic/dataforseo-core",
+        "area/dataforseo",
+        "phase/1",
+        "size/M",
+        "priority/P0"
+      ],
+      "milestone": "Phase 1 - Foundation & DataForSEO Core",
+      "phase": 1,
+      "size": "M",
       "priority": "P0",
       "epic": "E02"
     },

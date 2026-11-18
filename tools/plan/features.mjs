@@ -92,6 +92,29 @@ export const features = [
     ],
     deps: ['F-01', 'F-02'],
   },
+  {
+    id: 'F-05',
+    epic: 'E01',
+    title: 'Public MCP server (laravel/mcp) & Laravel Boost integration',
+    area: 'platform',
+    phase: 1,
+    size: 'M',
+    priority: 'P1',
+    summary:
+      'Public-facing Model Context Protocol server powered by laravel/mcp and Laravel Boost tooling so external AI agents can inspect project SEO status, crawl issues, and keyword routing.',
+    scope: [
+      'Install laravel/mcp and laravel/boost with boost.json agent configuration',
+      'Implement CoquiSeoServer exposing InspectProjectSeoTool, LookupKeywordMetricsTool, and ListCrawlIssuesTool',
+      'Expose Streamable HTTP / JSON-RPC transport at /mcp/coqui in routes/ai.php with optional Sanctum auth toggle',
+      'Register stdio local server coqui-seo for CLI/IDE agent integrations',
+    ],
+    acceptance: [
+      'POST /mcp/coqui responds cleanly to tools/list and tool execution calls with structured JSON responses',
+      'Optional COQUI_MCP_REQUIRE_AUTH toggle gates public endpoint with Sanctum tokens when enabled',
+      'Boost guidelines and MCP registry stay aligned with domain models and provider routing',
+    ],
+    deps: ['F-01', 'F-03'],
+  },
 
   // ---------------- E02 DataForSEO Core ----------------
   {
@@ -184,6 +207,52 @@ export const features = [
       'Duplicate postback deliveries for the same task_id are safely ignored',
     ],
     deps: ['D-01', 'D-03'],
+  },
+  {
+    id: 'D-05',
+    epic: 'E02',
+    title: 'SE Ranking Data API client, credit spend guard & payload bisector',
+    area: 'dataforseo',
+    phase: 1,
+    size: 'L',
+    priority: 'P0',
+    summary:
+      'Standalone SE Ranking Data API adapter (Authorization: Token) with flat-batch keyword exports, payload-size bisection, 429 retry backoff, credit ledger, and append-only domain archive.',
+    scope: [
+      'SeRankingClient supporting /v1/keywords/export and /v1/domain/overview/db using standalone API credits',
+      'Automatic batch bisection down to 50 keywords when HTTP 400/413/414/422 hits the ~26KB payload limit',
+      'SeRankingSpendGuard enforcing SERANKING_SCHEDULED_SPEND kill-switch and daily/monthly credit caps',
+      'Append-only hash-deduplicated seranking_archive preserving point-in-time monthly domain captures',
+    ],
+    acceptance: [
+      'A batch failing payload size checks automatically bisects and recovers without dropping valid keywords',
+      '429 responses honor Retry-After up to 5 attempts without recording failed credit charges',
+      'Domain overview snapshots append by payload hash rather than overwriting prior months',
+    ],
+    deps: ['F-01', 'D-02'],
+  },
+  {
+    id: 'D-06',
+    epic: 'E02',
+    title: 'Multi-provider SEO router (SE Ranking keywords/domains + DataForSEO SERPs/backlinks)',
+    area: 'dataforseo',
+    phase: 1,
+    size: 'M',
+    priority: 'P0',
+    summary:
+      'Intelligent query router partitioning ASCII vs non-ASCII/numeric keywords across SE Ranking flat batches and DataForSEO Labs while keeping Backlinks and SERP tracking exclusively on DataForSEO.',
+    scope: [
+      'SeRankingAcceptanceRule filtering machine queries, bare numbers, and non-ASCII terms before SE Ranking calls',
+      'SeoProviderRouter dispatching accepted batches to SE Ranking and rejected/overflow queries to DataForSEO',
+      'Unified response normalization with explicit provider provenance and credit/USD spend attribution',
+      'Clear separation ensuring Backlinks API and SERP Standard queues always use DataForSEO (no SE Ranking seat plan required)',
+    ],
+    acceptance: [
+      'A mixed batch containing standard terms, non-ASCII trademarks, and bare years succeeds without failing SE Ranking',
+      'When SE Ranking API key is unconfigured, 100% of keyword lookups route seamlessly to DataForSEO',
+      'Backlinks and raw SERP tracking never depend on an SE Ranking regular subscription',
+    ],
+    deps: ['D-01', 'D-05'],
   },
 
   // ---------------- E03 SERP Intelligence ----------------

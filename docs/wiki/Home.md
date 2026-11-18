@@ -16,6 +16,8 @@
 - [Product Direction](Product-Direction.md)
 - [Platform Architecture](Platform-Architecture.md)
 - [DataForSEO Integration and Cost Controls](DataForSEO-Integration-And-Cost-Controls.md)
+- [SE Ranking and Multi-Provider Routing](SE-Ranking-And-Multi-Provider-Routing.md)
+- [Public MCP Server and Laravel Boost](Public-MCP-Server-And-Laravel-Boost.md)
 - [Hybrid Crawler and Desktop Sync](Hybrid-Crawler-And-Desktop-Sync.md)
 - [Rank Tracking and Search Overlays](Rank-Tracking-And-Search-Overlays.md)
 - [Backlink Intelligence and Link Rot](Backlink-Intelligence-And-Link-Rot.md)

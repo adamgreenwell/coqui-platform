@@ -53,6 +53,47 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | SE Ranking Data API & Credit Controls
+    |--------------------------------------------------------------------------
+    |
+    | Used alongside DataForSEO for flat-batch keyword screening and domain
+    | organic visibility. Backlinks and SERP tracking stay on DataForSEO.
+    |
+    */
+    'seranking' => [
+        'api_key' => env('SERANKING_API_KEY'),
+        'base_url' => env('SERANKING_API_BASE_URL', 'https://api.seranking.com'),
+        'default_source' => env('SERANKING_SOURCE', 'us'),
+        'timeout' => (int) env('SERANKING_HTTP_TIMEOUT', 30),
+        'scheduled_spend' => (bool) env('SERANKING_SCHEDULED_SPEND', false),
+        'daily_credit_cap' => (int) env('SERANKING_DAILY_CREDIT_CAP', 5000),
+        'monthly_credit_cap' => (int) env('SERANKING_MONTHLY_CREDIT_CAP', 100000),
+        'batch_size' => (int) env('SERANKING_BATCH_SIZE', 1000),
+        'min_split_batch_size' => 50,
+        'cache_ttl_hours' => [
+            'keywords_export' => 24 * 30,
+            'domain_overview' => 24 * 14,
+        ],
+        'credit_costs' => [
+            'keywords_export' => 100,
+            'domain_overview' => 100,
+            'domain_competitors' => 100,
+            'domain_keywords' => 100,
+        ],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Public MCP Server Surface
+    |--------------------------------------------------------------------------
+    */
+    'mcp' => [
+        'path' => env('COQUI_MCP_PATH', '/mcp/coqui'),
+        'require_auth' => (bool) env('COQUI_MCP_REQUIRE_AUTH', false),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Headless Rust Cloud Worker (coqui-worker)
     |--------------------------------------------------------------------------
     */

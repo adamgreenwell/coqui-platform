@@ -26,7 +26,8 @@ Coqui SEO splits the web into two layers so you get Ahrefs/Moz-class intelligenc
 
 ## Stack
 
-- **Backend:** Laravel 13 (PHP 8.4), Horizon (Redis queues), Reverb (WebSockets), Sanctum (Coqui Desktop tokens), Fortify, Pennant
+- **Backend:** Laravel 13 (PHP 8.4), Horizon (Redis queues), Reverb (WebSockets), Sanctum (Coqui Desktop tokens), Fortify, Pennant, Laravel MCP (`laravel/mcp`), Laravel Boost
+- **SEO Data Providers:** DataForSEO v3 (SERP rank tracking, Backlinks API, Labs fallback) + SE Ranking Data API (flat-batch keywords & domain visibility)
 - **Frontend:** Inertia v3, React 19, TypeScript, Tailwind CSS v4
 - **Database & Cache:** PostgreSQL 17, Redis 7
 - **Cloud Crawler:** Headless Rust `coqui-worker` sidecar sharing `coqui-core`

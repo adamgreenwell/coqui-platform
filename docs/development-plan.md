@@ -2,7 +2,7 @@
 
 **Coqui SEO Platform** (`coquiseo.com` / `app.coquiseo.com`) is the cloud SEO, SERP intelligence, and hybrid crawl platform built with **Laravel 13** to complement the [Coqui](https://github.com/adamgreenwell/coqui) Rust/Tauri desktop crawler and integrate natively with the Runnr hosting platform.
 
-- **Backlog:** 6 epics and 24 feature issues tracked on the [Coqui SEO Platform project board](https://github.com/users/adamgreenwell/projects/17/views/1?layout_template=board).
+- **Backlog:** 6 epics and 27 feature issues tracked on the [Coqui SEO Platform project board](https://github.com/users/adamgreenwell/projects/17/views/1?layout_template=board).
 - **Stack:** Laravel 13 (PHP 8.4), Inertia v3 + React 19, PostgreSQL 17, Redis + Laravel Horizon, Laravel Reverb, Sanctum, and a headless Rust `coqui-worker` sidecar.
 - **MVP Infrastructure:** Bare-metal server running Coolify via Docker Compose, transitioning to horizontally scaled worker/DB nodes at public launch.
 
@@ -80,10 +80,13 @@ app/Domains/
 | F-02 | Workspaces, RBAC, and Sanctum desktop auth | E01 | P0 | M | platform |
 | F-03 | Project and competitor registry | E01 | P0 | M | platform |
 | F-04 | Reverb realtime event stream & activity log | E01 | P1 | S | platform |
+| F-05 | Public MCP server (laravel/mcp) & Laravel Boost integration | E01 | P1 | M | platform |
 | D-01 | DataForSEO v3 HTTP client, sandbox toggle & archive | E02 | P0 | L | dataforseo |
 | D-02 | Global cross-project DataForSEO cache repository | E02 | P0 | M | dataforseo |
 | D-03 | DataForSEO Spend Guard & daily/monthly budget caps | E02 | P0 | M | dataforseo |
 | D-04 | Standard-queue task postback webhook & collector | E02 | P0 | L | dataforseo |
+| D-05 | SE Ranking Data API client, credit spend guard & payload bisector | E02 | P0 | L | dataforseo |
+| D-06 | Multi-provider SEO router (SE Ranking keywords/domains + DataForSEO SERPs/backlinks) | E02 | P0 | M | dataforseo |
 
 ### Phase 2 - Rank Tracking & Keyword Intelligence
 
