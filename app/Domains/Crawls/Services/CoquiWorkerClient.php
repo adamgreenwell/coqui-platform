@@ -54,7 +54,7 @@ class CoquiWorkerClient
     public function inspectUrls(array $urls, ?string $targetDomain = null): array
     {
         $response = $this->http()->post($this->url('/jobs/inspect'), [
-            'urls' => array_values($urls),
+            'urls' => $urls,
             'targetDomain' => $targetDomain,
         ]);
 

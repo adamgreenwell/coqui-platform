@@ -66,7 +66,7 @@ final readonly class CrawlSyncPayload
     {
         unset($config['authPassword']);
 
-        if (isset($config['authUser']) && $config['authUser'] !== null && $config['authUser'] !== '') {
+        if (isset($config['authUser']) && $config['authUser'] !== '') {
             $config['authUser'] = '[redacted]';
         }
 

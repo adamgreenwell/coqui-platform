@@ -34,6 +34,7 @@ Coqui SEO splits the web into two layers so you get Ahrefs/Moz-class intelligenc
 
 ## Documentation & Roadmap
 
+- [Wiki home (`docs/wiki/`)](docs/wiki/Home.md) & [GitHub Wiki sync guide](docs/github-wiki.md)
 - [Development plan & 5-phase roadmap](docs/development-plan.md)
 - [Desktop ↔ Cloud sync contract](docs/desktop-sync-contract.md)
 - [Roadmap matrix CSV](docs/reference/roadmap-matrix.csv)
