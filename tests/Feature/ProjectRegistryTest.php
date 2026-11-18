@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
-use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
 use App\Models\User;
