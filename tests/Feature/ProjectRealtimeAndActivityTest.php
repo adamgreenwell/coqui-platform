@@ -62,13 +62,27 @@ class ProjectRealtimeAndActivityTest extends TestCase
                 'canonical_url' => 'https://broadcast-app.com/',
             ]);
 
+            // Verify policy gates resolve correctly
+            $this->assertTrue($owner->can('view', $workspace));
+            $this->assertTrue($member->can('view', $workspace));
+            $this->assertFalse($outsider->can('view', $workspace));
+            $this->assertTrue($owner->can('view', $project));
+            $this->assertTrue($member->can('view', $project));
+            $this->assertFalse($outsider->can('view', $project));
+
             // Workspace private channel authorization
-            $this->actingAs($owner)
+            $ownerResponse = $this->actingAs($owner)
                 ->post('/broadcasting/auth', [
                     'channel_name' => "private-workspace.{$workspace->id}",
                     'socket_id' => '1234.5678',
-                ])
-                ->assertOk();
+                ]);
+            if ($ownerResponse->status() !== 200) {
+                dump([
+                    'owner_auth_status' => $ownerResponse->status(),
+                    'owner_auth_content' => $ownerResponse->content(),
+                ]);
+            }
+            $ownerResponse->assertOk();
 
             $this->actingAs($member)
                 ->post('/broadcasting/auth', [

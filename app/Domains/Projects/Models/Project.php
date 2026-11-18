@@ -54,6 +54,7 @@ class Project extends Model
     protected function casts(): array
     {
         return [
+            'workspace_id' => 'integer',
             'location_code' => 'integer',
             'last_crawled_at' => 'datetime',
         ];

@@ -36,6 +36,18 @@ class Workspace extends Model
     ];
 
     /**
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'owner_id' => 'integer',
+            'tracked_keyword_limit' => 'integer',
+            'cloud_crawl_url_limit' => 'integer',
+        ];
+    }
+
+    /**
      * @return BelongsTo<User, $this>
      */
     public function owner(): BelongsTo

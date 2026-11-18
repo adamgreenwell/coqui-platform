@@ -41,7 +41,7 @@ class WorkspacePolicy
 
     private function isMember(User $user, Workspace $workspace): bool
     {
-        if ($workspace->owner_id === $user->id) {
+        if ((int) $workspace->owner_id === (int) $user->id) {
             return true;
         }
 
@@ -53,7 +53,7 @@ class WorkspacePolicy
      */
     private function hasRole(User $user, Workspace $workspace, array $roles): bool
     {
-        if ($workspace->owner_id === $user->id) {
+        if ((int) $workspace->owner_id === (int) $user->id) {
             return true;
         }
 
