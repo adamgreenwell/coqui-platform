@@ -84,7 +84,7 @@ class RecordSerpRankSnapshots
         ProjectActivity::log(
             project: $project,
             eventType: 'serp.checked',
-            title: "Rank checked: {$keyword->keyword}",
+            title: Str::limit("Rank checked: {$keyword->keyword}", 255, ''),
             description: "SERP check recorded for '{$keyword->keyword}' ({$keyword->device}) — {$projectDomain} {$rankSummary}.",
             properties: [
                 'tracked_keyword_id' => $keyword->id,

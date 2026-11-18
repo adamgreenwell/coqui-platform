@@ -15,7 +15,36 @@ class DataForSeoWebhookController extends Controller
 {
     public function __invoke(Request $request): JsonResponse
     {
-        $taskId = (string) ($request->input('id') ?? $request->query('id', ''));
+        /** @var array<string, mixed> $payload */
+        $payload = [];
+        $rawContent = $request->getContent();
+
+        if (is_string($rawContent) && (
+            $request->header('Content-Encoding') === 'gzip'
+            || str_starts_with($rawContent, "\x1f\x8b")
+        )) {
+            $decompressed = @gzdecode($rawContent);
+            if ($decompressed !== false) {
+                /** @var array<string, mixed>|null $decoded */
+                $decoded = json_decode($decompressed, true);
+                if (is_array($decoded)) {
+                    $payload = $decoded;
+                }
+            }
+        }
+
+        if (empty($payload)) {
+            /** @var array<string, mixed> $payload */
+            $payload = $request->all();
+        }
+
+        $taskId = (string) (
+            $request->input('id')
+            ?? $request->query('id')
+            ?? ($payload['id'] ?? null)
+            ?? ($payload['tasks'][0]['id'] ?? null)
+            ?? ''
+        );
         $token = (string) $request->query('token', '');
 
         if ($taskId === '' || $token === '') {
@@ -33,8 +62,6 @@ class DataForSeoWebhookController extends Controller
         if ($task->status === 'collected') {
             return response()->json(['status' => 'already_collected']);
         }
-
-        $payload = $request->all();
 
         /** @var array<string, mixed>|null $firstTask */
         $firstTask = $payload['tasks'][0] ?? null;

@@ -389,8 +389,20 @@ class SerpRankTrackerTest extends TestCase
             ],
         ];
 
-        // 1. Test Webhook execution
-        $response = $this->postJson(route('webhooks.dataforseo', ['token' => $token]), $webhookPayload);
+        // 1. Test Webhook execution with gzip compression (as sent by DataForSEO postback)
+        $compressed = (string) gzencode(json_encode($webhookPayload, JSON_THROW_ON_ERROR));
+        $response = $this->call(
+            method: 'POST',
+            uri: route('webhooks.dataforseo', ['token' => $token]),
+            parameters: [],
+            cookies: [],
+            files: [],
+            server: [
+                'HTTP_CONTENT_ENCODING' => 'gzip',
+                'CONTENT_TYPE' => 'application/json',
+            ],
+            content: $compressed,
+        );
         $response->assertOk()->assertJson(['status' => 'accepted']);
 
         $this->assertDatabaseHas('dataforseo_tasks', [
@@ -721,5 +733,94 @@ class SerpRankTrackerTest extends TestCase
         $this->assertDatabaseMissing('tracked_keywords', [
             'keyword' => 'valid-keyword',
         ]);
+    }
+
+    public function test_serp_result_parser_prefers_organic_over_later_featured_snippet(): void
+    {
+        $parser = new SerpResultParser;
+
+        $payload = [
+            'tasks' => [
+                [
+                    'result' => [
+                        [
+                            'items' => [
+                                [
+                                    'type' => 'organic',
+                                    'domain' => 'coqui.io',
+                                    'url' => 'https://coqui.io/organic-result',
+                                    'rank_group' => 5,
+                                    'rank_absolute' => 5,
+                                    'title' => 'Coqui Organic Result',
+                                ],
+                                [
+                                    'type' => 'featured_snippet',
+                                    'domain' => 'coqui.io',
+                                    'url' => 'https://coqui.io/snippet-result',
+                                    'rank_group' => 1, // group rank 1 among snippets
+                                    'rank_absolute' => 10, // but absolute position 10 on page
+                                    'title' => 'Coqui Snippet Result',
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        $res = $parser->parse($payload, 'coqui.io', []);
+        $snap = $res['domain_snapshots']['coqui.io'];
+
+        $this->assertSame(5, $snap['rank_group']);
+        $this->assertSame(5, $snap['rank_absolute']);
+        $this->assertSame('https://coqui.io/organic-result', $snap['ranking_url']);
+        $this->assertTrue($snap['has_featured_snippet']);
+    }
+
+    public function test_record_serp_rank_snapshots_truncates_audit_title_for_long_keywords(): void
+    {
+        $longKeywordStr = str_repeat('k', 250);
+        $keyword = TrackedKeyword::query()->create([
+            'project_id' => $this->project->id,
+            'keyword' => $longKeywordStr,
+            'device' => 'desktop',
+            'location_code' => 2840,
+            'language_code' => 'en',
+            'cadence' => 'daily',
+            'is_active' => true,
+        ]);
+
+        $payload = [
+            'tasks' => [
+                [
+                    'result' => [
+                        [
+                            'items' => [
+                                [
+                                    'type' => 'organic',
+                                    'domain' => 'coqui.io',
+                                    'url' => 'https://coqui.io/k',
+                                    'rank_group' => 1,
+                                    'rank_absolute' => 1,
+                                    'title' => 'K Page',
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        app(RecordSerpRankSnapshots::class)->handle($keyword, $payload);
+
+        $activity = DB::table('project_activities')
+            ->where('project_id', $this->project->id)
+            ->where('event_type', 'serp.checked')
+            ->latest('id')
+            ->first();
+
+        $this->assertNotNull($activity);
+        $this->assertLessThanOrEqual(255, mb_strlen((string) $activity->title));
+        $this->assertStringStartsWith('Rank checked: ', (string) $activity->title);
     }
 }

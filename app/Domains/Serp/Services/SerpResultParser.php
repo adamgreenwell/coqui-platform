@@ -244,8 +244,10 @@ class SerpResultParser
      */
     private function findBestMatchingItem(array $items, string $targetDomain): ?array
     {
-        $bestItem = null;
-        $bestRank = PHP_INT_MAX;
+        $bestOrganicItem = null;
+        $bestOrganicRank = PHP_INT_MAX;
+        $bestSnippetItem = null;
+        $bestSnippetRank = PHP_INT_MAX;
 
         foreach ($items as $item) {
             $type = (string) ($item['type'] ?? '');
@@ -264,21 +266,37 @@ class SerpResultParser
                 continue;
             }
 
-            $rankGroup = isset($item['rank_group']) ? (int) $item['rank_group'] : (int) ($item['rank_absolute'] ?? 100);
+            $rankAbsolute = isset($item['rank_absolute']) ? (int) $item['rank_absolute'] : null;
+            $rankGroup = isset($item['rank_group']) ? (int) $item['rank_group'] : $rankAbsolute;
 
-            if ($rankGroup < $bestRank) {
-                $bestRank = $rankGroup;
-                $bestItem = [
-                    'type' => $type,
-                    'rank_group' => isset($item['rank_group']) ? (int) $item['rank_group'] : $rankGroup,
-                    'rank_absolute' => isset($item['rank_absolute']) ? (int) $item['rank_absolute'] : null,
-                    'url' => $itemUrl !== '' ? $itemUrl : null,
-                    'title' => isset($item['title']) ? (string) $item['title'] : null,
-                ];
+            if ($type === 'organic') {
+                $compRank = $rankGroup ?? $rankAbsolute ?? PHP_INT_MAX;
+                if ($compRank < $bestOrganicRank) {
+                    $bestOrganicRank = $compRank;
+                    $bestOrganicItem = [
+                        'type' => 'organic',
+                        'rank_group' => $rankGroup,
+                        'rank_absolute' => $rankAbsolute,
+                        'url' => $itemUrl !== '' ? $itemUrl : null,
+                        'title' => isset($item['title']) ? (string) $item['title'] : null,
+                    ];
+                }
+            } elseif ($type === 'featured_snippet') {
+                $compRank = $rankAbsolute ?? $rankGroup ?? PHP_INT_MAX;
+                if ($compRank < $bestSnippetRank) {
+                    $bestSnippetRank = $compRank;
+                    $bestSnippetItem = [
+                        'type' => 'featured_snippet',
+                        'rank_group' => $rankAbsolute ?? $rankGroup,
+                        'rank_absolute' => $rankAbsolute,
+                        'url' => $itemUrl !== '' ? $itemUrl : null,
+                        'title' => isset($item['title']) ? (string) $item['title'] : null,
+                    ];
+                }
             }
         }
 
-        return $bestItem;
+        return $bestOrganicItem ?? $bestSnippetItem;
     }
 
     private function domainMatches(string $candidate, string $target): bool
