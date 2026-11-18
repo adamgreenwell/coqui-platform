@@ -87,8 +87,12 @@ class DataForSeoWebhookController extends Controller
                 $trackedKeywordId = isset($context['tracked_keyword_id']) ? (int) $context['tracked_keyword_id'] : null;
 
                 if ($trackedKeywordId !== null) {
-                    $trackedKeyword = TrackedKeyword::query()->find($trackedKeywordId);
-                    if ($trackedKeyword !== null) {
+                    $trackedKeyword = TrackedKeyword::query()
+                        ->whereHas('project')
+                        ->with('project')
+                        ->find($trackedKeywordId);
+
+                    if ($trackedKeyword !== null && $trackedKeyword->project !== null) {
                         app(RecordSerpRankSnapshots::class)->handle($trackedKeyword, $payload);
                     }
                 }

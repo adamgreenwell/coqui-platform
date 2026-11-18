@@ -823,4 +823,154 @@ class SerpRankTrackerTest extends TestCase
         $this->assertLessThanOrEqual(255, mb_strlen((string) $activity->title));
         $this->assertStringStartsWith('Rank checked: ', (string) $activity->title);
     }
+
+    public function test_keyword_deletion_truncates_audit_title_for_long_keywords(): void
+    {
+        $longKeywordStr = str_repeat('d', 250);
+        $kw = TrackedKeyword::query()->create([
+            'project_id' => $this->project->id,
+            'keyword' => $longKeywordStr,
+            'device' => 'desktop',
+            'location_code' => 2840,
+            'language_code' => 'en',
+            'cadence' => 'daily',
+            'is_active' => true,
+        ]);
+
+        $response = $this->actingAs($this->owner)
+            ->delete(route('workspaces.projects.keywords.destroy', [$this->workspace, $this->project, $kw]));
+
+        $response->assertRedirect();
+        $this->assertDatabaseMissing('tracked_keywords', ['id' => $kw->id]);
+
+        $activity = DB::table('project_activities')
+            ->where('project_id', $this->project->id)
+            ->where('event_type', 'keyword.deleted')
+            ->latest('id')
+            ->first();
+
+        $this->assertNotNull($activity);
+        $this->assertLessThanOrEqual(255, mb_strlen((string) $activity->title));
+        $this->assertStringStartsWith('Deleted keyword: ', (string) $activity->title);
+    }
+
+    public function test_collector_skips_snapshot_ingestion_for_soft_deleted_project_without_failing_task(): void
+    {
+        $deletedProject = Project::query()->create([
+            'workspace_id' => $this->workspace->id,
+            'name' => 'To Be Deleted',
+            'domain' => 'tobedeleted.com',
+            'canonical_url' => 'https://tobedeleted.com/',
+        ]);
+
+        $kw = TrackedKeyword::query()->create([
+            'project_id' => $deletedProject->id,
+            'keyword' => 'orphaned keyword',
+            'device' => 'desktop',
+            'location_code' => 2840,
+            'language_code' => 'en',
+            'cadence' => 'daily',
+            'is_active' => true,
+        ]);
+
+        $deletedProject->delete(); // soft delete
+
+        $taskId = (string) Str::uuid();
+
+        DB::table('dataforseo_tasks')->insert([
+            'workspace_id' => $this->workspace->id,
+            'project_id' => $deletedProject->id,
+            'external_task_id' => $taskId,
+            'endpoint' => '/v3/serp/google/organic/task_post',
+            'task_type' => 'serp_rank_tracking',
+            'status' => 'pending',
+            'postback_token' => Str::random(32),
+            'request_context' => json_encode(['tracked_keyword_id' => $kw->id], JSON_THROW_ON_ERROR),
+            'result_payload' => null,
+            'submitted_at' => now()->subMinutes(15),
+            'created_at' => now()->subMinutes(15),
+            'updated_at' => now()->subMinutes(15),
+        ]);
+
+        Http::fake([
+            "https://sandbox.dataforseo.com/v3/serp/google/organic/task_get/advanced/{$taskId}" => Http::response([
+                'status_code' => 20000,
+                'status_message' => 'Ok.',
+                'tasks' => [
+                    [
+                        'id' => $taskId,
+                        'status_code' => 20000,
+                        'status_message' => 'Ok.',
+                        'result' => [
+                            ['items' => []],
+                        ],
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $this->artisan('dataforseo:collect-tasks')
+            ->assertSuccessful()
+            ->expectsOutputToContain('1 collected');
+
+        $this->assertDatabaseHas('dataforseo_tasks', [
+            'external_task_id' => $taskId,
+            'status' => 'collected',
+        ]);
+    }
+
+    public function test_collector_keeps_queued_tasks_eligible_and_does_not_mark_failed(): void
+    {
+        $kw = TrackedKeyword::query()->create([
+            'project_id' => $this->project->id,
+            'keyword' => 'in queue keyword',
+            'device' => 'desktop',
+            'location_code' => 2840,
+            'language_code' => 'en',
+            'cadence' => 'daily',
+            'is_active' => true,
+        ]);
+
+        $taskId = (string) Str::uuid();
+
+        DB::table('dataforseo_tasks')->insert([
+            'workspace_id' => $this->workspace->id,
+            'project_id' => $this->project->id,
+            'external_task_id' => $taskId,
+            'endpoint' => '/v3/serp/google/organic/task_post',
+            'task_type' => 'serp_rank_tracking',
+            'status' => 'pending',
+            'postback_token' => Str::random(32),
+            'request_context' => json_encode(['tracked_keyword_id' => $kw->id], JSON_THROW_ON_ERROR),
+            'result_payload' => null,
+            'submitted_at' => now()->subMinutes(15),
+            'created_at' => now()->subMinutes(15),
+            'updated_at' => now()->subMinutes(15),
+        ]);
+
+        // Status code 40602 is "Task In Queue"
+        Http::fake([
+            "https://sandbox.dataforseo.com/v3/serp/google/organic/task_get/advanced/{$taskId}" => Http::response([
+                'status_code' => 20000,
+                'status_message' => 'Ok.',
+                'tasks' => [
+                    [
+                        'id' => $taskId,
+                        'status_code' => 40602,
+                        'status_message' => 'Task In Queue.',
+                        'result' => null,
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $this->artisan('dataforseo:collect-tasks')
+            ->assertSuccessful()
+            ->expectsOutputToContain('1 still in progress');
+
+        $this->assertDatabaseHas('dataforseo_tasks', [
+            'external_task_id' => $taskId,
+            'status' => 'pending',
+        ]);
+    }
 }

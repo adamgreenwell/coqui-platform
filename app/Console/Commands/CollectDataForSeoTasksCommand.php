@@ -77,8 +77,20 @@ class CollectDataForSeoTasksCommand extends Command
 
                 $taskStatusCode = (int) ($firstTask['status_code'] ?? 20000);
                 $taskResult = $firstTask['result'] ?? null;
+                $statusMessage = strtolower((string) ($firstTask['status_message'] ?? ''));
 
-                if ($taskStatusCode >= 40000 && ! empty($firstTask['status_message']) && ! str_contains(strtolower((string) $firstTask['status_message']), 'progress')) {
+                $isQueuedOrProcessing = in_array($taskStatusCode, [40401, 40601, 40602], true)
+                    || str_contains($statusMessage, 'progress')
+                    || str_contains($statusMessage, 'queue')
+                    || str_contains($statusMessage, 'handed');
+
+                if ($isQueuedOrProcessing) {
+                    $inProgress++;
+
+                    continue;
+                }
+
+                if ($taskStatusCode >= 40000) {
                     DB::table('dataforseo_tasks')
                         ->where('id', $task->id)
                         ->update([
@@ -105,8 +117,12 @@ class CollectDataForSeoTasksCommand extends Command
                         $trackedKeywordId = isset($context['tracked_keyword_id']) ? (int) $context['tracked_keyword_id'] : null;
 
                         if ($trackedKeywordId !== null) {
-                            $trackedKeyword = TrackedKeyword::query()->find($trackedKeywordId);
-                            if ($trackedKeyword !== null) {
+                            $trackedKeyword = TrackedKeyword::query()
+                                ->whereHas('project')
+                                ->with('project')
+                                ->find($trackedKeywordId);
+
+                            if ($trackedKeyword !== null && $trackedKeyword->project !== null) {
                                 app(RecordSerpRankSnapshots::class)->handle($trackedKeyword, $result);
                             }
                         }

@@ -11,6 +11,7 @@ use App\Domains\Serp\Models\TrackedKeyword;
 use App\Domains\Serp\Services\SerpResultParser;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class RecordSerpRankSnapshots
@@ -67,15 +68,17 @@ class RecordSerpRankSnapshots
 
         $keyword->update(['last_checked_at' => now()]);
 
-        // Realtime event broadcast on project.{id} channel
-        $batchId = (string) Str::uuid();
-        rescue(fn () => broadcast(new SerpBatchCompleted(
-            projectId: $project->id,
-            batchId: $batchId,
-            keywordCount: 1,
-            updatedCount: count($savedSnapshots),
-            status: 'completed',
-        )), report: true);
+        // Realtime event broadcast on project.{id} channel (deferred until transaction commits)
+        DB::afterCommit(function () use ($project, $savedSnapshots): void {
+            $batchId = (string) Str::uuid();
+            rescue(fn () => broadcast(new SerpBatchCompleted(
+                projectId: $project->id,
+                batchId: $batchId,
+                keywordCount: 1,
+                updatedCount: count($savedSnapshots),
+                status: 'completed',
+            )), report: true);
+        });
 
         // Persistent audit log
         $projectRank = $parsed['domain_snapshots'][$projectDomain]['rank_group'] ?? null;

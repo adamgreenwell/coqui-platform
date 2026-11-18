@@ -17,6 +17,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -341,7 +342,7 @@ class TrackedKeywordController extends Controller
         ProjectActivity::log(
             project: $project,
             eventType: 'keyword.deleted',
-            title: "Deleted keyword: {$kwText}",
+            title: Str::limit("Deleted keyword: {$kwText}", 255, ''),
             description: "Removed '{$kwText}' from tracked keywords.",
             properties: [
                 'keyword' => $kwText,
