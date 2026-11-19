@@ -177,12 +177,12 @@ class KeywordGapService
             $entry['gap_type'] = $gapType;
 
             // Compute Opportunity Score
-            if ($gapType === 'strong' && $projectRank !== null) {
+            if ($gapType === 'strong') {
                 // When project already outranks observed competitors, opportunity is discounted
                 $rawOpportunity = self::calculateOpportunityScore(
                     volume: $entry['search_volume'] ?? 0,
                     kd: $entry['keyword_difficulty'],
-                    bestCompRank: max(1, $projectRank),
+                    bestCompRank: max(1, (int) $projectRank),
                 );
                 $entry['opportunity_score'] = (int) round($rawOpportunity * 0.3);
             } else {
