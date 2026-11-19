@@ -7,7 +7,6 @@ namespace App\Domains\Backlinks\Services;
 use App\Domains\Backlinks\Events\BacklinkAlertTriggered;
 use App\Domains\Backlinks\Models\BacklinkHistorySnapshot;
 use App\Domains\Projects\Models\Project;
-use App\Domains\Serp\DataForSeo\DataForSeoCacheRepository;
 use App\Domains\Serp\DataForSeo\DataForSeoClient;
 use Carbon\Carbon;
 use Throwable;
@@ -18,7 +17,6 @@ class BacklinkTimelineService
 
     public function __construct(
         private readonly DataForSeoClient $dataForSeo,
-        private readonly DataForSeoCacheRepository $cache,
         private readonly BacklinkProfileService $profileService,
     ) {}
 
@@ -151,7 +149,7 @@ class BacklinkTimelineService
     private function extractNewAndLostDomains(Project $project, int $days): array
     {
         $profile = $this->profileService->getBacklinkProfile($project, false);
-        $allDomains = $profile['referring_domains'] ?? [];
+        $allDomains = $profile['referring_domains'];
 
         $cutoff = now()->subDays($days);
 
