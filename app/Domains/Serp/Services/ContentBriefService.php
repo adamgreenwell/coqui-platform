@@ -24,8 +24,6 @@ class ContentBriefService
 
     /**
      * Build or refresh a comprehensive SERP content brief for a target keyword.
-     *
-     * @return ContentBrief
      */
     public function buildBrief(
         Project $project,
@@ -279,31 +277,31 @@ class ContentBriefService
 
         $md = [];
         $md[] = "# SEO Content Brief: {$keyword}";
-        $md[] = "";
-        $md[] = "> Prepared for **{$project->name}** (`{$project->domain}`) on " . now()->format('F j, Y');
-        $md[] = "";
-        $md[] = "## 1. Target Keyword & Core Metrics";
+        $md[] = '';
+        $md[] = "> Prepared for **{$project->name}** (`{$project->domain}`) on ".now()->format('F j, Y');
+        $md[] = '';
+        $md[] = '## 1. Target Keyword & Core Metrics';
         $md[] = "- **Target Keyword:** `{$keyword}`";
-        $md[] = "- **Monthly Search Volume:** " . number_format((int) $data['searchVolume']) . " searches/mo";
-        $md[] = "- **Target CPC:** $" . number_format((float) $data['cpc'], 2);
+        $md[] = '- **Monthly Search Volume:** '.number_format((int) $data['searchVolume']).' searches/mo';
+        $md[] = '- **Target CPC:** $'.number_format((float) $data['cpc'], 2);
         $md[] = "- **Recommended Word Count:** {$recs['suggestedWordCount']} (Top-3 Competitor Avg: {$metrics['avgWordCountTop3']} words)";
         $md[] = "- **Recommended Schema Markup:** `{$schemas}`";
-        $md[] = "";
-        $md[] = "---";
-        $md[] = "";
-        $md[] = "## 2. Key Headings & Subtopic Coverage";
-        $md[] = "Incorporate the following core themes and subtopics identified across top ranking competitor articles:";
-        $md[] = "";
+        $md[] = '';
+        $md[] = '---';
+        $md[] = '';
+        $md[] = '## 2. Key Headings & Subtopic Coverage';
+        $md[] = 'Incorporate the following core themes and subtopics identified across top ranking competitor articles:';
+        $md[] = '';
         foreach ($recs['keyH2Themes'] as $idx => $theme) {
             $num = $idx + 1;
             $md[] = "{$num}. **{$theme}**";
         }
-        $md[] = "";
-        $md[] = "---";
-        $md[] = "";
-        $md[] = "## 3. People Also Ask & FAQ Opportunities";
-        $md[] = "Directly answer these frequently searched user questions in a dedicated FAQ section or subsections:";
-        $md[] = "";
+        $md[] = '';
+        $md[] = '---';
+        $md[] = '';
+        $md[] = '## 3. People Also Ask & FAQ Opportunities';
+        $md[] = 'Directly answer these frequently searched user questions in a dedicated FAQ section or subsections:';
+        $md[] = '';
         if ($recs['questionsToAnswer'] !== []) {
             foreach ($recs['questionsToAnswer'] as $q) {
                 $md[] = "- [ ] **{$q}**";
@@ -313,12 +311,12 @@ class ContentBriefService
             $md[] = "- [ ] How do you implement {$keyword} step-by-step?";
             $md[] = "- [ ] What are the best practices and common pitfalls for {$keyword}?";
         }
-        $md[] = "";
-        $md[] = "---";
-        $md[] = "";
-        $md[] = "## 4. Top-10 SERP Competitor Structure Matrix";
-        $md[] = "| Rank | Domain | Title | Word Count | Status | Schema |";
-        $md[] = "| :--- | :--- | :--- | :--- | :--- | :--- |";
+        $md[] = '';
+        $md[] = '---';
+        $md[] = '';
+        $md[] = '## 4. Top-10 SERP Competitor Structure Matrix';
+        $md[] = '| Rank | Domain | Title | Word Count | Status | Schema |';
+        $md[] = '| :--- | :--- | :--- | :--- | :--- | :--- |';
         foreach ($competitors as $c) {
             $schemaList = ! empty($c['schemaTypes']) ? implode(', ', array_slice($c['schemaTypes'], 0, 2)) : '-';
             $words = $c['wordCount'] > 0 ? number_format((int) $c['wordCount']) : '-';
@@ -326,27 +324,28 @@ class ContentBriefService
             $titleSafe = str_replace('|', '-', (string) $c['title']);
             $md[] = "| #{$c['rank']} | `{$c['domain']}` | [{$titleSafe}]({$c['url']}) | {$words} | {$status} | `{$schemaList}` |";
         }
-        $md[] = "";
-        $md[] = "---";
-        $md[] = "";
-        $md[] = "## 5. Competitor Heading Outlines";
+        $md[] = '';
+        $md[] = '---';
+        $md[] = '';
+        $md[] = '## 5. Competitor Heading Outlines';
         foreach ($competitors as $c) {
             if ($c['error'] !== null) {
                 continue;
             }
+
             $md[] = "### Rank #{$c['rank']}: {$c['domain']} ({$c['wordCount']} words)";
             $h1List = $c['headings']['h1'] ?? [];
             if ($h1List !== []) {
-                $md[] = "- **H1:** " . implode(' / ', $h1List);
+                $md[] = '- **H1:** '.implode(' / ', $h1List);
             }
             $h2List = $c['headings']['h2'] ?? [];
             if ($h2List !== []) {
-                $md[] = "- **H2 Sections:**";
+                $md[] = '- **H2 Sections:**';
                 foreach ($h2List as $h2) {
                     $md[] = "  - {$h2}";
                 }
             }
-            $md[] = "";
+            $md[] = '';
         }
 
         return implode("\n", $md);

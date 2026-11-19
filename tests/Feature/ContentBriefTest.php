@@ -389,7 +389,7 @@ HTML;
         ]);
 
         $response = $this->actingAs($this->user)
-            ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keywords/brief/download?keyword=" . urlencode('coqui rank tracker'));
+            ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keywords/brief/download?keyword=".urlencode('coqui rank tracker'));
 
         $response->assertOk();
         $response->assertHeader('Content-Type', 'text/markdown; charset=UTF-8');
