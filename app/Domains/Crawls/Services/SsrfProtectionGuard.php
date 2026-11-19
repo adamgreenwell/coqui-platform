@@ -22,6 +22,22 @@ class SsrfProtectionGuard
      */
     public function assertAllowed(string $url): void
     {
+        $this->resolveSafeIps($url);
+    }
+
+    /**
+     * Validate a URL and return the IP addresses it may be connected to.
+     *
+     * Callers that make the request should pin the connection to these IPs
+     * (see SafeHttpClient) so DNS cannot change between check and fetch.
+     * Returns an empty list only for unresolvable hosts under unit tests.
+     *
+     * @return list<string>
+     *
+     * @throws SsrfProtectionException
+     */
+    public function resolveSafeIps(string $url): array
+    {
         $parts = parse_url($url);
 
         if (! is_array($parts) || ! isset($parts['scheme'], $parts['host'])) {
@@ -52,14 +68,14 @@ class SsrfProtectionGuard
         if (filter_var($cleanHost, FILTER_VALIDATE_IP)) {
             $this->assertSafeIp($cleanHost, $url);
 
-            return;
+            return [$cleanHost];
         }
 
         // Resolve host to IPs
         $resolvedIps = $this->resolveHost($host);
         if ($resolvedIps === []) {
             if (app()->runningUnitTests()) {
-                return;
+                return [];
             }
 
             // Unresolvable hostname
@@ -69,6 +85,8 @@ class SsrfProtectionGuard
         foreach ($resolvedIps as $ip) {
             $this->assertSafeIp($ip, $url);
         }
+
+        return $resolvedIps;
     }
 
     /**

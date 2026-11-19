@@ -5,13 +5,17 @@ declare(strict_types=1);
 namespace App\Domains\Integrations\Services;
 
 use App\Domains\Crawls\Models\CrawlRun;
+use App\Domains\Crawls\Services\SafeHttpClient;
 use App\Domains\Projects\Models\ProjectActivity;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Throwable;
 
 class RunnrDeploySmokeService
 {
+    public function __construct(
+        private readonly SafeHttpClient $http = new SafeHttpClient,
+    ) {}
+
     /**
      * Evaluates a completed deploy_smoke crawl for critical SEO regressions.
      *
@@ -231,10 +235,11 @@ class RunnrDeploySmokeService
                 $payloadJson = json_encode($callbackPayload, JSON_THROW_ON_ERROR);
                 $signature = hash_hmac('sha256', $payloadJson, $secret);
 
-                rescue(fn () => Http::withHeaders([
-                    'Content-Type' => 'application/json',
+                // The callback URL comes from the webhook payload, so it goes
+                // through the SSRF-safe client (no redirects, pinned DNS).
+                rescue(fn () => $this->http->postJson($callbackUrl, $callbackPayload, [
                     'X-Runnr-Signature' => $signature,
-                ])->timeout(10)->post($callbackUrl, $callbackPayload), report: true);
+                ], timeoutSeconds: 10), report: true);
             } catch (Throwable) {
                 // Non-blocking callback logging
             }

@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domains\Serp\Services;
 
-use App\Domains\Crawls\Services\SsrfProtectionGuard;
+use App\Domains\Crawls\Services\SafeHttpClient;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Serp\DataForSeo\DataForSeoCacheRepository;
 use App\Domains\Serp\DataForSeo\DataForSeoClient;
 use App\Domains\Serp\Models\ContentBrief;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -18,8 +17,8 @@ class ContentBriefService
     public function __construct(
         private readonly DataForSeoClient $dataForSeo,
         private readonly DataForSeoCacheRepository $cache,
-        private readonly SsrfProtectionGuard $ssrf = new SsrfProtectionGuard,
         private readonly HtmlPageOutlineExtractor $extractor = new HtmlPageOutlineExtractor,
+        private readonly SafeHttpClient $http = new SafeHttpClient,
     ) {}
 
     /**
@@ -63,11 +62,8 @@ class ContentBriefService
             $domain = (string) ($item['domain'] ?? parse_url($url, PHP_URL_HOST) ?? '');
 
             try {
-                $this->ssrf->assertAllowed($url);
-
-                $response = Http::withUserAgent('Mozilla/5.0 (compatible; CoquiBot/1.0; +https://coquiseo.com)')
-                    ->timeout(6)
-                    ->get($url);
+                // Validates every redirect hop and pins DNS (see SafeHttpClient).
+                $response = $this->http->get($url, timeoutSeconds: 6);
 
                 $statusCode = $response->status();
 
