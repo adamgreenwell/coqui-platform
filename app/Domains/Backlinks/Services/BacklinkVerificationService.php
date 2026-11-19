@@ -166,7 +166,7 @@ class BacklinkVerificationService
             }
 
             // Check X-Robots-Tag header
-            $xRobots = strtolower($response->header('X-Robots-Tag', ''));
+            $xRobots = strtolower((string) $response->header('X-Robots-Tag'));
             $noindex = str_contains($xRobots, 'noindex') || str_contains($xRobots, 'none');
 
             $html = $response->body();
@@ -334,10 +334,6 @@ class BacklinkVerificationService
         $imported = 0;
         foreach ($lines as $line) {
             $row = str_getcsv($line);
-            if (! is_array($row) || count($row) === 0) {
-                continue;
-            }
-
             $sourceUrl = trim((string) ($row[$sourceIdx] ?? ''));
             if ($sourceUrl === '' || ! filter_var($sourceUrl, FILTER_VALIDATE_URL)) {
                 continue;
