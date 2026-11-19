@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\BacklinkController;
+use App\Http\Controllers\BacklinkWatchlistController;
 use App\Http\Controllers\CloudCrawlController;
 use App\Http\Controllers\ContentBriefController;
 use App\Http\Controllers\CrawlCompareController;
@@ -73,6 +74,13 @@ Route::middleware(['auth'])->group(function (): void {
 
     Route::get('/workspaces/{workspace}/projects/{project}/backlinks', [BacklinkController::class, 'index'])->name('workspaces.projects.backlinks.index');
     Route::post('/workspaces/{workspace}/projects/{project}/backlinks/refresh', [BacklinkController::class, 'refresh'])->name('workspaces.projects.backlinks.refresh');
+    Route::get('/workspaces/{workspace}/projects/{project}/backlinks/watchlist', [BacklinkWatchlistController::class, 'index'])->name('workspaces.projects.backlinks.watchlist.index');
+    Route::post('/workspaces/{workspace}/projects/{project}/backlinks/watchlist', [BacklinkWatchlistController::class, 'store'])->name('workspaces.projects.backlinks.watchlist.store');
+    Route::post('/workspaces/{workspace}/projects/{project}/backlinks/watchlist/verify', [BacklinkWatchlistController::class, 'verifyAll'])->name('workspaces.projects.backlinks.watchlist.verify-all');
+    Route::post('/workspaces/{workspace}/projects/{project}/backlinks/watchlist/{monitoredBacklink}/verify', [BacklinkWatchlistController::class, 'verifySingle'])->name('workspaces.projects.backlinks.watchlist.verify-single');
+    Route::post('/workspaces/{workspace}/projects/{project}/backlinks/watchlist/import-dfs', [BacklinkWatchlistController::class, 'importDfs'])->name('workspaces.projects.backlinks.watchlist.import-dfs');
+    Route::post('/workspaces/{workspace}/projects/{project}/backlinks/watchlist/import-csv', [BacklinkWatchlistController::class, 'importCsv'])->name('workspaces.projects.backlinks.watchlist.import-csv');
+    Route::delete('/workspaces/{workspace}/projects/{project}/backlinks/watchlist/{monitoredBacklink}', [BacklinkWatchlistController::class, 'destroy'])->name('workspaces.projects.backlinks.watchlist.destroy');
 
     Route::get('/workspaces/{workspace}/projects/{project}/integrations', [ProjectIntegrationController::class, 'index'])->name('workspaces.projects.integrations.index');
     Route::get('/workspaces/{workspace}/projects/{project}/integrations/google/connect', [ProjectIntegrationController::class, 'connectGoogle'])->name('workspaces.projects.integrations.google.connect');

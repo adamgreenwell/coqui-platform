@@ -327,6 +327,14 @@ export default function BacklinksIndex({
             </button>
 
             <Link
+              href={`/workspaces/${workspace.id}/projects/${project.id}/backlinks/watchlist`}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 text-xs font-medium transition cursor-pointer"
+            >
+              <ShieldAlert className="h-3.5 w-3.5 text-purple-400" />
+              <span>Active Watchlist</span>
+            </Link>
+
+            <Link
               href={`/workspaces/${workspace.id}/projects/${project.id}`}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium transition cursor-pointer"
             >

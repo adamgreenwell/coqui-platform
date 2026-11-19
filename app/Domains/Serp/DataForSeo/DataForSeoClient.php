@@ -459,6 +459,39 @@ class DataForSeoClient
     }
 
     /**
+     * Fetch individual backlinks for a target domain or page.
+     *
+     * @return array<string, mixed>
+     */
+    public function backlinksBacklinks(
+        string $target,
+        Project $project,
+        int $limit = 100,
+        ?string $orderBy = 'rank,desc',
+    ): array {
+        $endpoint = '/v3/backlinks/backlinks/live';
+        $estimatedCost = (float) config('coqui.dataforseo.prices.backlinks_task', 0.024);
+
+        $this->spendGuard->assertCanSpend($estimatedCost, $project->workspace, false);
+
+        $payload = [
+            [
+                'target' => $target,
+                'limit' => min(1000, max(1, $limit)),
+                'order_by' => [$orderBy ?? 'rank,desc'],
+            ],
+        ];
+
+        return $this->postPaid(
+            endpoint: $endpoint,
+            payload: $payload,
+            mode: 'live',
+            estimatedCostUsd: $estimatedCost,
+            project: $project,
+        );
+    }
+
+    /**
      * Submit Standard-queue SERP tasks with a signed postback URL.
      *
      * @param  list<array<string, mixed>>  $tasks
