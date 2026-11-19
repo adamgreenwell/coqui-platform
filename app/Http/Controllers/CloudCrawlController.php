@@ -41,7 +41,9 @@ class CloudCrawlController extends Controller
 
         $requestedLimit = $request->input('max_urls');
         if ($requestedLimit !== null && is_numeric((string) $requestedLimit)) {
-            $urlLimit = min(max((int) $requestedLimit, 10), $urlLimit);
+            $requestedCount = (int) $requestedLimit;
+            $workspace->assertCanCrawlUrls($requestedCount);
+            $urlLimit = min(max($requestedCount, 10), $urlLimit);
         }
 
         $crawlId = (string) Str::uuid();

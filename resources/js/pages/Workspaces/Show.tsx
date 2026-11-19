@@ -1,6 +1,7 @@
 import { Head, Link, useForm } from '@inertiajs/react';
 import {
   Coins,
+  CreditCard,
   Edit2,
   FolderKanban,
   Globe,
@@ -125,6 +126,14 @@ export default function WorkspaceShow({
           </div>
 
           <div className="flex items-center gap-2.5">
+            <Link
+              href={`/workspaces/${workspace.id}/billing`}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-medium transition cursor-pointer"
+            >
+              <CreditCard className="h-3.5 w-3.5 text-emerald-400" />
+              <span>Billing &amp; Plans</span>
+            </Link>
+
             <Link
               href={`/workspaces/${workspace.id}/tokens`}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium transition"

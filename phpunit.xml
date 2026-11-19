@@ -29,6 +29,7 @@
         <env name="MAIL_MAILER" value="array"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
+        <env name="PENNANT_STORE" value="array"/>
         <env name="DATAFORSEO_SCHEDULED_SPEND" value="false"/>
     </php>
 </phpunit>

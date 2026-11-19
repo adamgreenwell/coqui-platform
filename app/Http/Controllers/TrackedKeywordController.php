@@ -352,6 +352,8 @@ class TrackedKeywordController extends Controller
             ]);
         }
 
+        $workspace->assertCanTrackKeywords(count($keywordList));
+
         foreach ($keywordList as $kw) {
             if (mb_strlen($kw) > 255) {
                 throw ValidationException::withMessages([

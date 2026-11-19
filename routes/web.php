@@ -19,6 +19,7 @@ use App\Http\Controllers\PublicCrawlDiffController;
 use App\Http\Controllers\SanctumTokenController;
 use App\Http\Controllers\TrackedKeywordController;
 use App\Http\Controllers\TrafficAttributionController;
+use App\Http\Controllers\WorkspaceBillingController;
 use App\Http\Controllers\WorkspaceController;
 use App\Http\Controllers\WorkspaceMemberController;
 use Illuminate\Support\Facades\Route;
@@ -44,6 +45,11 @@ Route::middleware(['auth'])->group(function (): void {
     Route::get('/workspaces/{workspace}/tokens', [SanctumTokenController::class, 'index'])->name('workspaces.tokens.index');
     Route::post('/workspaces/{workspace}/tokens', [SanctumTokenController::class, 'store'])->name('workspaces.tokens.store');
     Route::delete('/workspaces/{workspace}/tokens/{token}', [SanctumTokenController::class, 'destroy'])->name('workspaces.tokens.destroy');
+
+    Route::get('/workspaces/{workspace}/billing', [WorkspaceBillingController::class, 'index'])->name('workspaces.billing.index');
+    Route::post('/workspaces/{workspace}/billing/checkout', [WorkspaceBillingController::class, 'checkout'])->name('workspaces.billing.checkout');
+    Route::post('/workspaces/{workspace}/billing/portal', [WorkspaceBillingController::class, 'portal'])->name('workspaces.billing.portal');
+    Route::post('/workspaces/{workspace}/billing/change-tier', [WorkspaceBillingController::class, 'changeTier'])->name('workspaces.billing.change-tier');
 
     Route::get('/workspaces/{workspace}/projects/create', [ProjectController::class, 'create'])->name('workspaces.projects.create');
     Route::post('/workspaces/{workspace}/projects', [ProjectController::class, 'store'])->name('workspaces.projects.store');

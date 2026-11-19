@@ -188,6 +188,18 @@ class Project extends Model
             && ! str_contains($domain, ' ');
     }
 
+    /**
+     * Check if the project has Runnr hosting bundle entitlement.
+     */
+    public function hasRunnrEntitlement(): bool
+    {
+        if ($this->runnr_site_id !== null && $this->runnr_site_id !== '') {
+            return true;
+        }
+
+        return $this->workspace?->hasRunnrEntitlement() ?? false;
+    }
+
     public static function normalizeDomain(string $input): string
     {
         $trimmed = trim($input);
