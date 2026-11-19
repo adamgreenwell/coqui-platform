@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Controllers\Api\V1\CrawlSyncController;
 use App\Http\Controllers\Api\V1\MeApiController;
 use App\Http\Controllers\Api\V1\ProjectApiController;
+use App\Http\Controllers\Api\V1\RunnrDeploySmokeController;
 use App\Http\Controllers\Internal\CoquiWorkerCallbackController;
 use App\Http\Controllers\Webhooks\DataForSeoWebhookController;
 use App\Http\Controllers\Webhooks\RunnrDeployWebhookController;
@@ -44,7 +45,15 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function (): void {
 
     Route::post('/projects/{project}/crawls/{crawlId}/finalize', [CrawlSyncController::class, 'finalize'])
         ->middleware('ability:crawls:sync');
+
+    // Runnr deploy smoke test inspection
+    Route::get('/projects/{project}/deploy-smoke/latest', [RunnrDeploySmokeController::class, 'latest'])
+        ->middleware('ability:projects:read,crawls:read');
 });
+
+// Public deploy smoke SVG status badge
+Route::get('/v1/projects/{project}/deploy-smoke/badge', [RunnrDeploySmokeController::class, 'badge'])
+    ->name('api.projects.deploy_smoke.badge');
 
 Route::post('/internal/crawls/callback', CoquiWorkerCallbackController::class)
     ->middleware(VerifyCoquiWorkerToken::class)

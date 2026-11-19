@@ -4,8 +4,10 @@ import {
   AlertTriangle,
   ArrowLeft,
   BarChart3,
+  Check,
   CheckCircle2,
   Clock,
+  Copy,
   ExternalLink,
   FolderKanban,
   Globe,
@@ -16,6 +18,7 @@ import {
   Radio,
   RefreshCw,
   Search,
+  Server,
   Settings,
   Shield,
   Sparkles,
@@ -77,6 +80,32 @@ interface IntegrationItem {
   last_synced_at?: string | null;
 }
 
+interface DeploySmokeRegression {
+  rule: string;
+  severity: string;
+  message: string;
+  affected_urls: string[];
+}
+
+interface DeploySmokeSummary {
+  id: number;
+  externalCrawlId: string;
+  status: string;
+  passed: boolean;
+  smokeStatus: string;
+  summary: string;
+  regressions: DeploySmokeRegression[];
+  totalUrlsChecked: number;
+  deploy?: {
+    deploy_id?: string | null;
+    environment?: string | null;
+    commit_sha?: string | null;
+    callback_url?: string | null;
+  } | null;
+  createdAt?: string | null;
+  finalizedAt?: string | null;
+}
+
 interface ProjectShowProps {
   workspace: WorkspaceSummary;
   project: ProjectDetails;
@@ -85,12 +114,18 @@ interface ProjectShowProps {
   monitoredBacklinksCount: number;
   competitors: CompetitorItem[];
   integrations?: IntegrationItem[];
+  deploySmoke?: DeploySmokeSummary | null;
+  runnrWebhookUrl?: string;
+  runnrBadgeUrl?: string;
   activities?: ActivityItem[];
   canEdit: boolean;
   canDelete: boolean;
 }
 
 function getActivityIcon(type: string) {
+  if (type.startsWith('deploy.')) {
+    return <Sparkles className="h-3.5 w-3.5 text-rose-400" />;
+  }
   if (type.startsWith('crawl.')) {
     return <RefreshCw className="h-3.5 w-3.5 text-emerald-400" />;
   }
@@ -150,6 +185,9 @@ export default function ProjectShow({
   monitoredBacklinksCount,
   competitors,
   integrations = [],
+  deploySmoke,
+  runnrWebhookUrl = '/api/webhooks/runnr/deploy',
+  runnrBadgeUrl = `/api/v1/projects/${project.id}/deploy-smoke/badge`,
   activities = [],
   canEdit,
   canDelete,
@@ -158,12 +196,17 @@ export default function ProjectShow({
   const [bingModalOpen, setBingModalOpen] = useState(false);
   const [bingApiKey, setBingApiKey] = useState('');
   const [bingSiteUrl, setBingSiteUrl] = useState(project.canonical_url || `https://${project.domain}/`);
+  const [runnrModalOpen, setRunnrModalOpen] = useState(false);
+  const [runnrSiteId, setRunnrSiteId] = useState(project.runnr_site_id || '');
+  const [copiedBadge, setCopiedBadge] = useState(false);
+  const [copiedWebhook, setCopiedWebhook] = useState(false);
   const [liveActivities, setLiveActivities] = useState<ActivityItem[]>(activities);
   const [liveCrawl, setLiveCrawl] = useState<LatestCrawlSummary | null>(latestCrawl || null);
   const [activeFilter, setActiveFilter] = useState<'all' | 'crawls' | 'competitors' | 'project'>('all');
 
   const gscIntegration = integrations.find((i) => i.provider === 'gsc');
   const bingIntegration = integrations.find((i) => i.provider === 'bing');
+  const runnrIntegration = integrations.find((i) => i.provider === 'runnr');
 
   const { data, setData, post, processing, errors, reset } = useForm({
     domain: '',
@@ -543,16 +586,16 @@ export default function ProjectShow({
           </div>
         </div>
 
-        {/* First-Party Search Integrations (GSC & Bing) */}
+        {/* First-Party Integrations & Runnr Hosting Moat */}
         <div className="space-y-4">
           <div>
-            <h2 className="text-base font-semibold text-white">First-Party Search Integrations</h2>
+            <h2 className="text-base font-semibold text-white">First-Party Integrations &amp; Runnr Hosting Moat</h2>
             <p className="text-xs text-slate-400">
-              Direct API integrations for Google Search Console and Bing Webmaster Tools to overlay verified search performance metrics into your Rank Tracker.
+              Direct API integrations for Google Search Console, Bing Webmaster Tools, and automated Runnr hosting post-deploy SEO smoke tests.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             {/* Google Search Console Card */}
             <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 flex flex-col justify-between gap-4">
               <div className="flex items-start justify-between">
@@ -696,6 +739,127 @@ export default function ProjectShow({
                     >
                       <Plus className="h-3.5 w-3.5" />
                       <span>Connect Bing Webmaster</span>
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
+
+            {/* Runnr Hosting & Post-Deploy Smoke Card */}
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 flex flex-col justify-between gap-4">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-indigo-400">
+                    <Server className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">Runnr Hosting &amp; Smoke Tests</h3>
+                    <p className="text-xs text-slate-400">
+                      Post-deploy crawl for robots.txt regressions &amp; noindex leaks
+                    </p>
+                  </div>
+                </div>
+                {project.runnr_site_id ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-indigo-500/10 text-indigo-400 border border-indigo-500/30">
+                    <CheckCircle2 className="h-3 w-3" /> Connected
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-800 text-slate-400 border border-slate-700">
+                    Not Connected
+                  </span>
+                )}
+              </div>
+
+              {project.runnr_site_id ? (
+                <div className="space-y-2 text-xs">
+                  <div className="text-slate-400 flex items-center gap-1 font-mono">
+                    <span className="text-slate-500">Site ID:</span>
+                    <span className="text-indigo-300 font-semibold">{project.runnr_site_id}</span>
+                  </div>
+
+                  {deploySmoke ? (
+                    <div className="p-2.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-400 text-[11px] font-medium">Latest Deploy Smoke:</span>
+                        {deploySmoke.passed ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                            <CheckCircle2 className="h-2.5 w-2.5" /> Passing
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/30">
+                            <AlertTriangle className="h-2.5 w-2.5" /> Failing
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-300 line-clamp-2">{deploySmoke.summary}</p>
+                      {deploySmoke.regressions.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {deploySmoke.regressions.map((reg, idx) => (
+                            <span key={idx} className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 text-[10px] font-mono">
+                              {reg.rule}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-[11px] text-slate-500">
+                      No deploy smoke tests run yet. Webhook triggers on deployment.
+                    </div>
+                  )}
+
+                  <div className="pt-1 flex items-center justify-between gap-1">
+                    <span className="text-[11px] text-slate-400">Embed Status Badge:</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const md = `[![Runnr SEO Smoke](${runnrBadgeUrl})](${runnrBadgeUrl})`;
+                        navigator.clipboard.writeText(md);
+                        setCopiedBadge(true);
+                        setTimeout(() => setCopiedBadge(false), 2000);
+                      }}
+                      className="inline-flex items-center gap-1 text-[11px] text-indigo-400 hover:text-indigo-300 transition cursor-pointer"
+                    >
+                      {copiedBadge ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                      <span>{copiedBadge ? 'Copied Markdown' : 'Copy Badge MD'}</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400">
+                  Connect your Runnr site ID to trigger automated 60s post-deploy smoke crawls checking for robots.txt regressions, staging noindex leaks, and 5xx errors.
+                </p>
+              )}
+
+              <div className="flex items-center gap-2 pt-2 border-t border-slate-800/80">
+                {canEdit && (
+                  project.runnr_site_id ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setRunnrModalOpen(true)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition cursor-pointer"
+                      >
+                        <Settings className="h-3 w-3" />
+                        <span>Configure Webhook</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => router.delete(`/workspaces/${workspace.id}/projects/${project.id}/integrations/runnr/disconnect`)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 text-xs font-medium transition cursor-pointer ml-auto"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        <span>Disconnect</span>
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setRunnrModalOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs transition cursor-pointer shadow-md shadow-indigo-500/10"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>Connect Runnr Site</span>
                     </button>
                   )
                 )}
@@ -970,6 +1134,106 @@ export default function ProjectShow({
                     className="px-4 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs transition cursor-pointer"
                   >
                     Connect Bing
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Runnr Hosting Webhook Setup Modal */}
+        {runnrModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+            <div className="relative w-full max-w-lg rounded-xl border border-slate-800 bg-slate-900 p-6 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-lg bg-indigo-500/10 border border-indigo-500/30 text-indigo-400">
+                    <Server className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-semibold text-white">Runnr Hosting Webhook Setup</h3>
+                    <p className="text-xs text-slate-400">Automated post-deploy SEO smoke testing</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRunnrModalOpen(false)}
+                  className="text-slate-400 hover:text-white"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="space-y-3 text-xs text-slate-300">
+                <div>
+                  <span className="block font-medium text-slate-400 mb-1">Webhook Endpoint URL</span>
+                  <div className="flex items-center gap-2 p-2 rounded-lg bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-200">
+                    <span className="flex-1 truncate">{runnrWebhookUrl}</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(runnrWebhookUrl);
+                        setCopiedWebhook(true);
+                        setTimeout(() => setCopiedWebhook(false), 2000);
+                      }}
+                      className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition flex items-center gap-1 cursor-pointer"
+                    >
+                      {copiedWebhook ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                      <span>{copiedWebhook ? 'Copied' : 'Copy'}</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-lg bg-slate-950/60 border border-slate-800 text-[11px] space-y-1.5 text-slate-400">
+                  <p className="font-semibold text-slate-200">How Runnr Webhooks Work:</p>
+                  <p>1. In Runnr Site Settings &gt; Webhooks, add a Deploy Webhook pointing to the URL above.</p>
+                  <p>2. Set your webhook secret matching <code className="text-indigo-300">RUNNR_WEBHOOK_SECRET</code>. Runnr signs requests with HMAC-SHA256 in the <code className="text-indigo-300">X-Runnr-Signature</code> header.</p>
+                  <p>3. Every deploy triggers a 60-second smoke crawl checking for accidental <code className="text-rose-300">Disallow: /</code>, staging <code className="text-rose-300">noindex</code>, 5xx errors, and canonical host flips.</p>
+                </div>
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  router.post(
+                    `/workspaces/${workspace.id}/projects/${project.id}/integrations/runnr/connect`,
+                    { runnr_site_id: runnrSiteId },
+                    { onSuccess: () => setRunnrModalOpen(false) }
+                  );
+                }}
+                className="space-y-4 pt-2 border-t border-slate-800"
+              >
+                <div>
+                  <label htmlFor="runnr-site-id" className="block text-xs font-medium text-slate-300">
+                    Runnr Site ID
+                  </label>
+                  <input
+                    id="runnr-site-id"
+                    type="text"
+                    required
+                    value={runnrSiteId}
+                    onChange={(e) => setRunnrSiteId(e.target.value)}
+                    className="mt-1 block w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+                    placeholder="e.g. site_runnr_12345"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Find this identifier in your Runnr site dashboard.
+                  </p>
+                </div>
+
+                <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setRunnrModalOpen(false)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition cursor-pointer shadow-md shadow-indigo-500/20"
+                  >
+                    Save &amp; Activate
                   </button>
                 </div>
               </form>

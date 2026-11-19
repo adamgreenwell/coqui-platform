@@ -220,7 +220,12 @@ class ProjectIntegrationController extends Controller
         abort_if($integration->project_id !== $project->id, 404);
         Gate::authorize('update', $project);
 
-        $providerName = $integration->provider === 'gsc' ? 'Google Search Console' : 'Bing Webmaster Tools';
+        $providerName = match ($integration->provider) {
+            'gsc' => 'Google Search Console',
+            'bing' => 'Bing Webmaster Tools',
+            'runnr' => 'Runnr Hosting',
+            default => ucfirst($integration->provider),
+        };
         $integration->delete();
 
         ProjectActivity::log(
@@ -236,5 +241,77 @@ class ProjectIntegrationController extends Controller
         return redirect()
             ->back()
             ->with('success', "{$providerName} disconnected.");
+    }
+
+    public function connectRunnr(Request $request, Workspace $workspace, Project $project): RedirectResponse
+    {
+        abort_if($project->workspace_id !== $workspace->id, 404);
+        Gate::authorize('update', $project);
+
+        $validated = $request->validate([
+            'runnr_site_id' => ['required', 'string', 'max:120'],
+        ]);
+
+        $siteId = (string) $validated['runnr_site_id'];
+
+        $project->update([
+            'runnr_site_id' => $siteId,
+        ]);
+
+        ProjectIntegration::query()->updateOrCreate(
+            [
+                'project_id' => $project->id,
+                'provider' => 'runnr',
+            ],
+            [
+                'external_identifier' => $siteId,
+                'status' => 'connected',
+                'last_synced_at' => now(),
+            ],
+        );
+
+        ProjectActivity::log(
+            project: $project,
+            eventType: 'integration.connected',
+            title: 'Runnr Hosting Connected',
+            description: "Runnr site {$siteId} connected for automated post-deploy SEO smoke testing.",
+            properties: [
+                'provider' => 'runnr',
+                'runnr_site_id' => $siteId,
+            ],
+        );
+
+        return redirect()
+            ->back()
+            ->with('success', 'Runnr Hosting connected. Post-deploy smoke tests are now active.');
+    }
+
+    public function disconnectRunnr(Workspace $workspace, Project $project): RedirectResponse
+    {
+        abort_if($project->workspace_id !== $workspace->id, 404);
+        Gate::authorize('update', $project);
+
+        $oldSiteId = $project->runnr_site_id;
+        $project->update(['runnr_site_id' => null]);
+
+        ProjectIntegration::query()
+            ->where('project_id', $project->id)
+            ->where('provider', 'runnr')
+            ->delete();
+
+        ProjectActivity::log(
+            project: $project,
+            eventType: 'integration.disconnected',
+            title: 'Runnr Hosting Disconnected',
+            description: 'Runnr hosting integration disconnected.',
+            properties: [
+                'provider' => 'runnr',
+                'previous_site_id' => $oldSiteId,
+            ],
+        );
+
+        return redirect()
+            ->back()
+            ->with('success', 'Runnr Hosting disconnected.');
     }
 }

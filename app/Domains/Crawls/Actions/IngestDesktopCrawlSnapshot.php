@@ -229,6 +229,10 @@ class IngestDesktopCrawlSnapshot
             );
         }
 
+        if ($refreshed->source === 'deploy_smoke') {
+            app(\App\Domains\Integrations\Services\RunnrDeploySmokeService::class)->evaluate($refreshed);
+        }
+
         return $refreshed;
     }
 }
