@@ -5,9 +5,27 @@ declare(strict_types=1);
 namespace App\Domains\Backlinks\Models;
 
 use App\Domains\Projects\Models\Project;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * @property int $id
+ * @property int $project_id
+ * @property string $source_url
+ * @property string $source_url_hash
+ * @property string $target_url
+ * @property string|null $expected_anchor
+ * @property string|null $expected_rel
+ * @property string $state
+ * @property int|null $last_http_status
+ * @property string|null $last_observed_rel
+ * @property bool $last_page_noindex
+ * @property CarbonInterface|null $last_verified_at
+ * @property CarbonInterface|null $created_at
+ * @property CarbonInterface|null $updated_at
+ * @property-read Project $project
+ */
 class MonitoredBacklink extends Model
 {
     /** @var list<string> */
