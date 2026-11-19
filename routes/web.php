@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\KeywordExplorerController;
 use App\Http\Controllers\ProjectCompetitorController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\SanctumTokenController;
@@ -49,4 +50,9 @@ Route::middleware(['auth'])->group(function (): void {
     Route::post('/workspaces/{workspace}/projects/{project}/keywords', [TrackedKeywordController::class, 'store'])->name('workspaces.projects.keywords.store');
     Route::delete('/workspaces/{workspace}/projects/{project}/keywords/{keyword}', [TrackedKeywordController::class, 'destroy'])->name('workspaces.projects.keywords.destroy');
     Route::get('/workspaces/{workspace}/projects/{project}/keywords/{keyword}/snapshots', [TrackedKeywordController::class, 'snapshots'])->name('workspaces.projects.keywords.snapshots');
+
+    Route::get('/workspaces/{workspace}/projects/{project}/keyword-explorer', [KeywordExplorerController::class, 'index'])->name('workspaces.projects.keyword-explorer.index');
+    Route::post('/workspaces/{workspace}/projects/{project}/keyword-explorer/overview', [KeywordExplorerController::class, 'overview'])->name('workspaces.projects.keyword-explorer.overview');
+    Route::post('/workspaces/{workspace}/projects/{project}/keyword-explorer/related', [KeywordExplorerController::class, 'related'])->name('workspaces.projects.keyword-explorer.related');
+    Route::post('/workspaces/{workspace}/projects/{project}/keyword-explorer/track', [KeywordExplorerController::class, 'track'])->name('workspaces.projects.keyword-explorer.track');
 });
