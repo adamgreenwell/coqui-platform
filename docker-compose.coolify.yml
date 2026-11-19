@@ -4,8 +4,9 @@
 #   - Every setting is listed as ${VAR}, so Coolify shows it as an editable
 #     variable. ${VAR:?} values are required: Coolify refuses to deploy while
 #     they're empty. There is no .env file on the server.
-#   - nginx publishes no host port. Assign the domain to the `nginx` service
-#     in Coolify (container port 80); Coolify's proxy terminates TLS.
+#   - The web-facing service is `app` (nginx, container port 80), so the
+#     Coolify domain goes on `app`; Coolify's proxy terminates TLS. PHP-FPM
+#     runs as `php`. nginx publishes no host port.
 #   - nginx's config is baked into a small image instead of bind-mounted.
 #   - coqui-worker is left out until its image exists (#58).
 #
@@ -116,7 +117,34 @@ x-app-env: &app-env
   RUNNR_TELEMETRY_TOKEN: "${RUNNR_TELEMETRY_TOKEN:-}"
 
 services:
+  # Web entry point: assign the Coolify domain here. Serves assets, passes PHP
+  # to `php` and proxies the /app WebSocket path to `reverb`.
   app:
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
+      args:
+        PHP_UPSTREAM: php:9000
+    restart: unless-stopped
+    expose:
+      - "80"
+    volumes:
+      - public_assets:/var/www/html/public:ro
+    depends_on:
+      php:
+        condition: service_healthy
+      reverb:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/up || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - coqui
+
+  # PHP-FPM (FastCGI on :9000). Runs migrations and caches config on start.
+  php:
     build: *app-build
     restart: unless-stopped
     environment: *app-env
@@ -137,28 +165,6 @@ services:
     networks:
       - coqui
 
-  nginx:
-    build:
-      context: .
-      dockerfile: docker/nginx/Dockerfile
-    restart: unless-stopped
-    expose:
-      - "80"
-    volumes:
-      - public_assets:/var/www/html/public:ro
-    depends_on:
-      app:
-        condition: service_healthy
-      reverb:
-        condition: service_started
-    healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/up || exit 1"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
-    networks:
-      - coqui
-
   horizon:
     build: *app-build
     restart: unless-stopped
@@ -167,7 +173,7 @@ services:
     volumes:
       - storage_data:/var/www/html/storage
     depends_on:
-      app:
+      php:
         condition: service_healthy
     networks:
       - coqui
@@ -191,7 +197,7 @@ services:
     volumes:
       - storage_data:/var/www/html/storage
     depends_on:
-      app:
+      php:
         condition: service_healthy
     networks:
       - coqui
