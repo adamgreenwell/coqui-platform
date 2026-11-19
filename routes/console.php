@@ -29,4 +29,3 @@ Schedule::command('coqui:verify-backlinks')
 Schedule::command('search-console:sync')
     ->dailyAt('04:00')
     ->withoutOverlapping();
-
