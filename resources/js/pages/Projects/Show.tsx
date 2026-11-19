@@ -328,6 +328,22 @@ export default function ProjectShow({
             </Link>
 
             {canEdit && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm(`Run a cloud SEO audit on ${project.domain} now?`)) {
+                    router.post(`/workspaces/${workspace.id}/projects/${project.id}/crawls/dispatch`);
+                  }
+                }}
+                disabled={liveCrawl?.status === 'running' || liveCrawl?.status === 'pending'}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-300 text-xs font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Activity className={`h-3.5 w-3.5 text-teal-400 ${liveCrawl?.status === 'running' ? 'animate-spin' : ''}`} />
+                <span>{liveCrawl?.status === 'running' ? 'Crawling...' : 'Run Cloud Audit'}</span>
+              </button>
+            )}
+
+            {canEdit && (
               <Link
                 href={`/workspaces/${workspace.id}/projects/${project.id}/settings`}
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium transition cursor-pointer"

@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\CloudCrawlController;
 use App\Http\Controllers\CrawlCompareController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\KeywordExplorerController;
@@ -73,6 +74,7 @@ Route::middleware(['auth'])->group(function (): void {
 
     Route::get('/workspaces/{workspace}/projects/{project}/crawls/compare', [CrawlCompareController::class, 'show'])->name('workspaces.projects.crawls.compare');
     Route::post('/workspaces/{workspace}/projects/{project}/crawls/compare/share', [CrawlCompareController::class, 'share'])->name('workspaces.projects.crawls.compare.share');
+    Route::post('/workspaces/{workspace}/projects/{project}/crawls/dispatch', [CloudCrawlController::class, 'dispatch'])->name('workspaces.projects.crawls.dispatch');
 });
 
 Route::get('/reports/crawls/diff/{shareToken}', [PublicCrawlDiffController::class, 'show'])->name('reports.crawls.diff');

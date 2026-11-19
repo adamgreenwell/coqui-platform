@@ -13,6 +13,10 @@ use Illuminate\Support\Facades\Http;
  */
 class CoquiWorkerClient
 {
+    public function __construct(
+        private readonly SsrfProtectionGuard $ssrf = new SsrfProtectionGuard(),
+    ) {}
+
     /**
      * Dispatch a bounded cloud crawl for a project (scheduled audit or post-deploy smoke test).
      *
@@ -21,14 +25,23 @@ class CoquiWorkerClient
      */
     public function dispatchCrawl(Project $project, string $crawlId, array $overrides = []): array
     {
+        $seed = (string) ($overrides['seed'] ?? $project->canonical_url);
+        $this->ssrf->assertAllowed($seed);
+
+        $workspaceLimit = $project->workspace?->cloud_crawl_url_limit;
+        $defaultCap = (int) config('coqui.worker.default_max_urls', 1000);
+        $effectiveMax = $workspaceLimit !== null && $workspaceLimit > 0 ? $workspaceLimit : $defaultCap;
+        $requestedMax = (int) ($overrides['maxUrls'] ?? $effectiveMax);
+        $boundedMaxUrls = min($requestedMax, $effectiveMax);
+
         $payload = [
             'crawlId' => $crawlId,
             'projectId' => $project->id,
             'seedKind' => $overrides['seedKind'] ?? 'url',
-            'seed' => $overrides['seed'] ?? $project->canonical_url,
+            'seed' => $seed,
             'config' => [
                 'maxDepth' => $overrides['maxDepth'] ?? 3,
-                'maxUrls' => $overrides['maxUrls'] ?? (int) config('coqui.worker.default_max_urls', 1000),
+                'maxUrls' => $boundedMaxUrls,
                 'concurrency' => $overrides['concurrency'] ?? 4,
                 'requestTimeoutMs' => 15000,
                 'sameHostOnly' => true,
@@ -53,6 +66,10 @@ class CoquiWorkerClient
      */
     public function inspectUrls(array $urls, ?string $targetDomain = null): array
     {
+        foreach ($urls as $url) {
+            $this->ssrf->assertAllowed((string) $url);
+        }
+
         $response = $this->http()->post($this->url('/jobs/inspect'), [
             'urls' => $urls,
             'targetDomain' => $targetDomain,

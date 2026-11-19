@@ -119,9 +119,13 @@ services:
 
   coqui-worker:
     image: "${COQUI_WORKER_IMAGE:-ghcr.io/adamgreenwell/coqui-worker:latest}"
+    build:
+      context: ./docker/coqui-worker
+      dockerfile: Dockerfile
     profiles:
       - worker
     restart: unless-stopped
+    mem_limit: 256m
     environment:
       COQUI_WORKER_PORT: "8085"
       COQUI_WORKER_TOKEN: "${COQUI_WORKER_TOKEN:-}"
