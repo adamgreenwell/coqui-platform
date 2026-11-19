@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domains\Serp\SeRanking;
 
+use App\Domains\Serp\ReadOnlySpendScope;
 use DateTimeInterface;
 use Illuminate\Support\Facades\DB;
 
@@ -11,6 +12,8 @@ class SeRankingSpendGuard
 {
     public function assertCanSpend(int $estimatedCredits, bool $isScheduled = false): void
     {
+        ReadOnlySpendScope::assertSpendAllowed();
+
         if ($isScheduled && ! config('coqui.seranking.scheduled_spend')) {
             throw new SeRankingBudgetException(
                 'Scheduled SE Ranking spend is disabled (SERANKING_SCHEDULED_SPEND=false).'

@@ -19,6 +19,15 @@ class ProjectPolicy
         return $this->hasRoleInWorkspace($user, $project, ['owner', 'admin', 'editor']);
     }
 
+    /**
+     * Whether the user may trigger new paid provider lookups (DataForSEO / SE Ranking)
+     * for this project. Read-only members get cached data only.
+     */
+    public function spend(User $user, Project $project): bool
+    {
+        return $this->update($user, $project);
+    }
+
     public function delete(User $user, Project $project): bool
     {
         return $this->hasRoleInWorkspace($user, $project, ['owner', 'admin']);

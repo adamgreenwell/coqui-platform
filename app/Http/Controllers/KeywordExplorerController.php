@@ -9,7 +9,9 @@ use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\Workspace;
 use App\Domains\Serp\DataForSeo\DataForSeoBudgetException;
 use App\Domains\Serp\DataForSeo\DataForSeoCacheRepository;
+use App\Domains\Serp\DataForSeo\DataForSeoReadOnlyException;
 use App\Domains\Serp\Models\TrackedKeyword;
+use App\Domains\Serp\ReadOnlySpendScope;
 use App\Domains\Serp\Services\KeywordResearchService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -23,6 +25,19 @@ use Inertia\Response;
 
 class KeywordExplorerController extends Controller
 {
+    /**
+     * Read-only members may only receive cached results (no new paid lookups).
+     *
+     * @template T
+     *
+     * @param  callable(): T  $lookup
+     * @return T
+     */
+    private function withSpendPolicy(bool $canSpend, callable $lookup): mixed
+    {
+        return $canSpend ? $lookup() : ReadOnlySpendScope::run($lookup);
+    }
+
     public function index(Workspace $workspace, Project $project): Response
     {
         abort_if($project->workspace_id !== $workspace->id, 404);
@@ -123,14 +138,21 @@ class KeywordExplorerController extends Controller
         $languageCode = (string) ($validated['language_code'] ?? ($project->language_code ?: 'en'));
         $bypassCache = (bool) ($validated['bypass_cache'] ?? false);
 
+        $canSpend = Gate::allows('spend', $project);
+
         try {
-            $result = $service->overview(
+            $result = $this->withSpendPolicy($canSpend, fn (): array => $service->overview(
                 keywords: $keywordsList,
                 project: $project,
                 locationCode: $locationCode,
                 languageCode: $languageCode,
-                bypassCache: $bypassCache,
-            );
+                bypassCache: $bypassCache && $canSpend,
+            ));
+        } catch (DataForSeoReadOnlyException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'error' => 'read_only',
+            ], 403);
         } catch (DataForSeoBudgetException $e) {
             return response()->json([
                 'message' => $e->getMessage(),
@@ -172,16 +194,23 @@ class KeywordExplorerController extends Controller
         $depth = (int) ($validated['depth'] ?? 1);
         $bypassCache = (bool) ($validated['bypass_cache'] ?? false);
 
+        $canSpend = Gate::allows('spend', $project);
+
         try {
-            $result = $service->related(
+            $result = $this->withSpendPolicy($canSpend, fn (): array => $service->related(
                 keyword: $seed,
                 project: $project,
                 locationCode: $locationCode,
                 languageCode: $languageCode,
                 limit: $limit,
                 depth: $depth,
-                bypassCache: $bypassCache,
-            );
+                bypassCache: $bypassCache && $canSpend,
+            ));
+        } catch (DataForSeoReadOnlyException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'error' => 'read_only',
+            ], 403);
         } catch (DataForSeoBudgetException $e) {
             return response()->json([
                 'message' => $e->getMessage(),
