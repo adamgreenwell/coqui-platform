@@ -233,8 +233,15 @@ class KeywordExplorerController extends Controller
                     continue;
                 }
 
+                $itemLocation = is_array($item) && isset($item['location_code']) && is_numeric($item['location_code'])
+                    ? (int) $item['location_code']
+                    : $locationCode;
+                $itemLanguage = is_array($item) && isset($item['language_code']) && is_string($item['language_code']) && trim($item['language_code']) !== ''
+                    ? trim($item['language_code'])
+                    : $languageCode;
+
                 if ($searchVolume === null || $keywordDifficulty === null) {
-                    $cached = $cacheRepo->getKeywordMetrics($kw, $locationCode, $languageCode);
+                    $cached = $cacheRepo->getKeywordMetrics($kw, $itemLocation, $itemLanguage);
                     if ($cached !== null) {
                         $searchVolume ??= isset($cached['search_volume']) ? (int) $cached['search_volume'] : null;
                         $keywordDifficulty ??= isset($cached['keyword_difficulty']) ? (int) $cached['keyword_difficulty'] : null;
@@ -246,8 +253,8 @@ class KeywordExplorerController extends Controller
                         'project_id' => $project->id,
                         'keyword' => $kw,
                         'device' => $device,
-                        'location_code' => $locationCode,
-                        'language_code' => $languageCode,
+                        'location_code' => $itemLocation,
+                        'language_code' => $itemLanguage,
                     ],
                     [
                         'cadence' => $cadence,

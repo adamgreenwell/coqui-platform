@@ -292,7 +292,7 @@ class KeywordExplorerTest extends TestCase
 
     public function test_blocks_requests_exceeding_workspace_credit_caps(): void
     {
-        // Set workspace monthly budget to $0.00
+        config()->set('coqui.dataforseo.base_url', 'https://api.dataforseo.com');
         $this->workspace->update(['monthly_dfs_budget_usd' => 0.00]);
 
         $response = $this->actingAs($this->user)
