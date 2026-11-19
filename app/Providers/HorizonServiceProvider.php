@@ -17,8 +17,10 @@ class HorizonServiceProvider extends HorizonApplicationServiceProvider
 
     protected function gate(): void
     {
+        // Horizon shows every workspace's job payloads and can retry or delete
+        // jobs, so outside local it is limited to platform operators.
         Gate::define('viewHorizon', function (?User $user): bool {
-            return $user !== null;
+            return $user instanceof User && $user->isOperator();
         });
     }
 }
