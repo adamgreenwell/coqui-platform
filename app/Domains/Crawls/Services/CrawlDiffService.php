@@ -99,21 +99,21 @@ class CrawlDiffService
                         ->orWhere(fn ($sub) => $sub->whereNull('t.status')->whereNotNull('b.status'))
                         ->orWhere(fn ($sub) => $sub->whereNotNull('t.status')->whereNull('b.status'));
                 })
-                ->orWhere(function ($q): void {
-                    $q->whereColumn('t.title', '!=', 'b.title')
-                        ->orWhere(fn ($sub) => $sub->whereNull('t.title')->whereNotNull('b.title'))
-                        ->orWhere(fn ($sub) => $sub->whereNotNull('t.title')->whereNull('b.title'));
-                })
-                ->orWhere(function ($q): void {
-                    $q->whereColumn('t.canonical', '!=', 'b.canonical')
-                        ->orWhere(fn ($sub) => $sub->whereNull('t.canonical')->whereNotNull('b.canonical'))
-                        ->orWhere(fn ($sub) => $sub->whereNotNull('t.canonical')->whereNull('b.canonical'));
-                })
-                ->orWhere(function ($q): void {
-                    $q->whereColumn('t.meta_robots', '!=', 'b.meta_robots')
-                        ->orWhere(fn ($sub) => $sub->whereNull('t.meta_robots')->whereNotNull('b.meta_robots'))
-                        ->orWhere(fn ($sub) => $sub->whereNotNull('t.meta_robots')->whereNull('b.meta_robots'));
-                });
+                    ->orWhere(function ($q): void {
+                        $q->whereColumn('t.title', '!=', 'b.title')
+                            ->orWhere(fn ($sub) => $sub->whereNull('t.title')->whereNotNull('b.title'))
+                            ->orWhere(fn ($sub) => $sub->whereNotNull('t.title')->whereNull('b.title'));
+                    })
+                    ->orWhere(function ($q): void {
+                        $q->whereColumn('t.canonical', '!=', 'b.canonical')
+                            ->orWhere(fn ($sub) => $sub->whereNull('t.canonical')->whereNotNull('b.canonical'))
+                            ->orWhere(fn ($sub) => $sub->whereNotNull('t.canonical')->whereNull('b.canonical'));
+                    })
+                    ->orWhere(function ($q): void {
+                        $q->whereColumn('t.meta_robots', '!=', 'b.meta_robots')
+                            ->orWhere(fn ($sub) => $sub->whereNull('t.meta_robots')->whereNotNull('b.meta_robots'))
+                            ->orWhere(fn ($sub) => $sub->whereNotNull('t.meta_robots')->whereNull('b.meta_robots'));
+                    });
             })
             ->select([
                 't.url',

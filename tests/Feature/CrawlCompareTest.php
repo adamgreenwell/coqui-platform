@@ -24,9 +24,13 @@ class CrawlCompareTest extends TestCase
     use RefreshDatabase;
 
     private User $user;
+
     private Workspace $workspace;
+
     private Project $project;
+
     private CrawlRun $baselineRun;
+
     private CrawlRun $targetRun;
 
     protected function setUp(): void
