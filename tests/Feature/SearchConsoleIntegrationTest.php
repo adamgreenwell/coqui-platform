@@ -335,7 +335,7 @@ class SearchConsoleIntegrationTest extends TestCase
                 ->where('keywords.0.keyword', 'cloud rank tracking')
                 ->where('keywords.0.gsc_performance.clicks', 35)
                 ->where('keywords.0.gsc_performance.impressions', 350)
-                ->where('keywords.0.gsc_performance.ctr', 10.0)
+                ->where('keywords.0.gsc_performance.ctr', 10)
                 ->where('keywords.0.gsc_performance.position', 4.0)
             );
     }
