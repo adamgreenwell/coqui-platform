@@ -19,6 +19,7 @@ use Laravel\Sanctum\HasApiTokens;
  * @property string $name
  * @property string $email
  * @property string $password
+ * @property bool $is_operator
  * @property Pivot|null $pivot
  */
 class User extends Authenticatable
@@ -47,7 +48,16 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_operator' => 'boolean',
         ];
+    }
+
+    /**
+     * Platform operator (staff). Not mass-assignable; set via `coqui:operator`.
+     */
+    public function isOperator(): bool
+    {
+        return (bool) $this->is_operator;
     }
 
     /**

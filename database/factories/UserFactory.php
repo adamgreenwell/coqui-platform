@@ -29,4 +29,14 @@ class UserFactory extends Factory
             'remember_token' => Str::random(10),
         ];
     }
+
+    /**
+     * A platform operator (staff), e.g. allowed into Horizon.
+     */
+    public function operator(): static
+    {
+        return $this->state(fn (array $attributes): array => [
+            'is_operator' => true,
+        ]);
+    }
 }
