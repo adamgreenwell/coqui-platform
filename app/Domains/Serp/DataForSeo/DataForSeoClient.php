@@ -495,7 +495,7 @@ class DataForSeoClient
      * Discover referring domains linking to competitor targets while excluding project domain.
      * Cached for 14 days per competitor set.
      *
-     * @param  array<string, string>  $targets  Map of index to competitor domain, e.g. ["1" => "comp1.com", "2" => "comp2.com"]
+     * @param  array<string|int, string>  $targets  Map of index to competitor domain, e.g. ["1" => "comp1.com", "2" => "comp2.com"]
      * @param  list<string>  $excludeTargets  List of domains to exclude, e.g. [$projectDomain]
      * @return array<string, mixed>
      */

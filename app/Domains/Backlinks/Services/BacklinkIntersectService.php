@@ -39,7 +39,7 @@ class BacklinkIntersectService
         bool $fresh = false,
     ): array {
         $analyzedCompetitors = $competitors !== []
-            ? array_values(array_slice($competitors, 0, 3))
+            ? array_slice($competitors, 0, 3)
             : $project->competitors()->take(3)->pluck('domain')->all();
 
         if ($analyzedCompetitors === []) {
@@ -162,7 +162,7 @@ class BacklinkIntersectService
         bool $fresh = false,
     ): array {
         $analyzedCompetitors = $competitors !== []
-            ? array_values(array_slice($competitors, 0, 3))
+            ? array_slice($competitors, 0, 3)
             : $project->competitors()->take(3)->pluck('domain')->all();
 
         if ($analyzedCompetitors === []) {
