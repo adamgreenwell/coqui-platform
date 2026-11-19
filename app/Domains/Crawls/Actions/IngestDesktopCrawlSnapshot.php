@@ -6,32 +6,64 @@ namespace App\Domains\Crawls\Actions;
 
 use App\Domains\Crawls\DTOs\CrawlSyncPayload;
 use App\Domains\Crawls\Events\CrawlProgressUpdated;
+use App\Domains\Crawls\Exceptions\CrawlOwnershipConflictException;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Integrations\Services\RunnrDeploySmokeService;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
 class IngestDesktopCrawlSnapshot
 {
+    public const DESKTOP_SOURCE = 'desktop';
+
+    /**
+     * Create or update a desktop-synced run for this project.
+     *
+     * Runs are matched by (project, external crawl ID). A crawl ID that already
+     * belongs to another project, or to a server-side run (cloud worker or
+     * deploy smoke test), is never taken over.
+     *
+     * @throws CrawlOwnershipConflictException
+     */
     public function upsertRun(Project $project, CrawlSyncPayload $payload): CrawlRun
     {
-        /** @var CrawlRun $run */
-        $run = CrawlRun::query()->updateOrCreate(
-            ['external_crawl_id' => $payload->externalCrawlId],
-            [
-                'project_id' => $project->id,
-                'source' => $payload->source,
-                'seed' => $payload->seed,
-                'seed_kind' => $payload->seedKind,
-                'status' => $payload->status,
-                'config' => $payload->config,
-                'total_urls' => $payload->totalUrls,
-                'client_created_at_ms' => $payload->createdAtMs,
-                'client_started_at_ms' => $payload->startedAtMs,
-                'client_finished_at_ms' => $payload->finishedAtMs,
-            ],
-        );
+        $attributes = [
+            'project_id' => $project->id,
+            'source' => self::DESKTOP_SOURCE,
+            'seed' => $payload->seed,
+            'seed_kind' => $payload->seedKind,
+            'status' => $payload->status,
+            'config' => $payload->config,
+            'total_urls' => $payload->totalUrls,
+            'client_created_at_ms' => $payload->createdAtMs,
+            'client_started_at_ms' => $payload->startedAtMs,
+            'client_finished_at_ms' => $payload->finishedAtMs,
+        ];
+
+        /** @var CrawlRun|null $existing */
+        $existing = CrawlRun::query()
+            ->where('external_crawl_id', $payload->externalCrawlId)
+            ->first();
+
+        if ($existing !== null) {
+            if ($existing->project_id !== $project->id || $existing->source !== self::DESKTOP_SOURCE) {
+                throw CrawlOwnershipConflictException::forCrawl($payload->externalCrawlId);
+            }
+
+            $existing->update($attributes);
+
+            return $existing;
+        }
+
+        try {
+            /** @var CrawlRun $run */
+            $run = CrawlRun::query()->create(['external_crawl_id' => $payload->externalCrawlId] + $attributes);
+        } catch (UniqueConstraintViolationException) {
+            // Another request claimed this crawl ID between the lookup and the insert.
+            throw CrawlOwnershipConflictException::forCrawl($payload->externalCrawlId);
+        }
 
         return $run;
     }
