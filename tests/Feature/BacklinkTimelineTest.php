@@ -169,10 +169,16 @@ class BacklinkTimelineTest extends TestCase
         // Verify snapshots are persisted in database
         $this->assertDatabaseHas('backlink_history_snapshots', [
             'project_id' => $this->project->id,
-            'snapshot_date' => now()->toDateString(),
             'backlinks_count' => 1500,
             'referring_domains_count' => 150,
         ]);
+
+        $latestSnapshot = BacklinkHistorySnapshot::query()
+            ->where('project_id', $this->project->id)
+            ->where('backlinks_count', 1500)
+            ->firstOrFail();
+
+        $this->assertSame(now()->toDateString(), $latestSnapshot->snapshot_date->toDateString());
     }
 
     public function test_timeline_serves_from_database_snapshots_without_calling_history_api(): void
