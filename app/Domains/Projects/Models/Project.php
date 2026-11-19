@@ -9,6 +9,7 @@ use App\Domains\Backlinks\Models\MonitoredBacklink;
 use App\Domains\Crawls\Models\CrawlDiffReport;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Integrations\Models\BotCrawlLog;
+use App\Domains\Integrations\Models\PageTrafficSnapshot;
 use App\Domains\Integrations\Models\ProjectIntegration;
 use App\Domains\Integrations\Models\SearchPerformancePage;
 use App\Domains\Integrations\Models\SearchPerformanceQuery;
@@ -160,6 +161,14 @@ class Project extends Model
     public function botCrawlLogs(): HasMany
     {
         return $this->hasMany(BotCrawlLog::class);
+    }
+
+    /**
+     * @return HasMany<PageTrafficSnapshot, $this>
+     */
+    public function pageTrafficSnapshots(): HasMany
+    {
+        return $this->hasMany(PageTrafficSnapshot::class);
     }
 
     /**

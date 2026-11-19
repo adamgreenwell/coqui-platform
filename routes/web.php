@@ -18,6 +18,7 @@ use App\Http\Controllers\ProjectIntegrationController;
 use App\Http\Controllers\PublicCrawlDiffController;
 use App\Http\Controllers\SanctumTokenController;
 use App\Http\Controllers\TrackedKeywordController;
+use App\Http\Controllers\TrafficAttributionController;
 use App\Http\Controllers\WorkspaceController;
 use App\Http\Controllers\WorkspaceMemberController;
 use Illuminate\Support\Facades\Route;
@@ -91,10 +92,15 @@ Route::middleware(['auth'])->group(function (): void {
     Route::get('/workspaces/{workspace}/projects/{project}/integrations/google/connect', [ProjectIntegrationController::class, 'connectGoogle'])->name('workspaces.projects.integrations.google.connect');
     Route::get('/workspaces/{workspace}/projects/{project}/integrations/google/callback', [ProjectIntegrationController::class, 'callbackGoogle'])->name('workspaces.projects.integrations.google.callback');
     Route::post('/workspaces/{workspace}/projects/{project}/integrations/bing/connect', [ProjectIntegrationController::class, 'connectBing'])->name('workspaces.projects.integrations.bing.connect');
+    Route::post('/workspaces/{workspace}/projects/{project}/integrations/ga4/connect', [ProjectIntegrationController::class, 'connectGa4'])->name('workspaces.projects.integrations.ga4.connect');
+    Route::post('/workspaces/{workspace}/projects/{project}/integrations/plausible/connect', [ProjectIntegrationController::class, 'connectPlausible'])->name('workspaces.projects.integrations.plausible.connect');
     Route::post('/workspaces/{workspace}/projects/{project}/integrations/runnr/connect', [ProjectIntegrationController::class, 'connectRunnr'])->name('workspaces.projects.integrations.runnr.connect');
     Route::delete('/workspaces/{workspace}/projects/{project}/integrations/runnr/disconnect', [ProjectIntegrationController::class, 'disconnectRunnr'])->name('workspaces.projects.integrations.runnr.disconnect');
     Route::post('/workspaces/{workspace}/projects/{project}/integrations/{integration}/sync', [ProjectIntegrationController::class, 'sync'])->name('workspaces.projects.integrations.sync');
     Route::delete('/workspaces/{workspace}/projects/{project}/integrations/{integration}', [ProjectIntegrationController::class, 'destroy'])->name('workspaces.projects.integrations.destroy');
+
+    Route::get('/workspaces/{workspace}/projects/{project}/analytics/performance', [TrafficAttributionController::class, 'index'])->name('workspaces.projects.analytics.performance');
+    Route::post('/workspaces/{workspace}/projects/{project}/analytics/sync', [TrafficAttributionController::class, 'sync'])->name('workspaces.projects.analytics.sync');
 
     Route::get('/workspaces/{workspace}/projects/{project}/bot-logs', [BotTelemetryController::class, 'index'])->name('workspaces.projects.bot-logs.index');
     Route::post('/workspaces/{workspace}/projects/{project}/bot-logs/remediate', [BotTelemetryController::class, 'remediate'])->name('workspaces.projects.bot-logs.remediate');

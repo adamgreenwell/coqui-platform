@@ -13,6 +13,7 @@ import {
   Globe,
   Key,
   Laptop,
+  LineChart,
   Link2,
   Plus,
   Radio,
@@ -198,6 +199,12 @@ export default function ProjectShow({
   const [bingSiteUrl, setBingSiteUrl] = useState(project.canonical_url || `https://${project.domain}/`);
   const [runnrModalOpen, setRunnrModalOpen] = useState(false);
   const [runnrSiteId, setRunnrSiteId] = useState(project.runnr_site_id || '');
+  const [ga4ModalOpen, setGa4ModalOpen] = useState(false);
+  const [ga4PropertyId, setGa4PropertyId] = useState('');
+  const [ga4ApiKey, setGa4ApiKey] = useState('');
+  const [plausibleModalOpen, setPlausibleModalOpen] = useState(false);
+  const [plausibleSiteId, setPlausibleSiteId] = useState(project.domain || '');
+  const [plausibleApiKey, setPlausibleApiKey] = useState('');
   const [copiedBadge, setCopiedBadge] = useState(false);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
   const [liveActivities, setLiveActivities] = useState<ActivityItem[]>(activities);
@@ -207,6 +214,8 @@ export default function ProjectShow({
   const gscIntegration = integrations.find((i) => i.provider === 'gsc');
   const bingIntegration = integrations.find((i) => i.provider === 'bing');
   const runnrIntegration = integrations.find((i) => i.provider === 'runnr');
+  const ga4Integration = integrations.find((i) => i.provider === 'ga4');
+  const plausibleIntegration = integrations.find((i) => i.provider === 'plausible');
 
   const { data, setData, post, processing, errors, reset } = useForm({
     domain: '',
@@ -385,6 +394,14 @@ export default function ProjectShow({
             >
               <Server className="h-3.5 w-3.5 text-indigo-400" />
               <span>Bot Telemetry</span>
+            </Link>
+
+            <Link
+              href={`/workspaces/${workspace.id}/projects/${project.id}/analytics/performance`}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-300 text-xs font-medium transition cursor-pointer"
+            >
+              <LineChart className="h-3.5 w-3.5 text-teal-400" />
+              <span>Traffic &amp; Performance</span>
             </Link>
 
             {canEdit && (
@@ -873,6 +890,152 @@ export default function ProjectShow({
                 )}
               </div>
             </div>
+
+            {/* Google Analytics 4 Card */}
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 flex flex-col justify-between gap-4">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400">
+                    <LineChart className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">Google Analytics 4</h3>
+                    <p className="text-xs text-slate-400">
+                      Landing-page organic traffic, engagement, and AI assistant referrals
+                    </p>
+                  </div>
+                </div>
+                {ga4Integration?.status === 'connected' ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                    <CheckCircle2 className="h-3 w-3" /> Connected
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-800 text-slate-400 border border-slate-700">
+                    Not Connected
+                  </span>
+                )}
+              </div>
+
+              {ga4Integration?.site_url && (
+                <div className="text-xs text-slate-400 flex items-center gap-1 font-mono">
+                  <span className="text-slate-500">Property:</span>
+                  <span className="text-slate-200">{ga4Integration.site_url}</span>
+                </div>
+              )}
+
+              {ga4Integration?.last_synced_at && (
+                <div className="text-[11px] text-slate-500">
+                  Last synced: {formatRelativeTime(ga4Integration.last_synced_at)}
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 pt-2 border-t border-slate-800/80">
+                {canEdit && (
+                  ga4Integration?.status === 'connected' ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => router.post(`/workspaces/${workspace.id}/projects/${project.id}/integrations/${ga4Integration.id}/sync`)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition cursor-pointer"
+                      >
+                        <RefreshCw className="h-3 w-3" />
+                        <span>Sync Now</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => router.delete(`/workspaces/${workspace.id}/projects/${project.id}/integrations/${ga4Integration.id}`)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 text-xs font-medium transition cursor-pointer ml-auto"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        <span>Disconnect</span>
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setGa4ModalOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-medium text-xs transition cursor-pointer shadow-md shadow-amber-500/10"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>Connect GA4 Property</span>
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
+
+            {/* Plausible Analytics Card */}
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 flex flex-col justify-between gap-4">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-violet-500/10 border border-violet-500/30 text-violet-400">
+                    <Sparkles className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">Plausible Analytics</h3>
+                    <p className="text-xs text-slate-400">
+                      Privacy-first organic visits and AI referrer breakdowns
+                    </p>
+                  </div>
+                </div>
+                {plausibleIntegration?.status === 'connected' ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                    <CheckCircle2 className="h-3 w-3" /> Connected
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-800 text-slate-400 border border-slate-700">
+                    Not Connected
+                  </span>
+                )}
+              </div>
+
+              {plausibleIntegration?.site_url && (
+                <div className="text-xs text-slate-400 flex items-center gap-1 font-mono">
+                  <span className="text-slate-500">Site ID:</span>
+                  <span className="text-slate-200">{plausibleIntegration.site_url}</span>
+                </div>
+              )}
+
+              {plausibleIntegration?.last_synced_at && (
+                <div className="text-[11px] text-slate-500">
+                  Last synced: {formatRelativeTime(plausibleIntegration.last_synced_at)}
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 pt-2 border-t border-slate-800/80">
+                {canEdit && (
+                  plausibleIntegration?.status === 'connected' ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => router.post(`/workspaces/${workspace.id}/projects/${project.id}/integrations/${plausibleIntegration.id}/sync`)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition cursor-pointer"
+                      >
+                        <RefreshCw className="h-3 w-3" />
+                        <span>Sync Now</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => router.delete(`/workspaces/${workspace.id}/projects/${project.id}/integrations/${plausibleIntegration.id}`)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 text-xs font-medium transition cursor-pointer ml-auto"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        <span>Disconnect</span>
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setPlausibleModalOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-medium text-xs transition cursor-pointer shadow-md shadow-violet-500/10"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>Connect Plausible Site</span>
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1242,6 +1405,191 @@ export default function ProjectShow({
                     className="px-4 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs transition cursor-pointer shadow-md shadow-indigo-500/20"
                   >
                     Save &amp; Activate
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* GA4 Setup Modal */}
+        {ga4ModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+            <div className="relative w-full max-w-lg rounded-xl border border-slate-800 bg-slate-900 p-6 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-400">
+                    <LineChart className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-semibold text-white">Connect Google Analytics 4</h3>
+                    <p className="text-xs text-slate-400">Sync landing-page organic &amp; AI assistant traffic</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setGa4ModalOpen(false)}
+                  className="text-slate-400 hover:text-white"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  router.post(
+                    `/workspaces/${workspace.id}/projects/${project.id}/integrations/ga4/connect`,
+                    {
+                      property_id: ga4PropertyId,
+                      api_key: ga4ApiKey,
+                    },
+                    { onSuccess: () => setGa4ModalOpen(false) }
+                  );
+                }}
+                className="space-y-4 text-xs"
+              >
+                <div>
+                  <label htmlFor="ga4-property-id" className="block text-xs font-medium text-slate-300">
+                    GA4 Property ID <span className="text-rose-400">*</span>
+                  </label>
+                  <input
+                    id="ga4-property-id"
+                    type="text"
+                    required
+                    value={ga4PropertyId}
+                    onChange={(e) => setGa4PropertyId(e.target.value)}
+                    className="mt-1 block w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+                    placeholder="e.g. 123456789 or properties/123456789"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Found in Google Analytics Admin &gt; Property Settings &gt; Property details.
+                  </p>
+                </div>
+
+                <div>
+                  <label htmlFor="ga4-api-key" className="block text-xs font-medium text-slate-300">
+                    API Key or Bearer Token (optional)
+                  </label>
+                  <input
+                    id="ga4-api-key"
+                    type="password"
+                    value={ga4ApiKey}
+                    onChange={(e) => setGa4ApiKey(e.target.value)}
+                    className="mt-1 block w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+                    placeholder="Optional service token or API secret"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    OAuth token or Google Cloud API key authorized for Google Analytics Data API.
+                  </p>
+                </div>
+
+                <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setGa4ModalOpen(false)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs transition cursor-pointer shadow-md shadow-amber-500/20"
+                  >
+                    Connect GA4
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Plausible Setup Modal */}
+        {plausibleModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+            <div className="relative w-full max-w-lg rounded-xl border border-slate-800 bg-slate-900 p-6 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-lg bg-violet-500/10 border border-violet-500/30 text-violet-400">
+                    <Sparkles className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-semibold text-white">Connect Plausible Analytics</h3>
+                    <p className="text-xs text-slate-400">Privacy-friendly page visits &amp; AI referrer tracking</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPlausibleModalOpen(false)}
+                  className="text-slate-400 hover:text-white"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  router.post(
+                    `/workspaces/${workspace.id}/projects/${project.id}/integrations/plausible/connect`,
+                    {
+                      site_id: plausibleSiteId,
+                      api_key: plausibleApiKey,
+                    },
+                    { onSuccess: () => setPlausibleModalOpen(false) }
+                  );
+                }}
+                className="space-y-4 text-xs"
+              >
+                <div>
+                  <label htmlFor="plausible-site-id" className="block text-xs font-medium text-slate-300">
+                    Plausible Site ID / Domain
+                  </label>
+                  <input
+                    id="plausible-site-id"
+                    type="text"
+                    required
+                    value={plausibleSiteId}
+                    onChange={(e) => setPlausibleSiteId(e.target.value)}
+                    className="mt-1 block w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+                    placeholder={`e.g. ${project.domain}`}
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    The domain name registered in your Plausible dashboard.
+                  </p>
+                </div>
+
+                <div>
+                  <label htmlFor="plausible-api-key" className="block text-xs font-medium text-slate-300">
+                    Plausible API Key / Token <span className="text-rose-400">*</span>
+                  </label>
+                  <input
+                    id="plausible-api-key"
+                    type="password"
+                    required
+                    value={plausibleApiKey}
+                    onChange={(e) => setPlausibleApiKey(e.target.value)}
+                    className="mt-1 block w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+                    placeholder="Enter Plausible API key (Stats API)"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Generated in Plausible Settings &gt; API Keys with stats read access.
+                  </p>
+                </div>
+
+                <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setPlausibleModalOpen(false)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-1.5 rounded-lg bg-violet-600 hover:bg-violet-500 text-white font-semibold text-xs transition cursor-pointer shadow-md shadow-violet-500/20"
+                  >
+                    Connect Plausible
                   </button>
                 </div>
               </form>
