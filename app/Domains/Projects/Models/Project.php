@@ -8,6 +8,7 @@ use App\Domains\Backlinks\Models\BacklinkHistorySnapshot;
 use App\Domains\Backlinks\Models\MonitoredBacklink;
 use App\Domains\Crawls\Models\CrawlDiffReport;
 use App\Domains\Crawls\Models\CrawlRun;
+use App\Domains\Integrations\Models\BotCrawlLog;
 use App\Domains\Integrations\Models\ProjectIntegration;
 use App\Domains\Integrations\Models\SearchPerformancePage;
 use App\Domains\Integrations\Models\SearchPerformanceQuery;
@@ -154,11 +155,11 @@ class Project extends Model
     }
 
     /**
-     * @return HasMany<\App\Domains\Integrations\Models\BotCrawlLog, $this>
+     * @return HasMany<BotCrawlLog, $this>
      */
-    public function botCrawlLogs(): \Illuminate\Database\Eloquent\Relations\HasMany
+    public function botCrawlLogs(): HasMany
     {
-        return $this->hasMany(\App\Domains\Integrations\Models\BotCrawlLog::class);
+        return $this->hasMany(BotCrawlLog::class);
     }
 
     /**
