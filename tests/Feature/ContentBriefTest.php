@@ -398,7 +398,7 @@ HTML;
         $response->assertOk();
         $response->assertHeader('Content-Type', 'text/markdown; charset=UTF-8');
         $this->assertStringContainsString('filename=content-brief-coqui-rank-tracker.md', (string) $response->headers->get('Content-Disposition'));
-        $this->assertStringContainsString('# SEO Content Brief: coqui rank tracker', (string) $response->getContent());
+        $this->assertStringContainsString('# SEO Content Brief: coqui rank tracker', $response->streamedContent());
     }
 
     public function test_html_outline_extractor_handles_rich_markup(): void
