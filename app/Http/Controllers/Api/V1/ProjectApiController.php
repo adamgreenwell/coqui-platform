@@ -40,10 +40,10 @@ class ProjectApiController extends Controller
         }
 
         if (is_string($search) && trim($search) !== '') {
-            $term = trim($search);
+            $term = '%'.mb_strtolower(trim($search)).'%';
             $query->where(function ($q) use ($term): void {
-                $q->where('name', 'ilike', "%{$term}%")
-                    ->orWhere('domain', 'ilike', "%{$term}%");
+                $q->whereRaw('LOWER(name) LIKE ?', [$term])
+                    ->orWhereRaw('LOWER(domain) LIKE ?', [$term]);
             });
         }
 
