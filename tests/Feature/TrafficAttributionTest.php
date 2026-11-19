@@ -55,6 +55,10 @@ class TrafficAttributionTest extends TestCase
 
     public function test_can_connect_ga4_integration_and_store_credentials(): void
     {
+        Http::fake([
+            'https://analyticsdata.googleapis.com/*' => Http::response(['rows' => []], 200),
+        ]);
+
         $response = $this->actingAs($this->user)
             ->post("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/integrations/ga4/connect", [
                 'property_id' => 'properties/987654321',
@@ -74,6 +78,10 @@ class TrafficAttributionTest extends TestCase
 
     public function test_can_connect_plausible_integration_and_store_credentials(): void
     {
+        Http::fake([
+            'https://plausible.io/*' => Http::response(['results' => []], 200),
+        ]);
+
         $response = $this->actingAs($this->user)
             ->post("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/integrations/plausible/connect", [
                 'site_id' => 'trafficsite.com',
@@ -245,6 +253,7 @@ class TrafficAttributionTest extends TestCase
             'external_crawl_id' => 'crawl_perf_123',
             'status' => 'completed',
             'source' => 'desktop_sync',
+            'seed' => 'https://trafficsite.com/',
             'total_urls' => 2,
             'created_at' => Carbon::now(),
             'finalized_at' => Carbon::now(),
