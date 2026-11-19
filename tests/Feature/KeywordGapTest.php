@@ -392,8 +392,11 @@ class KeywordGapTest extends TestCase
         $response->assertOk();
         $item = $response->json('keywords.0');
         $this->assertSame('seo audit tools', $item['keyword']);
+        $this->assertTrue($item['sample_complete']);
         $this->assertArrayHasKey('ahrefs.com', $item['competitor_ranks']);
         $this->assertArrayHasKey('semrush.com', $item['competitor_ranks']);
+        $this->assertSame('ranked', $item['competitor_ranks']['ahrefs.com']['status']);
+        $this->assertSame('ranked', $item['competitor_ranks']['semrush.com']['status']);
         $this->assertSame(4, $item['competitor_ranks']['ahrefs.com']['rank']);
         $this->assertSame(2, $item['competitor_ranks']['semrush.com']['rank']);
         $this->assertSame(2, $item['best_competitor_rank']);

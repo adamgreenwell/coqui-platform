@@ -130,6 +130,27 @@ class KeywordGapService
 
         foreach ($keywordsMap as $entry) {
             $projectRank = $entry['project_rank'];
+
+            // Ensure all selected competitors are explicitly accounted for
+            $hasUnobserved = false;
+            foreach ($normalizedCompetitors as $comp) {
+                if (! isset($entry['competitor_ranks'][$comp])) {
+                    $entry['competitor_ranks'][$comp] = [
+                        'domain' => $comp,
+                        'rank' => null,
+                        'url' => null,
+                        'status' => 'unobserved',
+                    ];
+                    $hasUnobserved = true;
+                } else {
+                    $entry['competitor_ranks'][$comp]['status'] = $entry['competitor_ranks'][$comp]['rank'] !== null
+                        ? 'ranked'
+                        : 'absent';
+                }
+            }
+
+            $entry['sample_complete'] = ! $hasUnobserved;
+
             $compRanks = array_filter(
                 array_column($entry['competitor_ranks'], 'rank'),
                 static fn (?int $r): bool => $r !== null,
@@ -156,12 +177,22 @@ class KeywordGapService
             $entry['gap_type'] = $gapType;
 
             // Compute Opportunity Score
-            $opportunity = self::calculateOpportunityScore(
-                volume: $entry['search_volume'] ?? 0,
-                kd: $entry['keyword_difficulty'],
-                bestCompRank: $bestCompRank ?? 100,
-            );
-            $entry['opportunity_score'] = $opportunity;
+            if ($gapType === 'strong' && $projectRank !== null) {
+                // When project already outranks observed competitors, opportunity is discounted
+                $rawOpportunity = self::calculateOpportunityScore(
+                    volume: $entry['search_volume'] ?? 0,
+                    kd: $entry['keyword_difficulty'],
+                    bestCompRank: max(1, $projectRank),
+                );
+                $entry['opportunity_score'] = (int) round($rawOpportunity * 0.3);
+            } else {
+                $opportunity = self::calculateOpportunityScore(
+                    volume: $entry['search_volume'] ?? 0,
+                    kd: $entry['keyword_difficulty'],
+                    bestCompRank: $bestCompRank ?? 100,
+                );
+                $entry['opportunity_score'] = $opportunity;
+            }
 
             // Global counts
             if ($gapType === 'missing') {

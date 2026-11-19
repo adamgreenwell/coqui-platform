@@ -49,6 +49,7 @@ interface CompetitorRank {
   domain: string;
   rank: number | null;
   url: string | null;
+  status?: 'ranked' | 'absent' | 'unobserved';
 }
 
 interface GapKeywordItem {
@@ -68,6 +69,7 @@ interface GapKeywordItem {
   best_competitor_rank: number | null;
   gap_type: 'missing' | 'untapped' | 'weak' | 'shared' | 'strong';
   opportunity_score: number;
+  sample_complete?: boolean;
 }
 
 interface GapSummary {
@@ -189,7 +191,9 @@ function OpportunityBadge({ score }: { score: number }) {
   );
 }
 
-function GapTypePill({ type }: { type: GapKeywordItem['gap_type'] }) {
+function GapTypePill({ type, sampleComplete }: { type: GapKeywordItem['gap_type']; sampleComplete?: boolean }) {
+  const isPartial = sampleComplete === false;
+
   switch (type) {
     case 'missing':
       return (
@@ -222,9 +226,9 @@ function GapTypePill({ type }: { type: GapKeywordItem['gap_type'] }) {
       return (
         <span
           className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30"
-          title="Your project outranks all selected competitors"
+          title={isPartial ? 'Your project outranks observed competitors (some unobserved in sample)' : 'Your project outranks all selected competitors'}
         >
-          Strong
+          Strong{isPartial ? '*' : ''}
         </span>
       );
     case 'untapped':
@@ -1239,7 +1243,7 @@ export default function KeywordGap({
 
                           {/* Gap Type */}
                           <td className="py-3 px-3 text-center">
-                            <GapTypePill type={item.gap_type} />
+                            <GapTypePill type={item.gap_type} sampleComplete={item.sample_complete} />
                           </td>
 
                           {/* Search Volume */}
@@ -1265,15 +1269,16 @@ export default function KeywordGap({
                                 const rankInfo = item.competitor_ranks[comp];
                                 const rank = rankInfo?.rank;
                                 const url = rankInfo?.url;
+                                const isUnobserved = rankInfo?.status === 'unobserved';
 
                                 if (rank === null || rank === undefined) {
                                   return (
                                     <span
                                       key={comp}
                                       className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-900 text-slate-500 border border-slate-800"
-                                      title={`${comp}: Not ranking in top 100`}
+                                      title={isUnobserved ? `${comp}: Not in top 100 volume sample` : `${comp}: Absent from top 100`}
                                     >
-                                      {comp.replace(/\..*$/, '')}: -
+                                      {comp.replace(/\..*$/, '')}: {isUnobserved ? '?' : '—'}
                                     </span>
                                   );
                                 }
