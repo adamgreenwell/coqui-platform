@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domains\Integrations\Models;
 
 use App\Domains\Projects\Models\Project;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -18,9 +19,9 @@ use Illuminate\Support\Carbon;
  * @property string|null $external_identifier
  * @property array<string, mixed>|null $credentials_encrypted
  * @property string $status
- * @property \Carbon\CarbonInterface|null $last_synced_at
- * @property \Carbon\CarbonInterface $created_at
- * @property \Carbon\CarbonInterface $updated_at
+ * @property CarbonInterface|null $last_synced_at
+ * @property CarbonInterface $created_at
+ * @property CarbonInterface $updated_at
  * @property-read Project|null $project
  */
 class ProjectIntegration extends Model

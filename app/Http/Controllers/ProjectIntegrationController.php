@@ -8,7 +8,6 @@ use App\Domains\Integrations\Jobs\SyncBingWebmasterJob;
 use App\Domains\Integrations\Jobs\SyncGoogleSearchConsoleJob;
 use App\Domains\Integrations\Models\ProjectIntegration;
 use App\Domains\Integrations\Services\GoogleSearchConsoleClient;
-use App\Domains\Integrations\Services\SearchConsoleAuthException;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\Workspace;
