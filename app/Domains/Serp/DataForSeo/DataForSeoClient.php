@@ -296,6 +296,136 @@ class DataForSeoClient
     }
 
     /**
+     * Fetch backlink profile summary metrics for a target domain.
+     *
+     * @return array<string, mixed>
+     */
+    public function backlinksSummary(
+        string $target,
+        Project $project,
+    ): array {
+        $endpoint = '/v3/backlinks/summary/live';
+        $estimatedCost = (float) config('coqui.dataforseo.prices.backlinks_task', 0.024);
+
+        $this->spendGuard->assertCanSpend($estimatedCost, $project->workspace, false);
+
+        $payload = [
+            [
+                'target' => $target,
+                'include_subdomains' => true,
+            ],
+        ];
+
+        return $this->postPaid(
+            endpoint: $endpoint,
+            payload: $payload,
+            mode: 'live',
+            estimatedCostUsd: $estimatedCost,
+            project: $project,
+        );
+    }
+
+    /**
+     * Fetch referring domains for a target domain.
+     *
+     * @return array<string, mixed>
+     */
+    public function backlinksReferringDomains(
+        string $target,
+        Project $project,
+        int $limit = 100,
+        ?string $orderBy = 'rank,desc',
+    ): array {
+        $endpoint = '/v3/backlinks/referring_domains/live';
+        $estimatedCost = (float) config('coqui.dataforseo.prices.backlinks_task', 0.024);
+
+        $this->spendGuard->assertCanSpend($estimatedCost, $project->workspace, false);
+
+        $payload = [
+            [
+                'target' => $target,
+                'limit' => $limit,
+                'order_by' => [$orderBy ?? 'rank,desc'],
+                'include_subdomains' => true,
+            ],
+        ];
+
+        return $this->postPaid(
+            endpoint: $endpoint,
+            payload: $payload,
+            mode: 'live',
+            estimatedCostUsd: $estimatedCost,
+            project: $project,
+        );
+    }
+
+    /**
+     * Fetch anchor texts distribution for a target domain.
+     *
+     * @return array<string, mixed>
+     */
+    public function backlinksAnchors(
+        string $target,
+        Project $project,
+        int $limit = 100,
+        ?string $orderBy = 'backlinks,desc',
+    ): array {
+        $endpoint = '/v3/backlinks/anchors/live';
+        $estimatedCost = (float) config('coqui.dataforseo.prices.backlinks_task', 0.024);
+
+        $this->spendGuard->assertCanSpend($estimatedCost, $project->workspace, false);
+
+        $payload = [
+            [
+                'target' => $target,
+                'limit' => $limit,
+                'order_by' => [$orderBy ?? 'backlinks,desc'],
+            ],
+        ];
+
+        return $this->postPaid(
+            endpoint: $endpoint,
+            payload: $payload,
+            mode: 'live',
+            estimatedCostUsd: $estimatedCost,
+            project: $project,
+        );
+    }
+
+    /**
+     * Fetch top linked pages for a target domain.
+     *
+     * @return array<string, mixed>
+     */
+    public function backlinksPages(
+        string $target,
+        Project $project,
+        int $limit = 100,
+        ?string $orderBy = 'rank,desc',
+    ): array {
+        $endpoint = '/v3/backlinks/pages/live';
+        $estimatedCost = (float) config('coqui.dataforseo.prices.backlinks_task', 0.024);
+
+        $this->spendGuard->assertCanSpend($estimatedCost, $project->workspace, false);
+
+        $payload = [
+            [
+                'target' => $target,
+                'limit' => $limit,
+                'order_by' => [$orderBy ?? 'rank,desc'],
+            ],
+        ];
+
+        return $this->postPaid(
+            endpoint: $endpoint,
+            payload: $payload,
+            mode: 'live',
+            estimatedCostUsd: $estimatedCost,
+            project: $project,
+        );
+    }
+
+    /**
      * Submit Standard-queue SERP tasks with a signed postback URL.
      *
      * @param  list<array<string, mixed>>  $tasks
