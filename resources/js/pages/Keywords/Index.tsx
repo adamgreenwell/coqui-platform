@@ -11,6 +11,7 @@ import {
   Clock,
   ExternalLink,
   Filter,
+  Globe,
   History,
   Laptop,
   Layers,
@@ -169,7 +170,9 @@ export default function KeywordsIndex({
 }: KeywordsIndexProps) {
   const [deviceFilter, setDeviceFilter] = useState<string>(filters.device || 'all');
   const [searchQuery, setSearchQuery] = useState<string>(filters.search || '');
-  const [showGscOverlay, setShowGscOverlay] = useState<boolean>(gscIntegration?.status === 'connected');
+  const [overlayProvider, setOverlayProvider] = useState<'off' | 'gsc' | 'bing'>(
+    gscIntegration?.status === 'connected' ? 'gsc' : bingIntegration?.status === 'connected' ? 'bing' : 'off'
+  );
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [historyModalKeyword, setHistoryModalKeyword] = useState<TrackedKeywordItem | null>(null);
   const [historySnapshots, setHistorySnapshots] = useState<HistorySnapshot[]>([]);
@@ -463,23 +466,42 @@ export default function KeywordsIndex({
           </div>
 
           <div className="flex items-center gap-2 flex-1 justify-end">
-            {/* GSC First-Party Search Overlay Toggle */}
-            <button
-              type="button"
-              onClick={() => setShowGscOverlay(!showGscOverlay)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-medium transition cursor-pointer ${
-                showGscOverlay
-                  ? 'bg-blue-500/15 border-blue-500/40 text-blue-300'
-                  : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
-              }`}
-              title="Toggle Google Search Console 28-day performance overlay"
-            >
-              <BarChart3 className="h-3.5 w-3.5" />
-              <span>GSC Overlay (28d)</span>
-              {gscIntegration?.status === 'connected' && (
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-              )}
-            </button>
+            {/* First-Party Search Overlay Selector */}
+            <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
+              <button
+                type="button"
+                onClick={() => setOverlayProvider(overlayProvider === 'gsc' ? 'off' : 'gsc')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition cursor-pointer ${
+                  overlayProvider === 'gsc'
+                    ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-sm'
+                    : 'text-slate-400 hover:text-white border border-transparent'
+                }`}
+                title="Google Search Console 28-day performance overlay"
+              >
+                <BarChart3 className="h-3 w-3" />
+                <span>GSC</span>
+                {gscIntegration?.status === 'connected' && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setOverlayProvider(overlayProvider === 'bing' ? 'off' : 'bing')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition cursor-pointer ${
+                  overlayProvider === 'bing'
+                    ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
+                    : 'text-slate-400 hover:text-white border border-transparent'
+                }`}
+                title="Bing Webmaster Tools performance overlay"
+              >
+                <Globe className="h-3 w-3" />
+                <span>Bing</span>
+                {bingIntegration?.status === 'connected' && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                )}
+              </button>
+            </div>
 
             {/* Search box */}
             <div className="relative w-full max-w-xs">
@@ -540,12 +562,20 @@ export default function KeywordsIndex({
                     <th className="py-3 px-4 font-medium">Keyword & Device</th>
                     <th className="py-3 px-3 font-medium text-center">Coqui Rank</th>
                     <th className="py-3 px-3 font-medium text-center">Delta</th>
-                    {showGscOverlay && (
+                    {overlayProvider !== 'off' && (
                       <>
-                        <th className="py-3 px-3 font-medium text-right text-blue-300 whitespace-nowrap">Clicks (28d)</th>
-                        <th className="py-3 px-3 font-medium text-right text-blue-300 whitespace-nowrap">Impr. (28d)</th>
-                        <th className="py-3 px-3 font-medium text-right text-blue-300 whitespace-nowrap">CTR</th>
-                        <th className="py-3 px-3 font-medium text-center text-blue-300 whitespace-nowrap">GSC Pos</th>
+                        <th className={`py-3 px-3 font-medium text-right whitespace-nowrap ${overlayProvider === 'gsc' ? 'text-blue-300' : 'text-sky-300'}`}>
+                          {overlayProvider === 'gsc' ? 'GSC' : 'Bing'} Clicks (28d)
+                        </th>
+                        <th className={`py-3 px-3 font-medium text-right whitespace-nowrap ${overlayProvider === 'gsc' ? 'text-blue-300' : 'text-sky-300'}`}>
+                          {overlayProvider === 'gsc' ? 'GSC' : 'Bing'} Impr. (28d)
+                        </th>
+                        <th className={`py-3 px-3 font-medium text-right whitespace-nowrap ${overlayProvider === 'gsc' ? 'text-blue-300' : 'text-sky-300'}`}>
+                          {overlayProvider === 'gsc' ? 'GSC' : 'Bing'} CTR
+                        </th>
+                        <th className={`py-3 px-3 font-medium text-center whitespace-nowrap ${overlayProvider === 'gsc' ? 'text-blue-300' : 'text-sky-300'}`}>
+                          {overlayProvider === 'gsc' ? 'GSC' : 'Bing'} Pos
+                        </th>
                       </>
                     )}
                     <th className="py-3 px-3 font-medium">SERP Features</th>
@@ -648,41 +678,45 @@ export default function KeywordsIndex({
                           )}
                         </td>
 
-                        {/* First-Party GSC Overlay (Clicks, Impressions, CTR, Avg Position) */}
-                        {showGscOverlay && (
-                          <>
-                            <td className="py-3 px-3 text-right font-mono font-medium text-slate-200 whitespace-nowrap">
-                              {kw.gsc_performance?.clicks !== null && kw.gsc_performance?.clicks !== undefined ? (
-                                kw.gsc_performance.clicks.toLocaleString()
-                              ) : (
-                                <span className="text-slate-600">—</span>
-                              )}
-                            </td>
-                            <td className="py-3 px-3 text-right font-mono text-slate-300 whitespace-nowrap">
-                              {kw.gsc_performance?.impressions !== null && kw.gsc_performance?.impressions !== undefined ? (
-                                kw.gsc_performance.impressions.toLocaleString()
-                              ) : (
-                                <span className="text-slate-600">—</span>
-                              )}
-                            </td>
-                            <td className="py-3 px-3 text-right font-mono text-slate-300 whitespace-nowrap">
-                              {kw.gsc_performance?.ctr !== null && kw.gsc_performance?.ctr !== undefined ? (
-                                `${kw.gsc_performance.ctr.toFixed(1)}%`
-                              ) : (
-                                <span className="text-slate-600">—</span>
-                              )}
-                            </td>
-                            <td className="py-3 px-3 text-center font-mono whitespace-nowrap">
-                              {kw.gsc_performance?.position !== null && kw.gsc_performance?.position !== undefined ? (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold bg-blue-500/15 text-blue-300 border border-blue-500/30">
-                                  {kw.gsc_performance.position.toFixed(1)}
-                                </span>
-                              ) : (
-                                <span className="text-slate-600">—</span>
-                              )}
-                            </td>
-                          </>
-                        )}
+                        {/* First-Party Search Overlay (Clicks, Impressions, CTR, Avg Position) */}
+                        {overlayProvider !== 'off' && (() => {
+                          const perf = overlayProvider === 'gsc' ? kw.gsc_performance : kw.bing_performance;
+                          const badgeBg = overlayProvider === 'gsc' ? 'bg-blue-500/15 text-blue-300 border-blue-500/30' : 'bg-sky-500/15 text-sky-300 border-sky-500/30';
+                          return (
+                            <>
+                              <td className="py-3 px-3 text-right font-mono font-medium text-slate-200 whitespace-nowrap">
+                                {perf?.clicks !== null && perf?.clicks !== undefined ? (
+                                  perf.clicks.toLocaleString()
+                                ) : (
+                                  <span className="text-slate-600">—</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-3 text-right font-mono text-slate-300 whitespace-nowrap">
+                                {perf?.impressions !== null && perf?.impressions !== undefined ? (
+                                  perf.impressions.toLocaleString()
+                                ) : (
+                                  <span className="text-slate-600">—</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-3 text-right font-mono text-slate-300 whitespace-nowrap">
+                                {perf?.ctr !== null && perf?.ctr !== undefined ? (
+                                  `${perf.ctr.toFixed(1)}%`
+                                ) : (
+                                  <span className="text-slate-600">—</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-3 text-center font-mono whitespace-nowrap">
+                                {perf?.position !== null && perf?.position !== undefined ? (
+                                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold border ${badgeBg}`}>
+                                    {perf.position.toFixed(1)}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-600">—</span>
+                                )}
+                              </td>
+                            </>
+                          );
+                        })()}
 
                         {/* SERP Features */}
                         <td className="py-3 px-3">
