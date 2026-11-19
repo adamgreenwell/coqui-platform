@@ -1,8 +1,18 @@
+x-app-build: &app-build
+  context: .
+  dockerfile: Dockerfile
+  # Vite bakes these into the browser bundle at build time (.env is not in
+  # the build context). Values come from .env via Compose interpolation.
+  args:
+    VITE_APP_NAME: "${VITE_APP_NAME:-Coqui SEO}"
+    VITE_REVERB_APP_KEY: "${VITE_REVERB_APP_KEY:-}"
+    VITE_REVERB_HOST: "${VITE_REVERB_HOST:-}"
+    VITE_REVERB_PORT: "${VITE_REVERB_PORT:-}"
+    VITE_REVERB_SCHEME: "${VITE_REVERB_SCHEME:-https}"
+
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: *app-build
     restart: unless-stopped
     env_file:
       - .env
@@ -37,9 +47,7 @@ services:
       - coqui
 
   horizon:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: *app-build
     restart: unless-stopped
     command: ["php", "artisan", "horizon"]
     env_file:
@@ -55,9 +63,7 @@ services:
       - coqui
 
   reverb:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: *app-build
     restart: unless-stopped
     command: ["php", "artisan", "reverb:start", "--host=0.0.0.0", "--port=8080"]
     env_file:
@@ -69,9 +75,7 @@ services:
       - coqui
 
   scheduler:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: *app-build
     restart: unless-stopped
     command: ["php", "artisan", "schedule:work"]
     env_file:
