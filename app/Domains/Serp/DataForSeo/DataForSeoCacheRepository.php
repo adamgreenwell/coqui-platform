@@ -141,7 +141,7 @@ class DataForSeoCacheRepository
             }
         }
     }
-{
+
     /**
      * @param  array<string, mixed>  $signature
      * @return array<string, mixed>|null
