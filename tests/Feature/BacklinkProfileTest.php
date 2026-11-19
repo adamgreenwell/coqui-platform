@@ -234,6 +234,7 @@ class BacklinkProfileTest extends TestCase
         /** @var CrawlRun $crawlRun */
         $crawlRun = CrawlRun::query()->create([
             'project_id' => $this->project->id,
+            'external_crawl_id' => '00000000-0000-0000-0000-000000000001',
             'status' => 'completed',
             'source' => 'cloud',
             'config' => ['maxDepth' => 3, 'maxUrls' => 500],
