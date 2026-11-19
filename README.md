@@ -31,7 +31,7 @@ Coqui SEO splits the web into two layers so you get Ahrefs/Moz-class intelligenc
 - **Frontend:** Inertia v3, React 19, TypeScript, Tailwind CSS v4
 - **Database & Cache:** PostgreSQL 17, Redis 7
 - **Cloud Crawler:** Headless Rust `coqui-worker` sidecar sharing `coqui-core`
-- **Deployment Target:** Bare-metal server running Coolify via `docker-compose.yml`
+- **Deployment Target:** Bare-metal server running Coolify via `docker-compose.coolify.yml` (`docker-compose.yml` is for local development)
 
 ## Documentation & Roadmap
 
@@ -41,7 +41,9 @@ Coqui SEO splits the web into two layers so you get Ahrefs/Moz-class intelligenc
 - [Roadmap matrix CSV](docs/reference/roadmap-matrix.csv)
 - [Backlog issues](https://github.com/adamgreenwell/coqui-platform/issues) and [Project board](https://github.com/users/adamgreenwell/projects/17/views/1?layout_template=board)
 
-## Local & Coolify Setup
+## Local Setup
+
+For production on Coolify, follow [Coolify Deployment and Operations](docs/wiki/Coolify-Deployment-And-Operations.md).
 
 1. Copy `.env.example` to `.env` and fill `APP_KEY`, `DB_*`, and `DATAFORSEO_*` credentials (`DATAFORSEO_API_BASE_URL` defaults to `https://sandbox.dataforseo.com` and `DATAFORSEO_SCHEDULED_SPEND` defaults to `false`).
 2. Start the stack:

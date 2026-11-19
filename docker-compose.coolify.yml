@@ -1,0 +1,238 @@
+# Production stack for Coolify (Docker Compose build pack).
+#
+# Differences from the local docker-compose.yml:
+#   - Every setting is listed as ${VAR}, so Coolify shows it as an editable
+#     variable. ${VAR:?} values are required: Coolify refuses to deploy while
+#     they're empty. There is no .env file on the server.
+#   - nginx publishes no host port. Assign the domain to the `nginx` service
+#     in Coolify (container port 80); Coolify's proxy terminates TLS.
+#   - nginx's config is baked into a small image instead of bind-mounted.
+#   - coqui-worker is left out until its image exists (#58).
+#
+# See docs/wiki/Coolify-Deployment-And-Operations.md for the full checklist.
+
+x-app-build: &app-build
+  context: .
+  dockerfile: Dockerfile
+  # Vite inlines these into the browser bundle at build time. In Coolify,
+  # mark REVERB_APP_KEY, VITE_REVERB_HOST (and any VITE_* you override) as
+  # available at build time.
+  args:
+    VITE_APP_NAME: "${APP_NAME:-Coqui SEO}"
+    VITE_REVERB_APP_KEY: "${REVERB_APP_KEY:?}"
+    VITE_REVERB_HOST: "${VITE_REVERB_HOST:?}"
+    VITE_REVERB_PORT: "${VITE_REVERB_PORT:-443}"
+    VITE_REVERB_SCHEME: "${VITE_REVERB_SCHEME:-https}"
+
+x-app-env: &app-env
+  # Core
+  APP_NAME: "${APP_NAME:-Coqui SEO}"
+  APP_ENV: "${APP_ENV:-production}"
+  APP_KEY: "${APP_KEY:?}"
+  APP_DEBUG: "${APP_DEBUG:-false}"
+  APP_URL: "${APP_URL:?}"
+  LOG_CHANNEL: "${LOG_CHANNEL:-stderr}"
+  LOG_LEVEL: "${LOG_LEVEL:-info}"
+
+  # Database / Redis (internal services in this stack)
+  DB_CONNECTION: pgsql
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_DATABASE: "${DB_DATABASE:-coqui_platform}"
+  DB_USERNAME: "${DB_USERNAME:-coqui}"
+  DB_PASSWORD: "${DB_PASSWORD:?}"
+  REDIS_CLIENT: phpredis
+  REDIS_HOST: redis
+  REDIS_PORT: "6379"
+  REDIS_PASSWORD: "null"
+
+  # Sessions / cache / queues
+  SESSION_DRIVER: redis
+  SESSION_LIFETIME: "${SESSION_LIFETIME:-120}"
+  SESSION_ENCRYPT: "${SESSION_ENCRYPT:-false}"
+  SESSION_SECURE_COOKIE: "${SESSION_SECURE_COOKIE:-true}"
+  CACHE_STORE: redis
+  CACHE_PREFIX: "${CACHE_PREFIX:-coqui_}"
+  QUEUE_CONNECTION: redis
+  BROADCAST_CONNECTION: reverb
+  FILESYSTEM_DISK: local
+
+  # Reverb: the app talks to reverb internally; browsers use VITE_REVERB_*.
+  REVERB_APP_ID: "${REVERB_APP_ID:-coqui-seo}"
+  REVERB_APP_KEY: "${REVERB_APP_KEY:?}"
+  REVERB_APP_SECRET: "${REVERB_APP_SECRET:?}"
+  REVERB_HOST: reverb
+  REVERB_PORT: "8080"
+  REVERB_SCHEME: http
+
+  # Mail (password resets, invites). Defaults to the log driver.
+  MAIL_MAILER: "${MAIL_MAILER:-log}"
+  MAIL_SCHEME: "${MAIL_SCHEME:-}"
+  MAIL_HOST: "${MAIL_HOST:-}"
+  MAIL_PORT: "${MAIL_PORT:-587}"
+  MAIL_USERNAME: "${MAIL_USERNAME:-}"
+  MAIL_PASSWORD: "${MAIL_PASSWORD:-}"
+  MAIL_FROM_ADDRESS: "${MAIL_FROM_ADDRESS:-hello@coquiseo.com}"
+  MAIL_FROM_NAME: "${MAIL_FROM_NAME:-Coqui SEO}"
+
+  # DataForSEO (sandbox until live billing is wanted; scheduled spend off)
+  DATAFORSEO_LOGIN: "${DATAFORSEO_LOGIN:-}"
+  DATAFORSEO_PASSWORD: "${DATAFORSEO_PASSWORD:-}"
+  DATAFORSEO_API_BASE_URL: "${DATAFORSEO_API_BASE_URL:-https://sandbox.dataforseo.com}"
+  DATAFORSEO_LOCATION_CODE: "${DATAFORSEO_LOCATION_CODE:-2840}"
+  DATAFORSEO_LANGUAGE_CODE: "${DATAFORSEO_LANGUAGE_CODE:-en}"
+  DATAFORSEO_SCHEDULED_SPEND: "${DATAFORSEO_SCHEDULED_SPEND:-false}"
+  DATAFORSEO_DAILY_CAP_USD: "${DATAFORSEO_DAILY_CAP_USD:-5.00}"
+  DATAFORSEO_MONTHLY_CAP_USD: "${DATAFORSEO_MONTHLY_CAP_USD:-100.00}"
+  DATAFORSEO_WEBHOOK_SECRET: "${DATAFORSEO_WEBHOOK_SECRET:-}"
+
+  # SE Ranking
+  SERANKING_API_KEY: "${SERANKING_API_KEY:-}"
+  SERANKING_API_BASE_URL: "${SERANKING_API_BASE_URL:-https://api.seranking.com}"
+  SERANKING_SOURCE: "${SERANKING_SOURCE:-us}"
+  SERANKING_SCHEDULED_SPEND: "${SERANKING_SCHEDULED_SPEND:-false}"
+  SERANKING_DAILY_CREDIT_CAP: "${SERANKING_DAILY_CREDIT_CAP:-5000}"
+  SERANKING_MONTHLY_CREDIT_CAP: "${SERANKING_MONTHLY_CREDIT_CAP:-100000}"
+
+  # MCP server (auth on outside APP_ENV=local; tokens need mcp:use)
+  COQUI_MCP_REQUIRE_AUTH: "${COQUI_MCP_REQUIRE_AUTH:-true}"
+  COQUI_MCP_RATE_LIMIT: "${COQUI_MCP_RATE_LIMIT:-60}"
+
+  # Cloud worker (not deployed in this stack yet, see #58)
+  COQUI_WORKER_URL: "${COQUI_WORKER_URL:-http://coqui-worker:8085}"
+  COQUI_WORKER_TOKEN: "${COQUI_WORKER_TOKEN:-}"
+
+  # Stripe (webhooks return 503 until STRIPE_WEBHOOK_SECRET is set)
+  STRIPE_KEY: "${STRIPE_KEY:-}"
+  STRIPE_SECRET: "${STRIPE_SECRET:-}"
+  STRIPE_WEBHOOK_SECRET: "${STRIPE_WEBHOOK_SECRET:-}"
+
+  # Integrations
+  GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID:-}"
+  GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET:-}"
+  GOOGLE_REDIRECT_URI: "${GOOGLE_REDIRECT_URI:-}"
+  BING_WEBMASTER_API_KEY: "${BING_WEBMASTER_API_KEY:-}"
+  RUNNR_WEBHOOK_SECRET: "${RUNNR_WEBHOOK_SECRET:-}"
+  RUNNR_TELEMETRY_TOKEN: "${RUNNR_TELEMETRY_TOKEN:-}"
+
+services:
+  app:
+    build: *app-build
+    restart: unless-stopped
+    environment: *app-env
+    volumes:
+      - public_assets:/var/www/html/public
+      - storage_data:/var/www/html/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "php-fpm -t >/dev/null 2>&1 && test -f /var/www/html/bootstrap/cache/config.php"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 60s
+    networks:
+      - coqui
+
+  nginx:
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
+    restart: unless-stopped
+    expose:
+      - "80"
+    volumes:
+      - public_assets:/var/www/html/public:ro
+    depends_on:
+      app:
+        condition: service_healthy
+      reverb:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/up || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    networks:
+      - coqui
+
+  horizon:
+    build: *app-build
+    restart: unless-stopped
+    command: ["php", "artisan", "horizon"]
+    environment: *app-env
+    volumes:
+      - storage_data:/var/www/html/storage
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - coqui
+
+  reverb:
+    build: *app-build
+    restart: unless-stopped
+    command: ["php", "artisan", "reverb:start", "--host=0.0.0.0", "--port=8080"]
+    environment: *app-env
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - coqui
+
+  scheduler:
+    build: *app-build
+    restart: unless-stopped
+    command: ["php", "artisan", "schedule:work"]
+    environment: *app-env
+    volumes:
+      - storage_data:/var/www/html/storage
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - coqui
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${DB_DATABASE:-coqui_platform}"
+      POSTGRES_USER: "${DB_USERNAME:-coqui}"
+      POSTGRES_PASSWORD: "${DB_PASSWORD:?}"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - coqui
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - coqui
+
+volumes:
+  postgres_data:
+  redis_data:
+  public_assets:
+  storage_data:
+
+networks:
+  coqui:
+    driver: bridge

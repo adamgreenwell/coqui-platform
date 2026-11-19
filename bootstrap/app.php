@@ -22,6 +22,10 @@ return Application::configure(basePath: dirname(__DIR__))
             HandleInertiaRequests::class,
         ]);
         $middleware->statefulApi();
+        // TLS terminates at the platform proxy (Coolify/Traefik), then nginx.
+        // php-fpm is only reachable inside the compose network, so trust the
+        // forwarded scheme/host/IP headers from any hop.
+        $middleware->trustProxies(at: '*');
         $middleware->alias([
             'abilities' => CheckAbilities::class,
             'ability' => CheckForAnyAbility::class,
