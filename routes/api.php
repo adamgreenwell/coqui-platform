@@ -62,7 +62,8 @@ Route::post('/v1/telemetry/bot-logs', [BotTelemetryApiController::class, 'ingest
     ->name('api.telemetry.bot_logs.ingest');
 
 // Public deploy smoke SVG status badge
-Route::get('/v1/projects/{project}/deploy-smoke/badge', [RunnrDeploySmokeController::class, 'badge'])
+Route::get('/v1/deploy-smoke/badge/{token}', [RunnrDeploySmokeController::class, 'badge'])
+    ->where('token', '[A-Za-z0-9]{40}')
     ->name('api.projects.deploy_smoke.badge');
 
 Route::post('/internal/crawls/callback', CoquiWorkerCallbackController::class)

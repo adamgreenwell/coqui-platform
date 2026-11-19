@@ -21,6 +21,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Str;
 
 /**
  * @property int $id
@@ -32,6 +33,7 @@ use Illuminate\Database\Eloquent\SoftDeletes;
  * @property string $language_code
  * @property string $crawl_cadence
  * @property string|null $runnr_site_id
+ * @property string|null $deploy_badge_token
  * @property CarbonInterface|null $last_crawled_at
  * @property CarbonInterface|null $deleted_at
  * @property CarbonInterface|null $created_at
@@ -41,6 +43,18 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 class Project extends Model
 {
     use SoftDeletes;
+
+    /**
+     * Unguessable token used in the public deploy-smoke badge URL (generated on first use).
+     */
+    public function deployBadgeToken(): string
+    {
+        if ($this->deploy_badge_token === null || $this->deploy_badge_token === '') {
+            $this->forceFill(['deploy_badge_token' => Str::random(40)])->save();
+        }
+
+        return (string) $this->deploy_badge_token;
+    }
 
     /** @var list<string> */
     protected $fillable = [

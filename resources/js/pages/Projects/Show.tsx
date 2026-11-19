@@ -188,7 +188,7 @@ export default function ProjectShow({
   integrations = [],
   deploySmoke,
   runnrWebhookUrl = '/api/webhooks/runnr/deploy',
-  runnrBadgeUrl = `/api/v1/projects/${project.id}/deploy-smoke/badge`,
+  runnrBadgeUrl = '',
   activities = [],
   canEdit,
   canDelete,

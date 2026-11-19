@@ -289,7 +289,7 @@ class ProjectController extends Controller
                 ->all(),
             'deploySmoke' => $deploySmoke,
             'runnrWebhookUrl' => url('/api/webhooks/runnr/deploy'),
-            'runnrBadgeUrl' => url("/api/v1/projects/{$project->id}/deploy-smoke/badge"),
+            'runnrBadgeUrl' => url('/api/v1/deploy-smoke/badge/'.$project->deployBadgeToken()),
             'activities' => $activities,
             'canEdit' => $user->can('update', $project),
             'canDelete' => $user->can('delete', $project),
