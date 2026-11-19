@@ -6,6 +6,8 @@ return [
     'google' => [
         'client_id' => env('GOOGLE_CLIENT_ID'),
         'client_secret' => env('GOOGLE_CLIENT_SECRET'),
+        // Register exactly this URI in Google Cloud Console (defaults to {APP_URL}/integrations/google/callback).
+        'redirect_uri' => env('GOOGLE_REDIRECT_URI'),
         'search_console_base_url' => env('SEARCH_CONSOLE_API_BASE_URL', 'https://searchconsole.googleapis.com'),
         'ga4_base_url' => env('GA4_DATA_API_BASE_URL', 'https://analyticsdata.googleapis.com'),
     ],

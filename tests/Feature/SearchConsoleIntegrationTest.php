@@ -83,17 +83,23 @@ class SearchConsoleIntegrationTest extends TestCase
         $this->assertStringContainsString('access_type=offline', $targetUrl);
         $this->assertStringContainsString('prompt=consent', $targetUrl);
 
-        $state = session('gsc_oauth_state_'.$this->project->id);
-        $this->assertNotEmpty($state);
-        $this->assertStringContainsString('state='.$state, $targetUrl);
+        parse_str((string) parse_url($targetUrl, PHP_URL_QUERY), $query);
+        $state = (string) ($query['state'] ?? '');
+        $this->assertMatchesRegularExpression('/^[A-Za-z0-9]{40}$/', $state);
+        $this->assertSame($this->project->id, session('google_oauth.'.$state)['project_id'] ?? null);
+        $this->assertSame(route('integrations.google.callback'), $query['redirect_uri'] ?? null);
     }
 
     public function test_google_oauth_callback_exchanges_tokens_and_dispatches_sync(): void
     {
         Queue::fake();
 
-        $sessionState = 'test-secure-state-token-12345';
-        session(['gsc_oauth_state_'.$this->project->id => $sessionState]);
+        $sessionState = str_repeat('a', 40);
+        session(['google_oauth.'.$sessionState => [
+            'workspace_id' => $this->workspace->id,
+            'project_id' => $this->project->id,
+            'issued_at' => now()->getTimestamp(),
+        ]]);
 
         Http::fake([
             'https://oauth2.googleapis.com/token' => Http::response([
@@ -110,9 +116,7 @@ class SearchConsoleIntegrationTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->get(route('workspaces.projects.integrations.google.callback', [
-                'workspace' => $this->workspace,
-                'project' => $this->project,
+            ->get(route('integrations.google.callback', [
                 'state' => $sessionState,
                 'code' => 'mock-auth-code-123',
             ]));
@@ -141,17 +145,19 @@ class SearchConsoleIntegrationTest extends TestCase
     {
         Queue::fake();
 
-        session(['gsc_oauth_state_'.$this->project->id => 'original-state']);
+        session(['google_oauth.'.str_repeat('a', 40) => [
+            'workspace_id' => $this->workspace->id,
+            'project_id' => $this->project->id,
+            'issued_at' => now()->getTimestamp(),
+        ]]);
 
         $response = $this->actingAs($this->user)
-            ->get(route('workspaces.projects.integrations.google.callback', [
-                'workspace' => $this->workspace,
-                'project' => $this->project,
-                'state' => 'wrong-state',
+            ->get(route('integrations.google.callback', [
+                'state' => str_repeat('b', 40),
                 'code' => 'mock-code',
             ]));
 
-        $response->assertRedirect(route('workspaces.projects.keywords.index', [$this->workspace, $this->project]));
+        $response->assertRedirect(route('dashboard'));
         $response->assertSessionHas('error');
 
         $this->assertDatabaseMissing('project_integrations', [
@@ -414,5 +420,81 @@ class SearchConsoleIntegrationTest extends TestCase
             'project_id' => $this->project->id,
             'event_type' => 'integration.disconnected',
         ]);
+    }
+
+    public function test_google_redirect_uri_is_identical_for_every_project(): void
+    {
+        $second = $this->workspace->projects()->create([
+            'name' => 'Second Site',
+            'domain' => 'second-site.com',
+            'canonical_url' => 'https://second-site.com',
+            'location_code' => 2840,
+            'language_code' => 'en',
+            'crawl_cadence' => 'weekly',
+        ]);
+
+        $redirectUris = [];
+        foreach ([$this->project, $second] as $project) {
+            $location = (string) $this->actingAs($this->user)
+                ->get(route('workspaces.projects.integrations.google.connect', [$this->workspace, $project]))
+                ->headers->get('Location');
+            parse_str((string) parse_url($location, PHP_URL_QUERY), $query);
+            $redirectUris[] = $query['redirect_uri'] ?? null;
+
+            $this->assertSame($project->id, session('google_oauth.'.$query['state'])['project_id'] ?? null);
+        }
+
+        $this->assertSame([url('/integrations/google/callback'), url('/integrations/google/callback')], $redirectUris);
+    }
+
+    public function test_google_callback_exchanges_code_with_the_same_fixed_redirect_uri(): void
+    {
+        Queue::fake();
+        config()->set('services.google.redirect_uri', 'https://app.coquiseo.com/integrations/google/callback');
+
+        $state = str_repeat('c', 40);
+        session(['google_oauth.'.$state => [
+            'workspace_id' => $this->workspace->id,
+            'project_id' => $this->project->id,
+            'issued_at' => now()->getTimestamp(),
+        ]]);
+
+        Http::fake([
+            'https://oauth2.googleapis.com/token' => Http::response([
+                'access_token' => 'tok', 'refresh_token' => 'ref', 'expires_in' => 3600, 'token_type' => 'Bearer',
+            ], 200),
+            'https://searchconsole.googleapis.com/webmasters/v3/sites' => Http::response(['siteEntry' => []], 200),
+        ]);
+
+        $this->actingAs($this->user)
+            ->get(route('integrations.google.callback', ['state' => $state, 'code' => 'abc']))
+            ->assertRedirect(route('workspaces.projects.keywords.index', [$this->workspace, $this->project]));
+
+        Http::assertSent(fn ($request): bool => $request->url() === 'https://oauth2.googleapis.com/token'
+            && ($request->data()['redirect_uri'] ?? null) === 'https://app.coquiseo.com/integrations/google/callback');
+
+        // State is single-use.
+        $this->assertNull(session('google_oauth.'.$state));
+    }
+
+    public function test_google_callback_rejects_expired_state(): void
+    {
+        Queue::fake();
+        Http::fake();
+
+        $state = str_repeat('d', 40);
+        session(['google_oauth.'.$state => [
+            'workspace_id' => $this->workspace->id,
+            'project_id' => $this->project->id,
+            'issued_at' => now()->subHour()->getTimestamp(),
+        ]]);
+
+        $this->actingAs($this->user)
+            ->get(route('integrations.google.callback', ['state' => $state, 'code' => 'abc']))
+            ->assertRedirect(route('dashboard'))
+            ->assertSessionHas('error');
+
+        Http::assertNothingSent();
+        $this->assertDatabaseMissing('project_integrations', ['project_id' => $this->project->id, 'provider' => 'gsc']);
     }
 }

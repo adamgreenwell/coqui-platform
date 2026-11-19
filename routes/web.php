@@ -95,7 +95,8 @@ Route::middleware(['auth'])->group(function (): void {
 
     Route::get('/workspaces/{workspace}/projects/{project}/integrations', [ProjectIntegrationController::class, 'index'])->name('workspaces.projects.integrations.index');
     Route::get('/workspaces/{workspace}/projects/{project}/integrations/google/connect', [ProjectIntegrationController::class, 'connectGoogle'])->name('workspaces.projects.integrations.google.connect');
-    Route::get('/workspaces/{workspace}/projects/{project}/integrations/google/callback', [ProjectIntegrationController::class, 'callbackGoogle'])->name('workspaces.projects.integrations.google.callback');
+    // One fixed callback for every project: Google only accepts pre-registered redirect URIs.
+    Route::get('/integrations/google/callback', [ProjectIntegrationController::class, 'callbackGoogle'])->name('integrations.google.callback');
     Route::post('/workspaces/{workspace}/projects/{project}/integrations/bing/connect', [ProjectIntegrationController::class, 'connectBing'])->name('workspaces.projects.integrations.bing.connect');
     Route::post('/workspaces/{workspace}/projects/{project}/integrations/ga4/connect', [ProjectIntegrationController::class, 'connectGa4'])->name('workspaces.projects.integrations.ga4.connect');
     Route::post('/workspaces/{workspace}/projects/{project}/integrations/plausible/connect', [ProjectIntegrationController::class, 'connectPlausible'])->name('workspaces.projects.integrations.plausible.connect');
