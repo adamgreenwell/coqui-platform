@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\BacklinkController;
 use App\Http\Controllers\CloudCrawlController;
 use App\Http\Controllers\ContentBriefController;
 use App\Http\Controllers\CrawlCompareController;
@@ -69,6 +70,9 @@ Route::middleware(['auth'])->group(function (): void {
     Route::get('/workspaces/{workspace}/projects/{project}/keyword-gap', [KeywordGapController::class, 'index'])->name('workspaces.projects.keyword-gap.index');
     Route::post('/workspaces/{workspace}/projects/{project}/keyword-gap/search', [KeywordGapController::class, 'search'])->name('workspaces.projects.keyword-gap.search');
     Route::post('/workspaces/{workspace}/projects/{project}/keyword-gap/track', [KeywordGapController::class, 'track'])->name('workspaces.projects.keyword-gap.track');
+
+    Route::get('/workspaces/{workspace}/projects/{project}/backlinks', [BacklinkController::class, 'index'])->name('workspaces.projects.backlinks.index');
+    Route::post('/workspaces/{workspace}/projects/{project}/backlinks/refresh', [BacklinkController::class, 'refresh'])->name('workspaces.projects.backlinks.refresh');
 
     Route::get('/workspaces/{workspace}/projects/{project}/integrations', [ProjectIntegrationController::class, 'index'])->name('workspaces.projects.integrations.index');
     Route::get('/workspaces/{workspace}/projects/{project}/integrations/google/connect', [ProjectIntegrationController::class, 'connectGoogle'])->name('workspaces.projects.integrations.google.connect');
