@@ -399,7 +399,7 @@ export default function KeywordExplorer({
   };
 
   const openTrackSelected = () => {
-    const items = results.filter((r) => {
+    const items = filteredKeywords.filter((r) => {
       const isSelected = selectedKeywords.has(r.keyword.toLowerCase());
       const isFullyTracked =
         trackedSet.has(makeTrackedKey(r.keyword, 'desktop', r.location_code, r.language_code)) &&
