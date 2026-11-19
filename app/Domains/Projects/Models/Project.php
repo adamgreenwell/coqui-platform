@@ -10,6 +10,7 @@ use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Integrations\Models\ProjectIntegration;
 use App\Domains\Integrations\Models\SearchPerformancePage;
 use App\Domains\Integrations\Models\SearchPerformanceQuery;
+use App\Domains\Serp\Models\ContentBrief;
 use App\Domains\Serp\Models\TrackedKeyword;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection;
@@ -133,6 +134,14 @@ class Project extends Model
     public function diffReports(): HasMany
     {
         return $this->hasMany(CrawlDiffReport::class);
+    }
+
+    /**
+     * @return HasMany<ContentBrief, $this>
+     */
+    public function contentBriefs(): HasMany
+    {
+        return $this->hasMany(ContentBrief::class);
     }
 
     /**

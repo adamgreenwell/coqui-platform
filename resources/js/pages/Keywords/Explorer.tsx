@@ -12,6 +12,7 @@ import {
   Copy,
   Download,
   ExternalLink,
+  FileText,
   Filter,
   Globe,
   HelpCircle,
@@ -696,6 +697,14 @@ export default function KeywordExplorer({
 
           <div className="flex items-center gap-2">
             <Link
+              href={`/workspaces/${workspace.id}/projects/${project.id}/keywords/brief`}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-300 text-xs font-medium transition cursor-pointer"
+            >
+              <FileText className="h-3.5 w-3.5 text-teal-400" />
+              <span>Content Brief</span>
+            </Link>
+
+            <Link
               href={`/workspaces/${workspace.id}/projects/${project.id}/keyword-gap`}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium transition cursor-pointer"
             >
@@ -1284,59 +1293,68 @@ export default function KeywordExplorer({
 
                           {/* Actions */}
                           <td className="py-3 px-3 text-right">
-                            {isFullyTracked ? (
-                              <span
-                                className="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20"
-                                title="Tracked on both Desktop and Mobile in this market"
+                            <div className="inline-flex items-center justify-end gap-1.5">
+                              <Link
+                                href={`/workspaces/${workspace.id}/projects/${project.id}/keywords/brief?keyword=${encodeURIComponent(item.keyword)}`}
+                                title="Generate SERP Content Brief"
+                                className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-teal-400 transition"
                               >
-                                <CheckCircle2 className="h-3 w-3" /> Tracked
-                              </span>
-                            ) : isDesktopTracked ? (
-                              <div className="inline-flex items-center justify-end gap-1.5">
+                                <FileText className="h-3.5 w-3.5" />
+                              </Link>
+                              {isFullyTracked ? (
                                 <span
-                                  className="text-[10px] text-emerald-400 font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20"
-                                  title="Currently tracked on Desktop"
+                                  className="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20"
+                                  title="Tracked on both Desktop and Mobile in this market"
                                 >
-                                  Desktop
+                                  <CheckCircle2 className="h-3 w-3" /> Tracked
                                 </span>
+                              ) : isDesktopTracked ? (
+                                <div className="inline-flex items-center justify-end gap-1.5">
+                                  <span
+                                    className="text-[10px] text-emerald-400 font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20"
+                                    title="Currently tracked on Desktop"
+                                  >
+                                    Desktop
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => openTrackSingle(item, 'mobile')}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-emerald-500/20 hover:text-emerald-400 hover:border-emerald-500/30 border border-slate-700 text-slate-300 text-[11px] font-medium transition cursor-pointer"
+                                    title="Add Mobile tracking for this keyword"
+                                  >
+                                    <Plus className="h-3 w-3" />
+                                    <span>+ Mobile</span>
+                                  </button>
+                                </div>
+                              ) : isMobileTracked ? (
+                                <div className="inline-flex items-center justify-end gap-1.5">
+                                  <span
+                                    className="text-[10px] text-emerald-400 font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20"
+                                    title="Currently tracked on Mobile"
+                                  >
+                                    Mobile
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => openTrackSingle(item, 'desktop')}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-emerald-500/20 hover:text-emerald-400 hover:border-emerald-500/30 border border-slate-700 text-slate-300 text-[11px] font-medium transition cursor-pointer"
+                                    title="Add Desktop tracking for this keyword"
+                                  >
+                                    <Plus className="h-3 w-3" />
+                                    <span>+ Desktop</span>
+                                  </button>
+                                </div>
+                              ) : (
                                 <button
                                   type="button"
-                                  onClick={() => openTrackSingle(item, 'mobile')}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-emerald-500/20 hover:text-emerald-400 hover:border-emerald-500/30 border border-slate-700 text-slate-300 text-[11px] font-medium transition cursor-pointer"
-                                  title="Add Mobile tracking for this keyword"
+                                  onClick={() => openTrackSingle(item)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-emerald-500/20 hover:text-emerald-400 hover:border-emerald-500/30 border border-slate-700 text-slate-300 text-[11px] font-medium transition cursor-pointer"
                                 >
                                   <Plus className="h-3 w-3" />
-                                  <span>+ Mobile</span>
+                                  <span>Track</span>
                                 </button>
-                              </div>
-                            ) : isMobileTracked ? (
-                              <div className="inline-flex items-center justify-end gap-1.5">
-                                <span
-                                  className="text-[10px] text-emerald-400 font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20"
-                                  title="Currently tracked on Mobile"
-                                >
-                                  Mobile
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => openTrackSingle(item, 'desktop')}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-emerald-500/20 hover:text-emerald-400 hover:border-emerald-500/30 border border-slate-700 text-slate-300 text-[11px] font-medium transition cursor-pointer"
-                                  title="Add Desktop tracking for this keyword"
-                                >
-                                  <Plus className="h-3 w-3" />
-                                  <span>+ Desktop</span>
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => openTrackSingle(item)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-emerald-500/20 hover:text-emerald-400 hover:border-emerald-500/30 border border-slate-700 text-slate-300 text-[11px] font-medium transition cursor-pointer"
-                              >
-                                <Plus className="h-3 w-3" />
-                                <span>Track</span>
-                              </button>
-                            )}
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );

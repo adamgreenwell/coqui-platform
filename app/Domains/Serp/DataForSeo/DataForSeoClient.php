@@ -263,6 +263,39 @@ class DataForSeoClient
     }
 
     /**
+     * Fetch live Google organic SERP advanced results.
+     *
+     * @return array<string, mixed>
+     */
+    public function serpLive(
+        string $keyword,
+        Project $project,
+        int $locationCode = 2840,
+        string $languageCode = 'en',
+    ): array {
+        $endpoint = '/v3/serp/google/organic/live/advanced';
+        $estimatedCost = (float) config('coqui.dataforseo.prices.serp_live_task', 0.002);
+
+        $this->spendGuard->assertCanSpend($estimatedCost, $project->workspace, false);
+
+        $payload = [
+            [
+                'keyword' => $keyword,
+                'location_code' => $locationCode,
+                'language_code' => $languageCode,
+            ],
+        ];
+
+        return $this->postPaid(
+            endpoint: $endpoint,
+            payload: $payload,
+            mode: 'live',
+            estimatedCostUsd: $estimatedCost,
+            project: $project,
+        );
+    }
+
+    /**
      * Submit Standard-queue SERP tasks with a signed postback URL.
      *
      * @param  list<array<string, mixed>>  $tasks
