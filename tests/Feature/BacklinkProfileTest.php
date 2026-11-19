@@ -238,7 +238,7 @@ class BacklinkProfileTest extends TestCase
             'source' => 'cloud',
             'config' => ['maxDepth' => 3, 'maxUrls' => 500],
             'total_urls' => 2,
-            'finished_at' => now(),
+            'finalized_at' => now(),
         ]);
 
         CrawlUrl::query()->create([

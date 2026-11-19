@@ -381,7 +381,7 @@ class BacklinkProfileService
         $latestCrawl = CrawlRun::query()
             ->where('project_id', $project->id)
             ->where('status', 'completed')
-            ->latest('finished_at')
+            ->latest('finalized_at')
             ->first();
 
         /** @var array<string, int> $urlStatusMap */
@@ -437,14 +437,14 @@ class BacklinkProfileService
 
             $enhancedPages[] = $enhanced;
 
-            if ($isBroken && $crawlStatus !== null) {
+            if ($isBroken) {
                 $brokenPages[] = [
                     'url' => $pageUrl,
                     'path' => $pagePath,
                     'rank' => $rank,
                     'backlinks' => $backlinks,
                     'referring_domains' => (int) $p['referring_domains'],
-                    'crawl_status' => $crawlStatus,
+                    'crawl_status' => (int) $crawlStatus,
                     'redirect_priority' => (string) $priority,
                 ];
             }
@@ -456,7 +456,7 @@ class BacklinkProfileService
         $crawlRunSummary = $latestCrawl !== null ? [
             'id' => (string) $latestCrawl->id,
             'status' => $latestCrawl->status,
-            'finished_at' => $latestCrawl->finished_at?->toIso8601String(),
+            'finished_at' => $latestCrawl->finalized_at?->toIso8601String(),
             'total_urls' => $latestCrawl->total_urls,
         ] : null;
 
