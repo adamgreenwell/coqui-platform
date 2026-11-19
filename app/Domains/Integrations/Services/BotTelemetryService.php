@@ -79,10 +79,10 @@ class BotTelemetryService
 
                 if ($botFamily === 'googlebot' && $statusBucket === 400 && $topErrorPaths !== []) {
                     foreach ($topErrorPaths as $err) {
-                        $errHits = (int) ($err['hits'] ?? 0);
+                        $errHits = (int) $err['hits'];
                         if ($errHits > $flagged404Hits) {
                             $flagged404Hits = $errHits;
-                            $top404Path = (string) ($err['path'] ?? '');
+                            $top404Path = (string) $err['path'];
                         }
                     }
                 }
@@ -438,14 +438,14 @@ class BotTelemetryService
         }
 
         foreach ($incoming as $item) {
-            $p = (string) ($item['path'] ?? '');
+            $p = (string) $item['path'];
             if ($p !== '') {
                 if (isset($map[$p])) {
-                    $map[$p]['hits'] += (int) ($item['hits'] ?? 1);
+                    $map[$p]['hits'] += (int) $item['hits'];
                 } else {
                     $map[$p] = [
                         'path' => $p,
-                        'hits' => (int) ($item['hits'] ?? 1),
+                        'hits' => (int) $item['hits'],
                         'status' => (int) ($item['status'] ?? 404),
                     ];
                 }
