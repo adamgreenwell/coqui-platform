@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Domains\Crawls\Actions\IngestDesktopCrawlSnapshot;
 use App\Domains\Crawls\DTOs\CrawlSyncPayload;
+use App\Domains\Crawls\Exceptions\CrawlOwnershipConflictException;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Crawls\Services\CrawlDiffService;
 use App\Domains\Projects\Models\Project;
@@ -175,10 +176,15 @@ class CrawlSyncController extends Controller
             'startedAt' => ['nullable', 'integer', 'min:0'],
             'finishedAt' => ['nullable', 'integer', 'min:0'],
             'totalUrls' => ['nullable', 'integer', 'min:0'],
-            'source' => ['nullable', 'in:desktop,worker,deploy_smoke'],
+            // Server-side sources (worker, deploy_smoke) are never accepted from clients.
+            'source' => ['nullable', 'in:desktop'],
         ]);
 
-        $run = $this->ingest->upsertRun($project, CrawlSyncPayload::fromValidated($validated));
+        try {
+            $run = $this->ingest->upsertRun($project, CrawlSyncPayload::fromValidated($validated));
+        } catch (CrawlOwnershipConflictException $e) {
+            return response()->json(['message' => $e->getMessage()], 409);
+        }
 
         return response()->json([
             'id' => $run->id,
@@ -193,6 +199,7 @@ class CrawlSyncController extends Controller
 
         $run = $project->crawlRuns()
             ->where('external_crawl_id', $crawlId)
+            ->where('source', IngestDesktopCrawlSnapshot::DESKTOP_SOURCE)
             ->firstOrFail();
 
         /** @var array<string, mixed> $validated */
@@ -219,6 +226,7 @@ class CrawlSyncController extends Controller
 
         $run = $project->crawlRuns()
             ->where('external_crawl_id', $crawlId)
+            ->where('source', IngestDesktopCrawlSnapshot::DESKTOP_SOURCE)
             ->firstOrFail();
 
         $validated = $request->validate([
