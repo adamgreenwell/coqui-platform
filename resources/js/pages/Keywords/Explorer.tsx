@@ -379,7 +379,13 @@ export default function KeywordExplorer({
   };
 
   const openTrackSelected = () => {
-    const items = results.filter((r) => selectedKeywords.has(r.keyword.toLowerCase()));
+    const items = results.filter((r) => {
+      const isSelected = selectedKeywords.has(r.keyword.toLowerCase());
+      const isTracked = trackedSet.has(
+        makeTrackedKey(r.keyword, r.location_code, r.language_code)
+      );
+      return isSelected && !isTracked;
+    });
     if (items.length === 0) return;
     setKeywordsToTrack(items);
     setTrackModalOpen(true);
@@ -508,11 +514,34 @@ export default function KeywordExplorer({
     });
   }, [results, searchFilter, intentFilter, kdFilter, volumeFilter, sortBy]);
 
+  const selectedUntrackedCount = useMemo(() => {
+    return filteredKeywords.filter(
+      (k) =>
+        selectedKeywords.has(k.keyword.toLowerCase()) &&
+        !trackedSet.has(makeTrackedKey(k.keyword, k.location_code, k.language_code))
+    ).length;
+  }, [filteredKeywords, selectedKeywords, trackedSet]);
+
+  const filteredUntrackedCount = useMemo(() => {
+    return filteredKeywords.filter(
+      (k) => !trackedSet.has(makeTrackedKey(k.keyword, k.location_code, k.language_code))
+    ).length;
+  }, [filteredKeywords, trackedSet]);
+
   const toggleSelectAll = () => {
-    if (selectedKeywords.size === filteredKeywords.length && filteredKeywords.length > 0) {
+    const untracked = filteredKeywords
+      .filter(
+        (k) => !trackedSet.has(makeTrackedKey(k.keyword, k.location_code, k.language_code))
+      )
+      .map((k) => k.keyword.toLowerCase());
+
+    if (untracked.length === 0) return;
+
+    const allUntrackedSelected = untracked.every((k) => selectedKeywords.has(k));
+    if (allUntrackedSelected) {
       setSelectedKeywords(new Set());
     } else {
-      setSelectedKeywords(new Set(filteredKeywords.map((k) => k.keyword.toLowerCase())));
+      setSelectedKeywords(new Set(untracked));
     }
   };
 
@@ -1018,14 +1047,14 @@ export default function KeywordExplorer({
             </div>
 
             <div className="flex items-center gap-2 shrink-0">
-              {selectedKeywords.size > 0 && (
+              {selectedUntrackedCount > 0 && (
                 <button
                   type="button"
                   onClick={openTrackSelected}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs transition shadow-md shadow-emerald-500/10 cursor-pointer"
                 >
                   <Plus className="h-3.5 w-3.5" />
-                  <span>Track Selected ({selectedKeywords.size})</span>
+                  <span>Track Selected ({selectedUntrackedCount})</span>
                 </button>
               )}
 
@@ -1053,11 +1082,17 @@ export default function KeywordExplorer({
                       <input
                         type="checkbox"
                         checked={
-                          selectedKeywords.size === filteredKeywords.length &&
-                          filteredKeywords.length > 0
+                          selectedUntrackedCount > 0 &&
+                          selectedUntrackedCount === filteredUntrackedCount
                         }
                         onChange={toggleSelectAll}
-                        className="rounded border-slate-700 bg-slate-900 text-sky-500 focus:ring-sky-500"
+                        disabled={filteredUntrackedCount === 0}
+                        className="rounded border-slate-700 bg-slate-900 text-sky-500 focus:ring-sky-500 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                        title={
+                          filteredUntrackedCount === 0
+                            ? 'All visible keywords are already tracked'
+                            : 'Select all untracked keywords'
+                        }
                       />
                     </th>
                     <th className="py-3 px-3">Keyword</th>
@@ -1089,17 +1124,26 @@ export default function KeywordExplorer({
                         <tr
                           key={item.keyword}
                           className={`hover:bg-slate-800/30 transition ${
-                            isSelected ? 'bg-sky-500/5' : ''
+                            isSelected && !isTracked ? 'bg-sky-500/5' : ''
                           }`}
                         >
                           {/* Checkbox */}
                           <td className="py-3 px-3">
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => toggleSelectOne(item.keyword)}
-                              className="rounded border-slate-700 bg-slate-900 text-sky-500 focus:ring-sky-500 cursor-pointer"
-                            />
+                            {isTracked ? (
+                              <span
+                                className="inline-flex h-4 w-4 rounded border border-slate-800 bg-slate-900/50 text-slate-600 items-center justify-center cursor-not-allowed"
+                                title="Already tracked in this market"
+                              >
+                                <Check className="h-2.5 w-2.5 text-slate-600" />
+                              </span>
+                            ) : (
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleSelectOne(item.keyword)}
+                                className="rounded border-slate-700 bg-slate-900 text-sky-500 focus:ring-sky-500 cursor-pointer"
+                              />
+                            )}
                           </td>
 
                           {/* Keyword */}
@@ -1214,9 +1258,9 @@ export default function KeywordExplorer({
               <div>
                 Showing <span className="font-medium text-slate-300">{filteredKeywords.length}</span> of{' '}
                 <span className="font-medium text-slate-300">{results.length}</span> keywords
-                {selectedKeywords.size > 0 && (
+                {selectedUntrackedCount > 0 && (
                   <span className="ml-2 text-sky-400">
-                    ({selectedKeywords.size} selected)
+                    ({selectedUntrackedCount} selected)
                   </span>
                 )}
               </div>

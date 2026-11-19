@@ -254,21 +254,41 @@ class KeywordExplorerController extends Controller
                     }
                 }
 
-                TrackedKeyword::query()->updateOrCreate(
-                    [
+                $existing = TrackedKeyword::query()
+                    ->where('project_id', $project->id)
+                    ->where('keyword', $kw)
+                    ->where('device', $device)
+                    ->where('location_code', $itemLocation)
+                    ->where('language_code', $itemLanguage)
+                    ->first();
+
+                if ($existing !== null) {
+                    $updates = [];
+                    if ($searchVolume !== null && $existing->search_volume === null) {
+                        $updates['search_volume'] = $searchVolume;
+                    }
+                    if ($keywordDifficulty !== null && $existing->keyword_difficulty === null) {
+                        $updates['keyword_difficulty'] = $keywordDifficulty;
+                    }
+                    if (! $existing->is_active) {
+                        $updates['is_active'] = true;
+                    }
+                    if ($updates !== []) {
+                        $existing->update($updates);
+                    }
+                } else {
+                    TrackedKeyword::query()->create([
                         'project_id' => $project->id,
                         'keyword' => $kw,
                         'device' => $device,
                         'location_code' => $itemLocation,
                         'language_code' => $itemLanguage,
-                    ],
-                    [
                         'cadence' => $cadence,
                         'search_volume' => $searchVolume,
                         'keyword_difficulty' => $keywordDifficulty,
                         'is_active' => true,
-                    ],
-                );
+                    ]);
+                }
 
                 $trackedKeywords[] = sprintf(
                     '%s:%d:%s',

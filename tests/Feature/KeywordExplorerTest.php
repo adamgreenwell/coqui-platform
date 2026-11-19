@@ -517,6 +517,48 @@ class KeywordExplorerTest extends TestCase
         $this->assertSame(1001, $germanKw->search_volume);
     }
 
+    public function test_tracking_preserves_existing_monitoring_cadence_and_backfills_metrics(): void
+    {
+        TrackedKeyword::query()->create([
+            'project_id' => $this->project->id,
+            'keyword' => 'existing tracked term',
+            'device' => 'desktop',
+            'location_code' => 2840,
+            'language_code' => 'en',
+            'cadence' => 'daily',
+            'search_volume' => null,
+            'keyword_difficulty' => null,
+            'is_active' => true,
+        ]);
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-explorer/track", [
+                'keywords' => [
+                    [
+                        'keyword' => 'existing tracked term',
+                        'search_volume' => 5400,
+                        'keyword_difficulty' => 42,
+                        'location_code' => 2840,
+                        'language_code' => 'en',
+                    ],
+                ],
+                'device' => 'desktop',
+                'cadence' => 'weekly',
+            ]);
+
+        $response->assertOk();
+
+        $existing = TrackedKeyword::query()
+            ->where('project_id', $this->project->id)
+            ->where('keyword', 'existing tracked term')
+            ->first();
+
+        $this->assertNotNull($existing);
+        $this->assertSame('daily', $existing->cadence, 'Daily cadence should be preserved, not overwritten by weekly default');
+        $this->assertSame(5400, $existing->search_volume, 'Missing search volume should be backfilled');
+        $this->assertSame(42, $existing->keyword_difficulty, 'Missing KD should be backfilled');
+    }
+
     public function test_unauthorized_user_cannot_access_keyword_explorer_or_track_keywords(): void
     {
         $otherUser = User::factory()->create();
