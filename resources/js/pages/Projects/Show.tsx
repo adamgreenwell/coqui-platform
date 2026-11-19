@@ -342,17 +342,26 @@ export default function ProjectShow({
         {/* Metric Cards Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Latest Crawl Health */}
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+          {/* Crawl Health */}
+          <Link
+            href={`/workspaces/${workspace.id}/projects/${project.id}/crawls/compare`}
+            className="rounded-xl border border-slate-800 bg-slate-900/40 p-4 hover:border-slate-700 transition block group cursor-pointer"
+          >
             <div className="flex items-center justify-between text-slate-400 text-xs">
-              <span className="flex items-center gap-1.5">
+              <span className="flex items-center gap-1.5 group-hover:text-emerald-400 transition">
                 <Globe className="h-4 w-4 text-emerald-400" />
                 <span>Crawl Health</span>
               </span>
-              {liveCrawl && (
-                <span className="capitalize px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 border border-slate-700">
-                  {liveCrawl.status}
+              <div className="flex items-center gap-1.5">
+                {liveCrawl && (
+                  <span className="capitalize px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 border border-slate-700">
+                    {liveCrawl.status}
+                  </span>
+                )}
+                <span className="text-[10px] font-medium text-emerald-400/80 group-hover:text-emerald-300">
+                  Diff &rarr;
                 </span>
-              )}
+              </div>
             </div>
             <div className="mt-3">
               {liveCrawl ? (
@@ -369,12 +378,12 @@ export default function ProjectShow({
                 <>
                   <div className="text-sm font-semibold text-slate-400">No crawls yet</div>
                   <p className="mt-1 text-[11px] text-slate-500">
-                    Sync via Coqui Desktop or run cloud audit
+                    Sync via Coqui Desktop or compare snapshots
                   </p>
                 </>
               )}
             </div>
-          </div>
+          </Link>
 
           {/* Tracked Keywords */}
           <Link

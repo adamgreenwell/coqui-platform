@@ -7,6 +7,7 @@ namespace App\Http\Controllers\Api\V1;
 use App\Domains\Crawls\Actions\IngestDesktopCrawlSnapshot;
 use App\Domains\Crawls\DTOs\CrawlSyncPayload;
 use App\Domains\Crawls\Models\CrawlRun;
+use App\Domains\Crawls\Services\CrawlDiffService;
 use App\Domains\Projects\Models\Project;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
@@ -18,7 +19,46 @@ class CrawlSyncController extends Controller
 {
     public function __construct(
         private readonly IngestDesktopCrawlSnapshot $ingest,
+        private readonly CrawlDiffService $diffService,
     ) {}
+
+    public function compare(Request $request, Project $project): JsonResponse
+    {
+        Gate::authorize('view', $project);
+
+        $baselineParam = $request->input('baseline');
+        $targetParam = $request->input('target');
+
+        if ($baselineParam === null || $targetParam === null) {
+            return response()->json([
+                'message' => 'Both baseline and target crawl parameters are required.',
+            ], 422);
+        }
+
+        /** @var CrawlRun $baselineRun */
+        $baselineRun = $project->crawlRuns()
+            ->where(function ($q) use ($baselineParam): void {
+                $q->where('external_crawl_id', $baselineParam);
+                if (ctype_digit((string) $baselineParam)) {
+                    $q->orWhere('id', (int) $baselineParam);
+                }
+            })
+            ->firstOrFail();
+
+        /** @var CrawlRun $targetRun */
+        $targetRun = $project->crawlRuns()
+            ->where(function ($q) use ($targetParam): void {
+                $q->where('external_crawl_id', $targetParam);
+                if (ctype_digit((string) $targetParam)) {
+                    $q->orWhere('id', (int) $targetParam);
+                }
+            })
+            ->firstOrFail();
+
+        $diff = $this->diffService->compare($baselineRun, $targetRun);
+
+        return response()->json($diff);
+    }
 
     public function index(Request $request, Project $project): JsonResponse
     {

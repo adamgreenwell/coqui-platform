@@ -127,6 +127,14 @@ class Project extends Model
     }
 
     /**
+     * @return HasMany<\App\Domains\Crawls\Models\CrawlDiffReport, $this>
+     */
+    public function diffReports(): HasMany
+    {
+        return $this->hasMany(\App\Domains\Crawls\Models\CrawlDiffReport::class);
+    }
+
+    /**
      * @return HasMany<ProjectActivity, $this>
      */
     public function activities(): HasMany
