@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Tools;
 
 use App\Domains\Projects\Models\Project;
+use App\Mcp\Concerns\ResolvesAccessibleProject;
 use App\Models\User;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
@@ -13,6 +14,8 @@ use Laravel\Mcp\Server\Tool;
 
 class InspectProjectSeoTool extends Tool
 {
+    use ResolvesAccessibleProject;
+
     protected string $name = 'inspect_project_seo';
 
     protected string $description = 'Inspect SEO project status, latest Coqui crawl totals, tracked keywords, and monitored backlinks for a domain.';
@@ -23,24 +26,19 @@ class InspectProjectSeoTool extends Tool
             'domain' => ['required', 'string', 'max:255'],
         ]);
 
+        $user = $request->user();
+        if (! $user instanceof User) {
+            return Response::error('Authentication required to inspect project SEO.');
+        }
+
         $normalized = Project::normalizeDomain((string) $validated['domain']);
-        $project = Project::query()
-            ->where('domain', $normalized)
-            ->with(['competitors:id,project_id,domain'])
-            ->first();
+        $project = $this->resolveAccessibleProject($user, $normalized);
 
         if ($project === null) {
             return Response::error("Project not found for domain [{$normalized}].");
         }
 
-        $user = $request->user();
-        if ((bool) config('coqui.mcp.require_auth', false) && $user === null) {
-            return Response::error('Authentication required to inspect project SEO.');
-        }
-
-        if ($user instanceof User && ! $user->can('view', $project)) {
-            return Response::error("Unauthorized access to project [{$normalized}].");
-        }
+        $project->load(['competitors:id,project_id,domain']);
 
         $latestCrawl = $project->crawlRuns()->latest('id')->first();
 

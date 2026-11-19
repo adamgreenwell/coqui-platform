@@ -334,6 +334,21 @@ export default function WorkspaceTokens({
                         </div>
                       </div>
                     </label>
+
+                    <label className="flex items-start gap-2.5 p-2 rounded-lg border border-slate-800 bg-slate-950/60 cursor-pointer hover:border-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={data.abilities.includes('mcp:use')}
+                        onChange={() => toggleAbility('mcp:use')}
+                        className="mt-0.5 h-4 w-4 rounded border-slate-700 bg-slate-900 text-emerald-500 focus:ring-emerald-500/40"
+                      />
+                      <div>
+                        <div className="text-xs font-semibold text-white">mcp:use</div>
+                        <div className="text-[11px] text-slate-400">
+                          Call the Coqui MCP server from AI assistants. Live keyword lookups bill this workspace.
+                        </div>
+                      </div>
+                    </label>
                   </div>
                   {errors.abilities && (
                     <p className="mt-1 text-xs text-red-400">{errors.abilities}</p>

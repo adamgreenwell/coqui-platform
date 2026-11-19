@@ -93,7 +93,9 @@ return [
     */
     'mcp' => [
         'path' => env('COQUI_MCP_PATH', '/mcp/coqui'),
-        'require_auth' => (bool) env('COQUI_MCP_REQUIRE_AUTH', env('APP_ENV') === 'production'),
+        // Auth is on everywhere except local development; tokens need the mcp:use ability.
+        'require_auth' => (bool) env('COQUI_MCP_REQUIRE_AUTH', env('APP_ENV') !== 'local'),
+        'rate_limit_per_minute' => (int) env('COQUI_MCP_RATE_LIMIT', 60),
     ],
 
     /*
