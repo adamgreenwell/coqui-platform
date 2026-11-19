@@ -11,7 +11,7 @@ use App\Domains\Integrations\Models\ProjectIntegration;
 use App\Domains\Integrations\Models\SearchPerformancePage;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
-use Carbon\CarbonInterface;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -488,7 +488,7 @@ class TrafficAttributionService
         // 1. Fetch latest crawl URLs
         /** @var CrawlRun|null $latestCrawl */
         $latestCrawl = $project->crawlRuns()->latest('id')->first();
-        /** @var \Illuminate\Database\Eloquent\Collection<int, CrawlUrl> $crawlUrls */
+        /** @var Collection<int, CrawlUrl> $crawlUrls */
         $crawlUrls = $latestCrawl !== null
             ? $latestCrawl->urls()->get()
             : collect();
@@ -535,7 +535,7 @@ class TrafficAttributionService
         }
 
         // 2. Fetch GSC Page Performance
-        /** @var \Illuminate\Database\Eloquent\Collection<int, SearchPerformancePage> $gscPages */
+        /** @var Collection<int, SearchPerformancePage> $gscPages */
         $gscPages = $project->searchPerformancePages()
             ->where('date', '>=', $since->format('Y-m-d'))
             ->get();
@@ -552,7 +552,7 @@ class TrafficAttributionService
         }
 
         // 3. Fetch Page Traffic Snapshots (GA4 & Plausible)
-        /** @var \Illuminate\Database\Eloquent\Collection<int, PageTrafficSnapshot> $trafficSnapshots */
+        /** @var Collection<int, PageTrafficSnapshot> $trafficSnapshots */
         $trafficSnapshots = $project->pageTrafficSnapshots()
             ->where('date', '>=', $since->format('Y-m-d'))
             ->get();
