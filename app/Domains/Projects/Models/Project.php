@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domains\Projects\Models;
 
+use App\Domains\Backlinks\Models\BacklinkHistorySnapshot;
 use App\Domains\Backlinks\Models\MonitoredBacklink;
 use App\Domains\Crawls\Models\CrawlDiffReport;
 use App\Domains\Crawls\Models\CrawlRun;
@@ -142,6 +143,14 @@ class Project extends Model
     public function contentBriefs(): HasMany
     {
         return $this->hasMany(ContentBrief::class);
+    }
+
+    /**
+     * @return HasMany<BacklinkHistorySnapshot, $this>
+     */
+    public function backlinkHistorySnapshots(): HasMany
+    {
+        return $this->hasMany(BacklinkHistorySnapshot::class);
     }
 
     /**

@@ -426,6 +426,39 @@ class DataForSeoClient
     }
 
     /**
+     * Fetch historical backlinks and referring domain timeseries.
+     *
+     * @return array<string, mixed>
+     */
+    public function backlinksHistory(
+        string $target,
+        Project $project,
+        ?string $dateFrom = null,
+        ?string $dateTo = null,
+    ): array {
+        $endpoint = '/v3/backlinks/history/live';
+        $estimatedCost = (float) config('coqui.dataforseo.prices.backlinks_task', 0.024);
+
+        $this->spendGuard->assertCanSpend($estimatedCost, $project->workspace, false);
+
+        $payload = [
+            [
+                'target' => $target,
+                'date_from' => $dateFrom ?? now()->subMonths(6)->toDateString(),
+                'date_to' => $dateTo ?? now()->toDateString(),
+            ],
+        ];
+
+        return $this->postPaid(
+            endpoint: $endpoint,
+            payload: $payload,
+            mode: 'live',
+            estimatedCostUsd: $estimatedCost,
+            project: $project,
+        );
+    }
+
+    /**
      * Submit Standard-queue SERP tasks with a signed postback URL.
      *
      * @param  list<array<string, mixed>>  $tasks

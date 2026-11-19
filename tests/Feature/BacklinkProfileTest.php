@@ -134,6 +134,29 @@ class BacklinkProfileTest extends TestCase
                     ],
                 ],
             ], 200),
+            'https://sandbox.dataforseo.com/v3/backlinks/history/live' => Http::response([
+                'status_code' => 20000,
+                'tasks' => [
+                    [
+                        'result' => [
+                            [
+                                'items' => [
+                                    [
+                                        'date' => '2026-11-01',
+                                        'backlinks' => 1250,
+                                        'referring_domains' => 120,
+                                        'new_backlinks' => 20,
+                                        'lost_backlinks' => 5,
+                                        'new_referring_domains' => 3,
+                                        'lost_referring_domains' => 1,
+                                        'rank' => 450,
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ], 200),
         ]);
 
         $response = $this->actingAs($this->user)
@@ -202,6 +225,29 @@ class BacklinkProfileTest extends TestCase
             'https://sandbox.dataforseo.com/v3/backlinks/pages/live' => Http::response([
                 'status_code' => 20000,
                 'tasks' => [['result' => [['items' => []]]]],
+            ], 200),
+            'https://sandbox.dataforseo.com/v3/backlinks/history/live' => Http::response([
+                'status_code' => 20000,
+                'tasks' => [
+                    [
+                        'result' => [
+                            [
+                                'items' => [
+                                    [
+                                        'date' => now()->toDateString(),
+                                        'backlinks' => 400,
+                                        'referring_domains' => 50,
+                                        'new_backlinks' => 5,
+                                        'lost_backlinks' => 2,
+                                        'new_referring_domains' => 2,
+                                        'lost_referring_domains' => 1,
+                                        'rank' => 300,
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
             ], 200),
         ]);
 
@@ -353,6 +399,29 @@ class BacklinkProfileTest extends TestCase
             'https://sandbox.dataforseo.com/v3/backlinks/pages/live' => Http::response([
                 'status_code' => 20000,
                 'tasks' => [['result' => [['items' => []]]]],
+            ], 200),
+            'https://sandbox.dataforseo.com/v3/backlinks/history/live' => Http::response([
+                'status_code' => 20000,
+                'tasks' => [
+                    [
+                        'result' => [
+                            [
+                                'items' => [
+                                    [
+                                        'date' => now()->toDateString(),
+                                        'backlinks' => 400,
+                                        'referring_domains' => 50,
+                                        'new_backlinks' => 5,
+                                        'lost_backlinks' => 2,
+                                        'new_referring_domains' => 2,
+                                        'lost_referring_domains' => 1,
+                                        'rank' => 300,
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
             ], 200),
         ]);
 
