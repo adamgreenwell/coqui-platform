@@ -32,6 +32,7 @@ return [
             'keyword_overview' => 24 * 30,
             'related_keywords' => 24 * 30,
             'domain_overview' => 24 * 14,
+            'domain_intersection' => 24 * 14,
             'backlinks_summary' => 24 * 14,
             'serp_snapshot' => 24 * 7,
         ],
