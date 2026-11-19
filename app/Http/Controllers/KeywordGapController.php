@@ -7,8 +7,8 @@ namespace App\Http\Controllers;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\Workspace;
+use App\Domains\Serp\DataForSeo\DataForSeoBudgetException;
 use App\Domains\Serp\DataForSeo\DataForSeoCacheRepository;
-use App\Domains\Serp\DataForSeo\SpendGuardBudgetExceededException;
 use App\Domains\Serp\Models\TrackedKeyword;
 use App\Domains\Serp\Services\KeywordGapService;
 use App\Models\User;
@@ -100,7 +100,7 @@ class KeywordGapController extends Controller
             );
 
             return response()->json($result);
-        } catch (SpendGuardBudgetExceededException $e) {
+        } catch (DataForSeoBudgetException $e) {
             return response()->json([
                 'message' => $e->getMessage(),
                 'error' => 'budget_exceeded',
@@ -155,24 +155,23 @@ class KeywordGapController extends Controller
                     $kw = trim($item);
                     $searchVolume = null;
                     $keywordDifficulty = null;
-                } elseif (is_array($item)) {
+                    $itemLocation = $locationCode;
+                    $itemLanguage = $languageCode;
+                } else {
                     $kw = isset($item['keyword']) && is_string($item['keyword']) ? trim($item['keyword']) : '';
                     $searchVolume = isset($item['search_volume']) && is_numeric($item['search_volume']) ? (int) $item['search_volume'] : null;
                     $keywordDifficulty = isset($item['keyword_difficulty']) && is_numeric($item['keyword_difficulty']) ? (int) $item['keyword_difficulty'] : null;
-                } else {
-                    continue;
+                    $itemLocation = isset($item['location_code']) && is_numeric($item['location_code'])
+                        ? (int) $item['location_code']
+                        : $locationCode;
+                    $itemLanguage = isset($item['language_code']) && is_string($item['language_code']) && trim($item['language_code']) !== ''
+                        ? trim($item['language_code'])
+                        : $languageCode;
                 }
 
                 if ($kw === '') {
                     continue;
                 }
-
-                $itemLocation = is_array($item) && isset($item['location_code']) && is_numeric($item['location_code'])
-                    ? (int) $item['location_code']
-                    : $locationCode;
-                $itemLanguage = is_array($item) && isset($item['language_code']) && is_string($item['language_code']) && trim($item['language_code']) !== ''
-                    ? trim($item['language_code'])
-                    : $languageCode;
 
                 if ($searchVolume === null || $keywordDifficulty === null) {
                     $cached = $cacheRepo->getKeywordMetrics($kw, $itemLocation, $itemLanguage);

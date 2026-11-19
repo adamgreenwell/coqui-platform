@@ -298,10 +298,6 @@ class KeywordGapService
         string $languageCode,
     ): void {
         foreach ($items as $item) {
-            if (! is_array($item)) {
-                continue;
-            }
-
             $kwData = $item['keyword_data'] ?? [];
             if (! is_array($kwData)) {
                 continue;
