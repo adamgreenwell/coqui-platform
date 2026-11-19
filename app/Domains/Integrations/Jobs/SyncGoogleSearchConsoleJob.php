@@ -26,6 +26,10 @@ class SyncGoogleSearchConsoleJob implements ShouldQueue
 
     public function handle(SearchPerformanceSyncService $syncService): void
     {
-        $syncService->syncGoogleSearchConsole($this->integration);
+        $result = $syncService->syncGoogleSearchConsole($this->integration);
+
+        if (! $result['success'] && ($result['error'] ?? null) !== null && $this->integration->fresh()?->status !== 'needs_reconnect') {
+            throw new \RuntimeException("Google Search Console sync failed: {$result['error']}");
+        }
     }
 }

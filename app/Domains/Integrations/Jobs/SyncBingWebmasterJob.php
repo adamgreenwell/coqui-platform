@@ -26,6 +26,10 @@ class SyncBingWebmasterJob implements ShouldQueue
 
     public function handle(SearchPerformanceSyncService $syncService): void
     {
-        $syncService->syncBingWebmaster($this->integration);
+        $result = $syncService->syncBingWebmaster($this->integration);
+
+        if (! $result['success'] && ($result['error'] ?? null) !== null && $this->integration->fresh()?->status !== 'needs_reconnect') {
+            throw new \RuntimeException("Bing Webmaster sync failed: {$result['error']}");
+        }
     }
 }

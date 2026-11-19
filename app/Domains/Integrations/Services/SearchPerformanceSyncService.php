@@ -57,6 +57,7 @@ class SearchPerformanceSyncService
             $recordsToUpsert = [];
             $now = Carbon::now();
 
+            $deduped = [];
             foreach ($rows as $row) {
                 $keys = $row['keys'];
                 $query = isset($keys[0]) ? trim($keys[0]) : '';
@@ -66,10 +67,26 @@ class SearchPerformanceSyncService
                     continue;
                 }
 
-                // Truncate query to 255 chars if needed
+                // Truncate query to 255 chars if needed and aggregate collisions on (query, date)
                 $safeQuery = mb_substr($query, 0, 255);
+                $key = $safeQuery.'|'.$dateStr;
 
-                $recordsToUpsert[] = [
+                if (isset($deduped[$key])) {
+                    $existingClicks = (int) $deduped[$key]['clicks'] + (int) $row['clicks'];
+                    $existingImpressions = (int) $deduped[$key]['impressions'] + (int) $row['impressions'];
+                    $combinedCtr = $existingImpressions > 0 ? round($existingClicks / $existingImpressions, 4) : 0.0;
+                    $totalPosImpr = ((float) $deduped[$key]['position'] * (int) $deduped[$key]['impressions']) + ((float) $row['position'] * (int) $row['impressions']);
+                    $combinedPos = $existingImpressions > 0 ? round($totalPosImpr / $existingImpressions, 2) : (float) $row['position'];
+
+                    $deduped[$key]['clicks'] = $existingClicks;
+                    $deduped[$key]['impressions'] = $existingImpressions;
+                    $deduped[$key]['ctr'] = $combinedCtr;
+                    $deduped[$key]['position'] = $combinedPos;
+
+                    continue;
+                }
+
+                $deduped[$key] = [
                     'project_id' => $project->id,
                     'provider' => 'gsc',
                     'query' => $safeQuery,
@@ -82,6 +99,8 @@ class SearchPerformanceSyncService
                     'updated_at' => $now,
                 ];
             }
+
+            $recordsToUpsert = array_values($deduped);
 
             if ($recordsToUpsert !== []) {
                 foreach (array_chunk($recordsToUpsert, 500) as $chunk) {
@@ -164,6 +183,7 @@ class SearchPerformanceSyncService
             $recordsToUpsert = [];
             $now = Carbon::now();
 
+            $deduped = [];
             foreach ($rows as $row) {
                 $query = trim($row['query']);
                 $dateStr = trim($row['date']);
@@ -173,8 +193,24 @@ class SearchPerformanceSyncService
                 }
 
                 $safeQuery = mb_substr($query, 0, 255);
+                $key = $safeQuery.'|'.$dateStr;
 
-                $recordsToUpsert[] = [
+                if (isset($deduped[$key])) {
+                    $existingClicks = (int) $deduped[$key]['clicks'] + (int) $row['clicks'];
+                    $existingImpressions = (int) $deduped[$key]['impressions'] + (int) $row['impressions'];
+                    $combinedCtr = $existingImpressions > 0 ? round($existingClicks / $existingImpressions, 4) : 0.0;
+                    $totalPosImpr = ((float) $deduped[$key]['position'] * (int) $deduped[$key]['impressions']) + ((float) $row['position'] * (int) $row['impressions']);
+                    $combinedPos = $existingImpressions > 0 ? round($totalPosImpr / $existingImpressions, 2) : (float) $row['position'];
+
+                    $deduped[$key]['clicks'] = $existingClicks;
+                    $deduped[$key]['impressions'] = $existingImpressions;
+                    $deduped[$key]['ctr'] = $combinedCtr;
+                    $deduped[$key]['position'] = $combinedPos;
+
+                    continue;
+                }
+
+                $deduped[$key] = [
                     'project_id' => $project->id,
                     'provider' => 'bing',
                     'query' => $safeQuery,
@@ -187,6 +223,8 @@ class SearchPerformanceSyncService
                     'updated_at' => $now,
                 ];
             }
+
+            $recordsToUpsert = array_values($deduped);
 
             if ($recordsToUpsert !== []) {
                 foreach (array_chunk($recordsToUpsert, 500) as $chunk) {
