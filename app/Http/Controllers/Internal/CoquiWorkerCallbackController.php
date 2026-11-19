@@ -6,6 +6,7 @@ namespace App\Http\Controllers\Internal;
 
 use App\Domains\Crawls\Actions\IngestDesktopCrawlSnapshot;
 use App\Domains\Crawls\DTOs\CrawlSyncPayload;
+use App\Domains\Crawls\Events\CrawlProgressUpdated;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
@@ -34,6 +35,8 @@ class CoquiWorkerCallbackController extends Controller
         $validated = $request->validate([
             'crawlId' => ['required', 'uuid'],
             'status' => ['required', 'in:running,completed,failed,cancelled'],
+            'crawledUrls' => ['nullable', 'integer', 'min:0'],
+            'totalUrls' => ['nullable', 'integer', 'min:0'],
             ...CrawlSyncPayload::chunkRules(),
         ]);
 
@@ -68,8 +71,33 @@ class CoquiWorkerCallbackController extends Controller
 
         if (in_array($status, self::TERMINAL_STATUSES, true)) {
             $run = $this->ingest->finalize($run, $status);
-        } elseif ($run->status !== $status) {
-            $run->update(['status' => $status]);
+        } else {
+            $updates = [];
+            if ($run->status !== $status) {
+                $updates['status'] = $status;
+            }
+            if (isset($validated['totalUrls']) && (int) $validated['totalUrls'] > (int) $run->total_urls) {
+                $updates['total_urls'] = (int) $validated['totalUrls'];
+            }
+            if ($updates !== []) {
+                $run->update($updates);
+            }
+
+            if ($urls === [] && $links === [] && $issues === []) {
+                $crawled = isset($validated['crawledUrls']) ? (int) $validated['crawledUrls'] : (int) $run->total_urls;
+                $total = isset($validated['totalUrls']) ? (int) $validated['totalUrls'] : (int) $run->total_urls;
+
+                rescue(fn () => broadcast(new CrawlProgressUpdated(
+                    projectId: $run->project_id,
+                    externalCrawlId: $run->external_crawl_id,
+                    crawledUrls: $crawled,
+                    totalUrls: $total,
+                    errorCount: (int) $run->error_count,
+                    warningCount: (int) $run->warning_count,
+                    opportunityCount: (int) $run->opportunity_count,
+                    status: $status,
+                )));
+            }
         }
 
         return response()->json([
