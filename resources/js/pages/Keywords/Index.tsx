@@ -11,6 +11,7 @@ import {
   Clock,
   ExternalLink,
   Filter,
+  Globe,
   History,
   Laptop,
   Layers,
@@ -55,6 +56,13 @@ interface CompetitorRankData {
   has_featured_snippet: boolean;
 }
 
+interface SearchPerformanceOverlay {
+  clicks?: number | null;
+  impressions?: number | null;
+  ctr?: number | null;
+  position?: number | null;
+}
+
 interface TrackedKeywordItem {
   id: number;
   keyword: string;
@@ -81,6 +89,8 @@ interface TrackedKeywordItem {
     item_type?: string | null;
   } | null;
   competitor_ranks: Record<string, CompetitorRankData>;
+  gsc_performance?: SearchPerformanceOverlay | null;
+  bing_performance?: SearchPerformanceOverlay | null;
 }
 
 interface VisibilityMetrics {
@@ -104,6 +114,14 @@ interface HistorySnapshot {
   checked_on: string;
 }
 
+interface IntegrationSummary {
+  status: 'connected' | 'needs_reconnect' | 'not_connected';
+  site_url?: string | null;
+  last_synced_at?: string | null;
+  error_message?: string | null;
+  connect_url?: string;
+}
+
 interface KeywordsIndexProps {
   workspace: WorkspaceSummary;
   project: ProjectDetails;
@@ -115,6 +133,8 @@ interface KeywordsIndexProps {
     search?: string | null;
   };
   canEdit: boolean;
+  gscIntegration?: IntegrationSummary;
+  bingIntegration?: IntegrationSummary;
 }
 
 function formatRelativeTime(dateString?: string | null): string {
@@ -145,9 +165,14 @@ export default function KeywordsIndex({
   metrics,
   filters,
   canEdit,
+  gscIntegration,
+  bingIntegration,
 }: KeywordsIndexProps) {
   const [deviceFilter, setDeviceFilter] = useState<string>(filters.device || 'all');
   const [searchQuery, setSearchQuery] = useState<string>(filters.search || '');
+  const [overlayProvider, setOverlayProvider] = useState<'off' | 'gsc' | 'bing'>(
+    gscIntegration?.status === 'connected' ? 'gsc' : bingIntegration?.status === 'connected' ? 'bing' : 'off'
+  );
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [historyModalKeyword, setHistoryModalKeyword] = useState<TrackedKeywordItem | null>(null);
   const [historySnapshots, setHistorySnapshots] = useState<HistorySnapshot[]>([]);
@@ -370,6 +395,37 @@ export default function KeywordsIndex({
           </div>
         </div>
 
+        {/* Actionable Reconnect Banner for Google Search Console */}
+        {gscIntegration?.status === 'needs_reconnect' && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <h4 className="text-sm font-semibold text-amber-200">
+                  Google Search Console Reconnection Required
+                </h4>
+                <p className="text-xs text-amber-300/80 mt-0.5">
+                  The Google Search Console authorization token for this project has expired or was revoked. Reconnect your account to restore first-party search analytics and rank overlay sync.
+                </p>
+                {gscIntegration.error_message && (
+                  <p className="text-[11px] font-mono text-amber-400/90 mt-1">
+                    Error: {gscIntegration.error_message}
+                  </p>
+                )}
+              </div>
+            </div>
+            {canEdit && gscIntegration.connect_url && (
+              <a
+                href={gscIntegration.connect_url}
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs transition shrink-0 cursor-pointer"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                <span>Reconnect Search Console</span>
+              </a>
+            )}
+          </div>
+        )}
+
         {/* Filter and Search Bar */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-slate-900/60 border border-slate-800 rounded-xl p-3">
           {/* Device Tabs */}
@@ -409,31 +465,70 @@ export default function KeywordsIndex({
             </button>
           </div>
 
-          {/* Search box */}
-          <div className="relative flex-1 max-w-xs">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                handleFilterChange(deviceFilter, e.target.value);
-              }}
-              placeholder="Search tracked keywords..."
-              className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
-            />
-            {searchQuery && (
+          <div className="flex items-center gap-2 flex-1 justify-end">
+            {/* First-Party Search Overlay Selector */}
+            <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800">
               <button
                 type="button"
-                onClick={() => {
-                  setSearchQuery('');
-                  handleFilterChange(deviceFilter, '');
-                }}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                onClick={() => setOverlayProvider(overlayProvider === 'gsc' ? 'off' : 'gsc')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition cursor-pointer ${
+                  overlayProvider === 'gsc'
+                    ? 'bg-blue-500/20 text-blue-300 border border-blue-500/40 shadow-sm'
+                    : 'text-slate-400 hover:text-white border border-transparent'
+                }`}
+                title="Google Search Console 28-day performance overlay"
               >
-                <X className="h-3 w-3" />
+                <BarChart3 className="h-3 w-3" />
+                <span>GSC</span>
+                {gscIntegration?.status === 'connected' && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                )}
               </button>
-            )}
+
+              <button
+                type="button"
+                onClick={() => setOverlayProvider(overlayProvider === 'bing' ? 'off' : 'bing')}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs font-medium transition cursor-pointer ${
+                  overlayProvider === 'bing'
+                    ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm'
+                    : 'text-slate-400 hover:text-white border border-transparent'
+                }`}
+                title="Bing Webmaster Tools performance overlay"
+              >
+                <Globe className="h-3 w-3" />
+                <span>Bing</span>
+                {bingIntegration?.status === 'connected' && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                )}
+              </button>
+            </div>
+
+            {/* Search box */}
+            <div className="relative w-full max-w-xs">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-500" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  handleFilterChange(deviceFilter, e.target.value);
+                }}
+                placeholder="Search tracked keywords..."
+                className="w-full pl-9 pr-3 py-1.5 rounded-lg bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    handleFilterChange(deviceFilter, '');
+                  }}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
 
@@ -467,6 +562,22 @@ export default function KeywordsIndex({
                     <th className="py-3 px-4 font-medium">Keyword & Device</th>
                     <th className="py-3 px-3 font-medium text-center">Coqui Rank</th>
                     <th className="py-3 px-3 font-medium text-center">Delta</th>
+                    {overlayProvider !== 'off' && (
+                      <>
+                        <th className={`py-3 px-3 font-medium text-right whitespace-nowrap ${overlayProvider === 'gsc' ? 'text-blue-300' : 'text-sky-300'}`}>
+                          {overlayProvider === 'gsc' ? 'GSC' : 'Bing'} Clicks (28d)
+                        </th>
+                        <th className={`py-3 px-3 font-medium text-right whitespace-nowrap ${overlayProvider === 'gsc' ? 'text-blue-300' : 'text-sky-300'}`}>
+                          {overlayProvider === 'gsc' ? 'GSC' : 'Bing'} Impr. (28d)
+                        </th>
+                        <th className={`py-3 px-3 font-medium text-right whitespace-nowrap ${overlayProvider === 'gsc' ? 'text-blue-300' : 'text-sky-300'}`}>
+                          {overlayProvider === 'gsc' ? 'GSC' : 'Bing'} CTR
+                        </th>
+                        <th className={`py-3 px-3 font-medium text-center whitespace-nowrap ${overlayProvider === 'gsc' ? 'text-blue-300' : 'text-sky-300'}`}>
+                          {overlayProvider === 'gsc' ? 'GSC' : 'Bing'} Pos
+                        </th>
+                      </>
+                    )}
                     <th className="py-3 px-3 font-medium">SERP Features</th>
                     <th className="py-3 px-3 font-medium">Landing Page</th>
                     {competitors.map((comp) => (
@@ -566,6 +677,46 @@ export default function KeywordsIndex({
                             <span className="text-slate-600">—</span>
                           )}
                         </td>
+
+                        {/* First-Party Search Overlay (Clicks, Impressions, CTR, Avg Position) */}
+                        {overlayProvider !== 'off' && (() => {
+                          const perf = overlayProvider === 'gsc' ? kw.gsc_performance : kw.bing_performance;
+                          const badgeBg = overlayProvider === 'gsc' ? 'bg-blue-500/15 text-blue-300 border-blue-500/30' : 'bg-sky-500/15 text-sky-300 border-sky-500/30';
+                          return (
+                            <>
+                              <td className="py-3 px-3 text-right font-mono font-medium text-slate-200 whitespace-nowrap">
+                                {perf?.clicks !== null && perf?.clicks !== undefined ? (
+                                  perf.clicks.toLocaleString()
+                                ) : (
+                                  <span className="text-slate-600">—</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-3 text-right font-mono text-slate-300 whitespace-nowrap">
+                                {perf?.impressions !== null && perf?.impressions !== undefined ? (
+                                  perf.impressions.toLocaleString()
+                                ) : (
+                                  <span className="text-slate-600">—</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-3 text-right font-mono text-slate-300 whitespace-nowrap">
+                                {perf?.ctr !== null && perf?.ctr !== undefined ? (
+                                  `${perf.ctr.toFixed(1)}%`
+                                ) : (
+                                  <span className="text-slate-600">—</span>
+                                )}
+                              </td>
+                              <td className="py-3 px-3 text-center font-mono whitespace-nowrap">
+                                {perf?.position !== null && perf?.position !== undefined ? (
+                                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-bold border ${badgeBg}`}>
+                                    {perf.position.toFixed(1)}
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-600">—</span>
+                                )}
+                              </td>
+                            </>
+                          );
+                        })()}
 
                         {/* SERP Features */}
                         <td className="py-3 px-3">

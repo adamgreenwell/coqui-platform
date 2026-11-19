@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Domains\Crawls\Models\CrawlRun;
+use App\Domains\Integrations\Models\ProjectIntegration;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\ProjectCompetitor;
@@ -246,6 +247,17 @@ class ProjectController extends Controller
             'trackedKeywordsCount' => $project->trackedKeywords()->count(),
             'monitoredBacklinksCount' => $project->monitoredBacklinks()->count(),
             'competitors' => $competitors,
+            'integrations' => $project->integrations()
+                ->select(['id', 'provider', 'site_url', 'external_identifier', 'status', 'last_synced_at'])
+                ->get()
+                ->map(fn (ProjectIntegration $i): array => [
+                    'id' => $i->id,
+                    'provider' => $i->provider,
+                    'site_url' => $i->site_url,
+                    'status' => $i->status,
+                    'last_synced_at' => $i->last_synced_at instanceof CarbonInterface ? $i->last_synced_at->toIso8601String() : null,
+                ])
+                ->all(),
             'activities' => $activities,
             'canEdit' => $user->can('update', $project),
             'canDelete' => $user->can('delete', $project),
