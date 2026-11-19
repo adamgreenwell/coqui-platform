@@ -73,10 +73,10 @@ class CloudCrawlController extends Controller
 
         ProjectActivity::log(
             project: $project,
-            action: 'crawl.dispatched',
+            eventType: 'crawl.dispatched',
             title: 'Cloud audit dispatched',
             description: sprintf('Cloud crawl [%s] queued (cap: %d URLs).', $crawlId, $urlLimit),
-            metadata: [
+            properties: [
                 'crawl_id' => $crawlId,
                 'max_urls' => $urlLimit,
             ],

@@ -88,10 +88,10 @@ class RunScheduledCrawlsCommand extends Command
 
             ProjectActivity::log(
                 project: $project,
-                action: 'crawl.scheduled',
+                eventType: 'crawl.scheduled',
                 title: 'Scheduled cloud crawl queued',
                 description: sprintf('Queued %s cloud crawl capped at %d URLs.', $project->crawl_cadence, $urlLimit),
-                metadata: [
+                properties: [
                     'crawl_id' => $crawlId,
                     'max_urls' => $urlLimit,
                     'cadence' => $project->crawl_cadence,

@@ -182,9 +182,7 @@ class SsrfProtectionGuard
             $fallback = @gethostbynamel($host);
             if (is_array($fallback)) {
                 foreach ($fallback as $v4) {
-                    if (is_string($v4)) {
-                        $ips[] = $v4;
-                    }
+                    $ips[] = (string) $v4;
                 }
             }
         }

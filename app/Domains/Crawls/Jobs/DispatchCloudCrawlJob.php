@@ -71,10 +71,10 @@ class DispatchCloudCrawlJob implements ShouldQueue
 
             ProjectActivity::log(
                 project: $this->project,
-                action: 'crawl.failed',
+                eventType: 'crawl.failed',
                 title: 'Cloud crawl dispatch failed',
                 description: sprintf('Failed to dispatch cloud crawl [%s]: %s', $this->crawlId, $e->getMessage()),
-                metadata: [
+                properties: [
                     'crawl_id' => $this->crawlId,
                     'error' => $e->getMessage(),
                 ],
