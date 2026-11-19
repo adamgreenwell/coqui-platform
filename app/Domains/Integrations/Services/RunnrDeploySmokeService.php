@@ -25,8 +25,7 @@ class RunnrDeploySmokeService
      */
     public function evaluate(CrawlRun $run): array
     {
-        /** @var array<string, mixed> $config */
-        $config = is_array($run->config) ? $run->config : [];
+        $config = $run->config;
         /** @var array<string, mixed> $deploy */
         $deploy = is_array($config['deploy'] ?? null) ? $config['deploy'] : [];
 
@@ -115,7 +114,7 @@ class RunnrDeploySmokeService
         }
 
         // Check 4: Canonical Host Flips
-        $expectedHost = parse_url($project?->canonical_url ?? $run->seed, PHP_URL_HOST);
+        $expectedHost = parse_url($project->canonical_url ?? $run->seed, PHP_URL_HOST);
         $crawledCanonicals = DB::table('crawl_urls')
             ->where('crawl_run_id', $run->id)
             ->whereNotNull('canonical')

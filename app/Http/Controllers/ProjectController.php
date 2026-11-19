@@ -193,8 +193,7 @@ class ProjectController extends Controller
 
         $deploySmoke = null;
         if ($latestSmoke !== null) {
-            /** @var array<string, mixed> $smokeConfig */
-            $smokeConfig = is_array($latestSmoke->config) ? $latestSmoke->config : [];
+            $smokeConfig = $latestSmoke->config;
             /** @var array<string, mixed>|null $smokeResults */
             $smokeResults = is_array($smokeConfig['smoke_results'] ?? null) ? $smokeConfig['smoke_results'] : null;
             /** @var array<string, mixed>|null $smokeDeploy */

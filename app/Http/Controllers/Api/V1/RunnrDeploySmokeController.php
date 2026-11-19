@@ -33,8 +33,7 @@ class RunnrDeploySmokeController extends Controller
                 $statusText = 'running';
                 $statusColor = '#007ec6';
             } else {
-                /** @var array<string, mixed> $config */
-                $config = is_array($latestRun->config) ? $latestRun->config : [];
+                $config = $latestRun->config;
                 /** @var array<string, mixed>|null $smokeResults */
                 $smokeResults = is_array($config['smoke_results'] ?? null) ? $config['smoke_results'] : null;
 
@@ -125,8 +124,7 @@ SVG;
             ]);
         }
 
-        /** @var array<string, mixed> $config */
-        $config = is_array($latestRun->config) ? $latestRun->config : [];
+        $config = $latestRun->config;
         /** @var array<string, mixed>|null $smokeResults */
         $smokeResults = is_array($config['smoke_results'] ?? null) ? $config['smoke_results'] : null;
         /** @var array<string, mixed>|null $deployMeta */
