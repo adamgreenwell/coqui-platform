@@ -134,9 +134,60 @@ class ProjectApiController extends Controller
             ]);
         }
 
-        $canonicalUrl = ! empty($validated['canonicalUrl'])
-            ? Project::normalizeCanonicalUrl((string) $validated['canonicalUrl'])
-            : "https://{$domain}/";
+        $canonicalUrl = "https://{$domain}/";
+        if (! empty($validated['canonicalUrl'])) {
+            $normalizedCanonical = Project::normalizeCanonicalUrl((string) $validated['canonicalUrl']);
+            if ($normalizedCanonical === '') {
+                throw ValidationException::withMessages([
+                    'canonicalUrl' => 'Please provide a valid website canonical URL.',
+                ]);
+            }
+            $canonicalUrl = $normalizedCanonical;
+        }
+
+        /** @var Project|null $existingProject */
+        $existingProject = $workspace->projects()->withTrashed()->where('domain', $domain)->first();
+        if ($existingProject !== null) {
+            if ($existingProject->trashed()) {
+                $existingProject->restore();
+                $existingProject->update([
+                    'name' => (string) $validated['name'],
+                    'canonical_url' => $canonicalUrl,
+                    'location_code' => (int) ($validated['locationCode'] ?? 2840),
+                    'language_code' => (string) ($validated['languageCode'] ?? 'en'),
+                    'crawl_cadence' => (string) ($validated['crawlCadence'] ?? 'weekly'),
+                ]);
+
+                ProjectActivity::log(
+                    project: $existingProject,
+                    eventType: 'project.restored',
+                    title: 'Project restored via API',
+                    description: "Project {$existingProject->name} was restored from trash.",
+                    properties: [
+                        'source' => 'desktop_api',
+                        'domain' => $existingProject->domain,
+                    ],
+                );
+
+                return response()->json([
+                    'id' => $existingProject->id,
+                    'workspaceId' => $existingProject->workspace_id,
+                    'workspaceName' => $workspace->name,
+                    'name' => $existingProject->name,
+                    'domain' => $existingProject->domain,
+                    'canonicalUrl' => $existingProject->canonical_url,
+                    'locationCode' => $existingProject->location_code,
+                    'languageCode' => $existingProject->language_code,
+                    'crawlCadence' => $existingProject->crawl_cadence,
+                    'createdAt' => $existingProject->created_at?->toIso8601String(),
+                    'restored' => true,
+                ], 200);
+            }
+
+            throw ValidationException::withMessages([
+                'domain' => "A project with domain [{$domain}] already exists in this workspace.",
+            ]);
+        }
 
         /** @var Project $project */
         $project = Project::query()->create([

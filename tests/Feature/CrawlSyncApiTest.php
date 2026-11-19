@@ -487,4 +487,73 @@ class CrawlSyncApiTest extends TestCase
             'createdAt' => 1795022400000,
         ])->assertForbidden();
     }
+
+    public function test_cannot_create_project_with_duplicate_domain_or_invalid_canonical_url(): void
+    {
+        $user = User::factory()->create();
+        $workspace = Workspace::query()->create([
+            'name' => 'Validation Workspace',
+            'slug' => 'val-workspace',
+            'owner_id' => $user->id,
+        ]);
+        Project::query()->create([
+            'workspace_id' => $workspace->id,
+            'name' => 'Existing Site',
+            'domain' => 'existingsite.com',
+            'canonical_url' => 'https://existingsite.com/',
+        ]);
+
+        Sanctum::actingAs($user, ['projects:write']);
+
+        // Attempting to register existing domain
+        $this->postJson('/api/v1/projects', [
+            'name' => 'Duplicate Site',
+            'domain' => 'https://existingsite.com/',
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['domain']);
+
+        // Attempting to register invalid canonical URL
+        $this->postJson('/api/v1/projects', [
+            'name' => 'Invalid Canonical',
+            'domain' => 'invalidsite.org',
+            'canonicalUrl' => 'not-a-valid-url-structure',
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['canonicalUrl']);
+    }
+
+    public function test_creating_soft_deleted_project_restores_it(): void
+    {
+        $user = User::factory()->create();
+        $workspace = Workspace::query()->create([
+            'name' => 'Trash Workspace',
+            'slug' => 'trash-workspace',
+            'owner_id' => $user->id,
+        ]);
+        $project = Project::query()->create([
+            'workspace_id' => $workspace->id,
+            'name' => 'Old Trashed Site',
+            'domain' => 'trashed.com',
+            'canonical_url' => 'https://trashed.com/',
+        ]);
+        $project->delete();
+        $this->assertTrue($project->fresh()->trashed());
+
+        Sanctum::actingAs($user, ['projects:write']);
+
+        $response = $this->postJson('/api/v1/projects', [
+            'name' => 'Restored Trashed Site',
+            'domain' => 'trashed.com',
+        ])
+            ->assertOk()
+            ->assertJson([
+                'id' => $project->id,
+                'name' => 'Restored Trashed Site',
+                'domain' => 'trashed.com',
+                'restored' => true,
+            ]);
+
+        $this->assertFalse($project->fresh()->trashed());
+    }
 }
