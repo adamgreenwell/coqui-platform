@@ -119,7 +119,7 @@ class BacklinkIntersectTest extends TestCase
             ->where('opportunities.0.domain', 'tech-roundup.org')
             ->where('opportunities.0.rank', 620)
             ->where('opportunities.0.intersections_count', 2)
-            ->has('brokenReclaim', 1)
+            ->has('brokenReclaim', 2)
             ->where('brokenReclaim.0.path', '/discontinued-guide')
             ->where('brokenReclaim.0.status_code', 404)
             ->where('brokenReclaim.0.backlinks', 38)
