@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\Http;
 class CoquiWorkerClient
 {
     public function __construct(
-        private readonly SsrfProtectionGuard $ssrf = new SsrfProtectionGuard(),
+        private readonly SsrfProtectionGuard $ssrf = new SsrfProtectionGuard,
     ) {}
 
     /**

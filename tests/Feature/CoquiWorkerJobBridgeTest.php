@@ -23,6 +23,25 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
+class FakeDnsSsrfProtectionGuard extends SsrfProtectionGuard
+{
+    /**
+     * @param  array<string, list<string>>  $dnsMap
+     */
+    public function __construct(
+        private readonly array $dnsMap = [],
+    ) {}
+
+    protected function resolveHost(string $host): array
+    {
+        if (array_key_exists($host, $this->dnsMap)) {
+            return $this->dnsMap[$host];
+        }
+
+        return parent::resolveHost($host);
+    }
+}
+
 class CoquiWorkerJobBridgeTest extends TestCase
 {
     use RefreshDatabase;
@@ -55,22 +74,11 @@ class CoquiWorkerJobBridgeTest extends TestCase
 
     public function test_ssrf_protection_guard_blocks_private_loopback_and_metadata_ips(): void
     {
-        $guard = new class extends SsrfProtectionGuard {
-            protected function resolveHost(string $host): array
-            {
-                if ($host === 'metadata.google.internal') {
-                    return ['169.254.169.254'];
-                }
-                if ($host === 'safe-public-domain.com') {
-                    return ['93.184.216.34'];
-                }
-                if ($host === 'internal.corp') {
-                    return ['10.0.0.10'];
-                }
-
-                return parent::resolveHost($host);
-            }
-        };
+        $guard = new FakeDnsSsrfProtectionGuard([
+            'metadata.google.internal' => ['169.254.169.254'],
+            'safe-public-domain.com' => ['93.184.216.34'],
+            'internal.corp' => ['10.0.0.10'],
+        ]);
 
         // Allowed public URL
         $this->assertTrue($guard->isAllowed('https://safe-public-domain.com/'));
@@ -109,12 +117,9 @@ class CoquiWorkerJobBridgeTest extends TestCase
 
     public function test_coqui_worker_client_refuses_ssrf_seed_or_target_urls(): void
     {
-        $guard = new class extends SsrfProtectionGuard {
-            protected function resolveHost(string $host): array
-            {
-                return ['127.0.0.1'];
-            }
-        };
+        $guard = new FakeDnsSsrfProtectionGuard([
+            'acme.test' => ['127.0.0.1'],
+        ]);
 
         $client = new CoquiWorkerClient($guard);
 
@@ -126,12 +131,9 @@ class CoquiWorkerJobBridgeTest extends TestCase
 
     public function test_coqui_worker_client_bounds_max_urls_by_workspace_tier(): void
     {
-        $guard = new class extends SsrfProtectionGuard {
-            protected function resolveHost(string $host): array
-            {
-                return ['93.184.216.34'];
-            }
-        };
+        $guard = new FakeDnsSsrfProtectionGuard([
+            'acme.test' => ['93.184.216.34'],
+        ]);
 
         Http::fake([
             'http://coqui-worker:8085/jobs/crawl' => Http::response([
@@ -163,12 +165,9 @@ class CoquiWorkerJobBridgeTest extends TestCase
     {
         Event::fake([CrawlProgressUpdated::class]);
 
-        $guard = new class extends SsrfProtectionGuard {
-            protected function resolveHost(string $host): array
-            {
-                return ['93.184.216.34'];
-            }
-        };
+        $guard = new FakeDnsSsrfProtectionGuard([
+            'acme.test' => ['93.184.216.34'],
+        ]);
 
         Http::fake([
             'http://coqui-worker:8085/jobs/crawl' => Http::response([
@@ -211,12 +210,9 @@ class CoquiWorkerJobBridgeTest extends TestCase
     {
         Event::fake([CrawlProgressUpdated::class]);
 
-        $guard = new class extends SsrfProtectionGuard {
-            protected function resolveHost(string $host): array
-            {
-                return ['93.184.216.34'];
-            }
-        };
+        $guard = new FakeDnsSsrfProtectionGuard([
+            'acme.test' => ['93.184.216.34'],
+        ]);
 
         Http::fake([
             'http://coqui-worker:8085/jobs/crawl' => Http::response('Worker connection refused', 503),

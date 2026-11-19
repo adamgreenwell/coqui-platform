@@ -40,6 +40,7 @@ class RunScheduledCrawlsCommand extends Command
         foreach ($query->cursor() as $project) {
             if (! $force && ! $this->isDueForCrawl($project)) {
                 $skipped++;
+
                 continue;
             }
 
@@ -51,6 +52,7 @@ class RunScheduledCrawlsCommand extends Command
             if ($hasActiveRun) {
                 $this->line(sprintf('Project #%d [%s] already has an active crawl. Skipping.', $project->id, $project->domain));
                 $skipped++;
+
                 continue;
             }
 
