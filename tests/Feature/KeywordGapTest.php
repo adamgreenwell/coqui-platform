@@ -311,6 +311,42 @@ class KeywordGapTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_does_not_cache_failed_dataforseo_domain_intersection_responses(): void
+    {
+        Http::fake([
+            'https://sandbox.dataforseo.com/v3/dataforseo_labs/google/domain_intersection/live' => Http::response([
+                'status_code' => 20000,
+                'tasks' => [
+                    [
+                        'status_code' => 40501,
+                        'status_message' => 'Internal Server Error',
+                        'result' => null,
+                    ],
+                ],
+            ], 200),
+        ]);
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-gap/search", [
+                'competitors' => ['ahrefs.com'],
+                'gap_mode' => 'missing',
+            ]);
+
+        $response->assertStatus(500);
+        $response->assertJsonPath('message', 'Failed to analyze competitor keyword gaps: Internal Server Error');
+
+        $cached = $this->cacheRepo->get('/v3/dataforseo_labs/google/domain_intersection/live', [
+            'target1' => 'ahrefs.com',
+            'target2' => 'coquiseo.com',
+            'location_code' => 2840,
+            'language_code' => 'en',
+            'intersections' => false,
+            'item_types' => ['organic'],
+            'limit' => 100,
+        ]);
+        $this->assertNull($cached);
+    }
+
     public function test_multi_competitor_comparison_aggregates_up_to_3_competitors(): void
     {
         Http::fake([

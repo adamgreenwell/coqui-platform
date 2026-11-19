@@ -246,6 +246,16 @@ class DataForSeoClient
             project: $project,
         );
 
+        $statusCode = (int) ($response['status_code'] ?? 0);
+        $firstTask = isset($response['tasks'][0]) && is_array($response['tasks'][0]) ? $response['tasks'][0] : [];
+        $taskStatusCode = (int) ($firstTask['status_code'] ?? 0);
+
+        if ($statusCode !== 20000 || $taskStatusCode !== 20000) {
+            $errorMsg = (string) ($firstTask['status_message'] ?? $response['status_message'] ?? 'DataForSEO domain intersection request failed.');
+
+            throw new RuntimeException($errorMsg);
+        }
+
         $ttl = (int) config('coqui.dataforseo.cache_ttl_hours.domain_intersection', 24 * 14);
         $this->cache->put($endpoint, $signature, $response, $ttl);
 

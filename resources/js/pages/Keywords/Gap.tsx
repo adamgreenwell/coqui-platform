@@ -392,7 +392,7 @@ export default function KeywordGap({
             competitors: selectedCompetitors,
             location_code: locationCode,
             language_code: languageCode,
-            gap_mode: activeTab,
+            gap_mode: 'all',
           }),
         }
       );
