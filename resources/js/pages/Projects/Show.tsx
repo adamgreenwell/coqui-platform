@@ -3,6 +3,7 @@ import {
   Activity,
   AlertTriangle,
   ArrowLeft,
+  BarChart3,
   CheckCircle2,
   Clock,
   ExternalLink,
@@ -67,6 +68,14 @@ interface ActivityItem {
   createdAt: string;
 }
 
+interface IntegrationItem {
+  id: number;
+  provider: string;
+  site_url?: string | null;
+  status: string;
+  last_synced_at?: string | null;
+}
+
 interface ProjectShowProps {
   workspace: WorkspaceSummary;
   project: ProjectDetails;
@@ -74,6 +83,7 @@ interface ProjectShowProps {
   trackedKeywordsCount: number;
   monitoredBacklinksCount: number;
   competitors: CompetitorItem[];
+  integrations?: IntegrationItem[];
   activities?: ActivityItem[];
   canEdit: boolean;
   canDelete: boolean;
@@ -82,6 +92,9 @@ interface ProjectShowProps {
 function getActivityIcon(type: string) {
   if (type.startsWith('crawl.')) {
     return <RefreshCw className="h-3.5 w-3.5 text-emerald-400" />;
+  }
+  if (type.startsWith('integration.')) {
+    return <BarChart3 className="h-3.5 w-3.5 text-blue-400" />;
   }
   if (type.startsWith('competitor.')) {
     return <Users className="h-3.5 w-3.5 text-purple-400" />;
@@ -135,14 +148,21 @@ export default function ProjectShow({
   trackedKeywordsCount,
   monitoredBacklinksCount,
   competitors,
+  integrations = [],
   activities = [],
   canEdit,
   canDelete,
 }: ProjectShowProps) {
   const [addCompetitorModal, setAddCompetitorModal] = useState(false);
+  const [bingModalOpen, setBingModalOpen] = useState(false);
+  const [bingApiKey, setBingApiKey] = useState('');
+  const [bingSiteUrl, setBingSiteUrl] = useState(project.canonical_url || `https://${project.domain}/`);
   const [liveActivities, setLiveActivities] = useState<ActivityItem[]>(activities);
   const [liveCrawl, setLiveCrawl] = useState<LatestCrawlSummary | null>(latestCrawl || null);
   const [activeFilter, setActiveFilter] = useState<'all' | 'crawls' | 'competitors' | 'project'>('all');
+
+  const gscIntegration = integrations.find((i) => i.provider === 'gsc');
+  const bingIntegration = integrations.find((i) => i.provider === 'bing');
 
   const { data, setData, post, processing, errors, reset } = useForm({
     domain: '',
@@ -489,6 +509,167 @@ export default function ProjectShow({
           </div>
         </div>
 
+        {/* First-Party Search Integrations (GSC & Bing) */}
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-base font-semibold text-white">First-Party Search Integrations</h2>
+            <p className="text-xs text-slate-400">
+              Direct API integrations for Google Search Console and Bing Webmaster Tools to overlay verified search performance metrics into your Rank Tracker.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Google Search Console Card */}
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 flex flex-col justify-between gap-4">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/30 text-blue-400">
+                    <BarChart3 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">Google Search Console</h3>
+                    <p className="text-xs text-slate-400">
+                      Query performance, impressions, real clicks, CTR &amp; average position
+                    </p>
+                  </div>
+                </div>
+                {gscIntegration?.status === 'connected' ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                    <CheckCircle2 className="h-3 w-3" /> Connected
+                  </span>
+                ) : gscIntegration?.status === 'needs_reconnect' ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                    <AlertTriangle className="h-3 w-3" /> Reconnect
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-800 text-slate-400 border border-slate-700">
+                    Not Connected
+                  </span>
+                )}
+              </div>
+
+              {gscIntegration?.site_url && (
+                <div className="text-xs text-slate-400 flex items-center gap-1 font-mono">
+                  <span className="text-slate-500">Property:</span>
+                  <span className="text-slate-200">{gscIntegration.site_url}</span>
+                </div>
+              )}
+
+              {gscIntegration?.last_synced_at && (
+                <div className="text-[11px] text-slate-500">
+                  Last synced: {formatRelativeTime(gscIntegration.last_synced_at)}
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 pt-2 border-t border-slate-800/80">
+                {canEdit && (
+                  gscIntegration?.status === 'connected' ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => router.post(`/workspaces/${workspace.id}/projects/${project.id}/integrations/${gscIntegration.id}/sync`)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition cursor-pointer"
+                      >
+                        <RefreshCw className="h-3 w-3" />
+                        <span>Sync Now</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => router.delete(`/workspaces/${workspace.id}/projects/${project.id}/integrations/${gscIntegration.id}`)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 text-xs font-medium transition cursor-pointer ml-auto"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        <span>Disconnect</span>
+                      </button>
+                    </>
+                  ) : (
+                    <a
+                      href={`/workspaces/${workspace.id}/projects/${project.id}/integrations/google/connect`}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition cursor-pointer shadow-md shadow-blue-500/10"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>{gscIntegration?.status === 'needs_reconnect' ? 'Reconnect Google Account' : 'Connect Search Console'}</span>
+                    </a>
+                  )
+                )}
+              </div>
+            </div>
+
+            {/* Bing Webmaster Tools Card */}
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 flex flex-col justify-between gap-4">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-sky-500/10 border border-sky-500/30 text-sky-400">
+                    <Globe className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">Bing Webmaster Tools</h3>
+                    <p className="text-xs text-slate-400">
+                      Bing organic search query metrics and crawl stats
+                    </p>
+                  </div>
+                </div>
+                {bingIntegration?.status === 'connected' ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                    <CheckCircle2 className="h-3 w-3" /> Connected
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-800 text-slate-400 border border-slate-700">
+                    Not Connected
+                  </span>
+                )}
+              </div>
+
+              {bingIntegration?.site_url && (
+                <div className="text-xs text-slate-400 flex items-center gap-1 font-mono">
+                  <span className="text-slate-500">Site:</span>
+                  <span className="text-slate-200">{bingIntegration.site_url}</span>
+                </div>
+              )}
+
+              {bingIntegration?.last_synced_at && (
+                <div className="text-[11px] text-slate-500">
+                  Last synced: {formatRelativeTime(bingIntegration.last_synced_at)}
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 pt-2 border-t border-slate-800/80">
+                {canEdit && (
+                  bingIntegration?.status === 'connected' ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => router.post(`/workspaces/${workspace.id}/projects/${project.id}/integrations/${bingIntegration.id}/sync`)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition cursor-pointer"
+                      >
+                        <RefreshCw className="h-3 w-3" />
+                        <span>Sync Now</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => router.delete(`/workspaces/${workspace.id}/projects/${project.id}/integrations/${bingIntegration.id}`)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 text-xs font-medium transition cursor-pointer ml-auto"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        <span>Disconnect</span>
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setBingModalOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs transition cursor-pointer shadow-md shadow-sky-500/10"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>Connect Bing Webmaster</span>
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* Realtime Event Stream & Activity Feed */}
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -668,6 +849,93 @@ export default function ProjectShow({
                     className="px-4 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs transition disabled:opacity-50 cursor-pointer"
                   >
                     {processing ? 'Adding...' : 'Add Competitor'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Connect Bing Webmaster Tools Modal */}
+        {bingModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+            <div className="bg-slate-900 border border-slate-800 rounded-xl max-w-md w-full p-6 shadow-2xl">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <Globe className="h-5 w-5 text-sky-400" />
+                  <h3 className="text-base font-semibold text-white">Connect Bing Webmaster Tools</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setBingModalOpen(false)}
+                  className="text-slate-400 hover:text-white"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  router.post(
+                    `/workspaces/${workspace.id}/projects/${project.id}/integrations/bing/connect`,
+                    {
+                      api_key: bingApiKey,
+                      site_url: bingSiteUrl,
+                    },
+                    {
+                      onSuccess: () => setBingModalOpen(false),
+                    }
+                  );
+                }}
+                className="space-y-4 mt-4"
+              >
+                <div>
+                  <label htmlFor="bing-api-key" className="block text-xs font-medium text-slate-300">
+                    Bing Webmaster API Key
+                  </label>
+                  <input
+                    id="bing-api-key"
+                    type="password"
+                    required
+                    value={bingApiKey}
+                    onChange={(e) => setBingApiKey(e.target.value)}
+                    className="mt-1 block w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500/50"
+                    placeholder="Enter your 32-character Bing API key"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Find this in Bing Webmaster Tools &gt; Settings &gt; API Access &gt; API Key.
+                  </p>
+                </div>
+
+                <div>
+                  <label htmlFor="bing-site-url" className="block text-xs font-medium text-slate-300">
+                    Site URL in Bing Webmaster
+                  </label>
+                  <input
+                    id="bing-site-url"
+                    type="url"
+                    required
+                    value={bingSiteUrl}
+                    onChange={(e) => setBingSiteUrl(e.target.value)}
+                    className="mt-1 block w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500/50"
+                    placeholder={`https://${project.domain}/`}
+                  />
+                </div>
+
+                <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => setBingModalOpen(false)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs transition cursor-pointer"
+                  >
+                    Connect Bing
                   </button>
                 </div>
               </form>

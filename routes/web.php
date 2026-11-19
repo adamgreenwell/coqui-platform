@@ -7,6 +7,7 @@ use App\Http\Controllers\KeywordExplorerController;
 use App\Http\Controllers\KeywordGapController;
 use App\Http\Controllers\ProjectCompetitorController;
 use App\Http\Controllers\ProjectController;
+use App\Http\Controllers\ProjectIntegrationController;
 use App\Http\Controllers\SanctumTokenController;
 use App\Http\Controllers\TrackedKeywordController;
 use App\Http\Controllers\WorkspaceController;
@@ -60,4 +61,11 @@ Route::middleware(['auth'])->group(function (): void {
     Route::get('/workspaces/{workspace}/projects/{project}/keyword-gap', [KeywordGapController::class, 'index'])->name('workspaces.projects.keyword-gap.index');
     Route::post('/workspaces/{workspace}/projects/{project}/keyword-gap/search', [KeywordGapController::class, 'search'])->name('workspaces.projects.keyword-gap.search');
     Route::post('/workspaces/{workspace}/projects/{project}/keyword-gap/track', [KeywordGapController::class, 'track'])->name('workspaces.projects.keyword-gap.track');
+
+    Route::get('/workspaces/{workspace}/projects/{project}/integrations', [ProjectIntegrationController::class, 'index'])->name('workspaces.projects.integrations.index');
+    Route::get('/workspaces/{workspace}/projects/{project}/integrations/google/connect', [ProjectIntegrationController::class, 'connectGoogle'])->name('workspaces.projects.integrations.google.connect');
+    Route::get('/workspaces/{workspace}/projects/{project}/integrations/google/callback', [ProjectIntegrationController::class, 'callbackGoogle'])->name('workspaces.projects.integrations.google.callback');
+    Route::post('/workspaces/{workspace}/projects/{project}/integrations/bing/connect', [ProjectIntegrationController::class, 'connectBing'])->name('workspaces.projects.integrations.bing.connect');
+    Route::post('/workspaces/{workspace}/projects/{project}/integrations/{integration}/sync', [ProjectIntegrationController::class, 'sync'])->name('workspaces.projects.integrations.sync');
+    Route::delete('/workspaces/{workspace}/projects/{project}/integrations/{integration}', [ProjectIntegrationController::class, 'destroy'])->name('workspaces.projects.integrations.destroy');
 });

@@ -24,3 +24,9 @@ Schedule::command('dataforseo:run-rank-batches')
 Schedule::command('coqui:verify-backlinks')
     ->weeklyOn(1, '03:30')
     ->withoutOverlapping();
+
+// Nightly synchronization of Google Search Console and Bing Webmaster performance metrics.
+Schedule::command('search-console:sync')
+    ->dailyAt('04:00')
+    ->withoutOverlapping();
+

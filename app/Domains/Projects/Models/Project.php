@@ -7,6 +7,8 @@ namespace App\Domains\Projects\Models;
 use App\Domains\Backlinks\Models\MonitoredBacklink;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Integrations\Models\ProjectIntegration;
+use App\Domains\Integrations\Models\SearchPerformancePage;
+use App\Domains\Integrations\Models\SearchPerformanceQuery;
 use App\Domains\Serp\Models\TrackedKeyword;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection;
@@ -106,6 +108,22 @@ class Project extends Model
     public function integrations(): HasMany
     {
         return $this->hasMany(ProjectIntegration::class);
+    }
+
+    /**
+     * @return HasMany<SearchPerformanceQuery, $this>
+     */
+    public function searchPerformanceQueries(): HasMany
+    {
+        return $this->hasMany(SearchPerformanceQuery::class);
+    }
+
+    /**
+     * @return HasMany<SearchPerformancePage, $this>
+     */
+    public function searchPerformancePages(): HasMany
+    {
+        return $this->hasMany(SearchPerformancePage::class);
     }
 
     /**

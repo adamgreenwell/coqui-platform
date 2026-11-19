@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Domains\Integrations\Models\ProjectIntegration;
+use App\Domains\Integrations\Models\SearchPerformanceQuery;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\ProjectCompetitor;
@@ -74,7 +76,30 @@ class TrackedKeywordController extends Controller
 
         $snapshotsByKeyword = $allSnapshots->groupBy(fn (KeywordRankSnapshot $s): int => (int) $s->tracked_keyword_id);
 
-        $items = $trackedKeywords->map(function (TrackedKeyword $kw) use ($snapshotsByKeyword, $project, $competitors): array {
+        /** @var ProjectIntegration|null $gscIntegration */
+        $gscIntegration = $project->integrations()->where('provider', 'gsc')->first();
+        /** @var ProjectIntegration|null $bingIntegration */
+        $bingIntegration = $project->integrations()->where('provider', 'bing')->first();
+
+        // Query trailing 28 finalized days for first-party search performance overlay
+        $cutoffDate = Carbon::now()->subDays(32)->format('Y-m-d');
+
+        $performanceStats = SearchPerformanceQuery::query()
+            ->where('project_id', $project->id)
+            ->where('date', '>=', $cutoffDate)
+            ->selectRaw('provider, LOWER(query) as query_lower, SUM(clicks) as total_clicks, SUM(impressions) as total_impressions, AVG(position) as avg_position')
+            ->groupBy('provider', 'query_lower')
+            ->get();
+
+        $gscStatsByQuery = $performanceStats
+            ->where('provider', 'gsc')
+            ->keyBy('query_lower');
+
+        $bingStatsByQuery = $performanceStats
+            ->where('provider', 'bing')
+            ->keyBy('query_lower');
+
+        $items = $trackedKeywords->map(function (TrackedKeyword $kw) use ($snapshotsByKeyword, $project, $competitors, $gscStatsByQuery, $bingStatsByQuery): array {
             $kwSnaps = $snapshotsByKeyword->get((int) $kw->id, collect());
             $domainSnaps = $kwSnaps->groupBy('domain');
 
@@ -115,6 +140,24 @@ class TrackedKeywordController extends Controller
                 ];
             }
 
+            $kwKey = strtolower(trim($kw->keyword));
+
+            $gsc = $gscStatsByQuery->get($kwKey);
+            $gscClicks = $gsc !== null ? (int) $gsc->total_clicks : null;
+            $gscImpressions = $gsc !== null ? (int) $gsc->total_impressions : null;
+            $gscCtr = ($gscClicks !== null && $gscImpressions !== null && $gscImpressions > 0)
+                ? round(($gscClicks / $gscImpressions) * 100, 2)
+                : null;
+            $gscPosition = $gsc !== null ? round((float) $gsc->avg_position, 1) : null;
+
+            $bing = $bingStatsByQuery->get($kwKey);
+            $bingClicks = $bing !== null ? (int) $bing->total_clicks : null;
+            $bingImpressions = $bing !== null ? (int) $bing->total_impressions : null;
+            $bingCtr = ($bingClicks !== null && $bingImpressions !== null && $bingImpressions > 0)
+                ? round(($bingClicks / $bingImpressions) * 100, 2)
+                : null;
+            $bingPosition = $bing !== null ? round((float) $bing->avg_position, 1) : null;
+
             return [
                 'id' => $kw->id,
                 'keyword' => $kw->keyword,
@@ -138,6 +181,18 @@ class TrackedKeywordController extends Controller
                 'has_featured_snippet' => $latestProjSnap !== null && $latestProjSnap->has_featured_snippet,
                 'serp_features' => $latestProjSnap !== null ? $latestProjSnap->serp_features : null,
                 'competitor_ranks' => $competitorRanks,
+                'gsc_performance' => [
+                    'clicks' => $gscClicks,
+                    'impressions' => $gscImpressions,
+                    'ctr' => $gscCtr,
+                    'position' => $gscPosition,
+                ],
+                'bing_performance' => [
+                    'clicks' => $bingClicks,
+                    'impressions' => $bingImpressions,
+                    'ctr' => $bingCtr,
+                    'position' => $bingPosition,
+                ],
             ];
         })->all();
 
@@ -221,6 +276,23 @@ class TrackedKeywordController extends Controller
                 'search' => $searchFilter,
             ],
             'canEdit' => $user->can('update', $project),
+            'gscIntegration' => [
+                'status' => $gscIntegration?->status ?? 'not_connected',
+                'site_url' => $gscIntegration?->site_url,
+                'last_synced_at' => $gscIntegration?->last_synced_at?->toIso8601String(),
+                'error_message' => is_array($gscIntegration?->credentials_encrypted)
+                    ? ($gscIntegration->credentials_encrypted['error'] ?? null)
+                    : null,
+                'connect_url' => route('workspaces.projects.integrations.google.connect', [$workspace, $project]),
+            ],
+            'bingIntegration' => [
+                'status' => $bingIntegration?->status ?? 'not_connected',
+                'site_url' => $bingIntegration?->site_url,
+                'last_synced_at' => $bingIntegration?->last_synced_at?->toIso8601String(),
+                'error_message' => is_array($bingIntegration?->credentials_encrypted)
+                    ? ($bingIntegration->credentials_encrypted['error'] ?? null)
+                    : null,
+            ],
         ]);
     }
 
