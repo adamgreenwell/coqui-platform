@@ -154,6 +154,14 @@ class Project extends Model
     }
 
     /**
+     * @return HasMany<\App\Domains\Integrations\Models\BotCrawlLog, $this>
+     */
+    public function botCrawlLogs(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(\App\Domains\Integrations\Models\BotCrawlLog::class);
+    }
+
+    /**
      * @return HasMany<ProjectActivity, $this>
      */
     public function activities(): HasMany
