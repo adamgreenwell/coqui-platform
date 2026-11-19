@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\KeywordExplorerController;
+use App\Http\Controllers\KeywordGapController;
 use App\Http\Controllers\ProjectCompetitorController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\SanctumTokenController;
@@ -55,4 +56,8 @@ Route::middleware(['auth'])->group(function (): void {
     Route::post('/workspaces/{workspace}/projects/{project}/keyword-explorer/overview', [KeywordExplorerController::class, 'overview'])->name('workspaces.projects.keyword-explorer.overview');
     Route::post('/workspaces/{workspace}/projects/{project}/keyword-explorer/related', [KeywordExplorerController::class, 'related'])->name('workspaces.projects.keyword-explorer.related');
     Route::post('/workspaces/{workspace}/projects/{project}/keyword-explorer/track', [KeywordExplorerController::class, 'track'])->name('workspaces.projects.keyword-explorer.track');
+
+    Route::get('/workspaces/{workspace}/projects/{project}/keyword-gap', [KeywordGapController::class, 'index'])->name('workspaces.projects.keyword-gap.index');
+    Route::post('/workspaces/{workspace}/projects/{project}/keyword-gap/search', [KeywordGapController::class, 'search'])->name('workspaces.projects.keyword-gap.search');
+    Route::post('/workspaces/{workspace}/projects/{project}/keyword-gap/track', [KeywordGapController::class, 'track'])->name('workspaces.projects.keyword-gap.track');
 });

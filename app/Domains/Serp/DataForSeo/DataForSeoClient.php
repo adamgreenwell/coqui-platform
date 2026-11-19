@@ -185,6 +185,84 @@ class DataForSeoClient
     }
 
     /**
+     * Domain intersection live lookup comparing two domains (target1 and target2).
+     *
+     * @return array<string, mixed>
+     */
+    public function domainIntersectionLive(
+        string $target1,
+        string $target2,
+        ?Project $project = null,
+        int $locationCode = 2840,
+        string $languageCode = 'en',
+        bool $intersections = true,
+        int $limit = 100,
+        bool $bypassCache = false,
+    ): array {
+        $endpoint = '/v3/dataforseo_labs/google/domain_intersection/live';
+        $normTarget1 = Project::normalizeDomain($target1);
+        $normTarget2 = Project::normalizeDomain($target2);
+
+        $signature = [
+            'target1' => $normTarget1,
+            'target2' => $normTarget2,
+            'location_code' => $locationCode,
+            'language_code' => strtolower(trim($languageCode)),
+            'intersections' => $intersections,
+            'item_types' => ['organic'],
+            'limit' => $limit,
+        ];
+
+        if (! $bypassCache) {
+            $cached = $this->cache->get($endpoint, $signature);
+            if ($cached !== null) {
+                $cached['_from_cache'] = true;
+
+                return $cached;
+            }
+        }
+
+        $estimatedCost = (float) config('coqui.dataforseo.prices.labs_domain_intersection_task', 0.012)
+            + ($limit * (float) config('coqui.dataforseo.prices.labs_domain_intersection_item', 0.00012));
+
+        $this->spendGuard->assertCanSpend($estimatedCost, $project?->workspace);
+
+        $payload = [[
+            'target1' => $normTarget1,
+            'target2' => $normTarget2,
+            'location_code' => $locationCode,
+            'language_code' => strtolower(trim($languageCode)),
+            'intersections' => $intersections,
+            'item_types' => ['organic'],
+            'limit' => $limit,
+            'order_by' => ['keyword_data.keyword_info.search_volume,desc'],
+        ]];
+
+        $response = $this->postPaid(
+            endpoint: $endpoint,
+            payload: $payload,
+            mode: 'live',
+            estimatedCostUsd: $estimatedCost,
+            project: $project,
+        );
+
+        $statusCode = (int) ($response['status_code'] ?? 0);
+        $firstTask = isset($response['tasks'][0]) && is_array($response['tasks'][0]) ? $response['tasks'][0] : [];
+        $taskStatusCode = (int) ($firstTask['status_code'] ?? 0);
+
+        if ($statusCode !== 20000 || $taskStatusCode !== 20000) {
+            $errorMsg = (string) ($firstTask['status_message'] ?? $response['status_message'] ?? 'DataForSEO domain intersection request failed.');
+
+            throw new RuntimeException($errorMsg);
+        }
+
+        $ttl = (int) config('coqui.dataforseo.cache_ttl_hours.domain_intersection', 24 * 14);
+        $this->cache->put($endpoint, $signature, $response, $ttl);
+
+        return $response;
+    }
+
+    /**
      * Submit Standard-queue SERP tasks with a signed postback URL.
      *
      * @param  list<array<string, mixed>>  $tasks

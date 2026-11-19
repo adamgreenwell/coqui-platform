@@ -299,6 +299,14 @@ export default function ProjectShow({
               <span>Keyword Explorer</span>
             </Link>
 
+            <Link
+              href={`/workspaces/${workspace.id}/projects/${project.id}/keyword-gap`}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-medium transition cursor-pointer"
+            >
+              <Users className="h-3.5 w-3.5 text-indigo-400" />
+              <span>Keyword Gap</span>
+            </Link>
+
             {canEdit && (
               <Link
                 href={`/workspaces/${workspace.id}/projects/${project.id}/settings`}
@@ -406,16 +414,26 @@ export default function ProjectShow({
                 Coqui compares SERP keyword rankings, content briefs, and backlink overlaps against these competitors.
               </p>
             </div>
-            {canEdit && competitors.length < 5 && (
-              <button
-                type="button"
-                onClick={() => setAddCompetitorModal(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs transition shadow-lg shadow-emerald-500/10 cursor-pointer"
+            <div className="flex items-center gap-2">
+              <Link
+                href={`/workspaces/${workspace.id}/projects/${project.id}/keyword-gap`}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-medium transition cursor-pointer"
               >
-                <Plus className="h-3.5 w-3.5" />
-                <span>Add Competitor</span>
-              </button>
-            )}
+                <Users className="h-3.5 w-3.5 text-indigo-400" />
+                <span>Keyword Gap</span>
+              </Link>
+
+              {canEdit && competitors.length < 5 && (
+                <button
+                  type="button"
+                  onClick={() => setAddCompetitorModal(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs transition shadow-lg shadow-emerald-500/10 cursor-pointer"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Add Competitor</span>
+                </button>
+              )}
+            </div>
           </div>
 
           <div className="rounded-xl border border-slate-800 bg-slate-900/60 overflow-hidden shadow-sm">

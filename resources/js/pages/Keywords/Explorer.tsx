@@ -27,6 +27,7 @@ import {
   Smartphone,
   Sparkles,
   TrendingUp,
+  Users,
   X,
   Zap,
 } from 'lucide-react';
@@ -694,6 +695,14 @@ export default function KeywordExplorer({
           </div>
 
           <div className="flex items-center gap-2">
+            <Link
+              href={`/workspaces/${workspace.id}/projects/${project.id}/keyword-gap`}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium transition cursor-pointer"
+            >
+              <Users className="h-3.5 w-3.5 text-indigo-400" />
+              <span>Keyword Gap</span>
+            </Link>
+
             <Link
               href={`/workspaces/${workspace.id}/projects/${project.id}/keywords`}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium transition cursor-pointer"
