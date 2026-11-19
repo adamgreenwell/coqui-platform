@@ -19,6 +19,14 @@ return [
         'base_url' => env('PLAUSIBLE_API_BASE_URL', 'https://plausible.io'),
     ],
 
+    'stripe' => [
+        'key' => env('STRIPE_KEY'),
+        'secret' => env('STRIPE_SECRET'),
+        'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
+        'webhook_tolerance' => (int) env('STRIPE_WEBHOOK_TOLERANCE', 300),
+        'base_url' => env('STRIPE_API_BASE_URL', 'https://api.stripe.com'),
+    ],
+
     'runnr' => [
         'webhook_secret' => env('RUNNR_WEBHOOK_SECRET'),
         'telemetry_token' => env('RUNNR_TELEMETRY_TOKEN'),
