@@ -235,6 +235,8 @@ class BacklinkProfileTest extends TestCase
         $crawlRun = CrawlRun::query()->create([
             'project_id' => $this->project->id,
             'external_crawl_id' => '00000000-0000-0000-0000-000000000001',
+            'seed' => 'https://coquiseo.com/',
+            'seed_kind' => 'url',
             'status' => 'completed',
             'source' => 'cloud',
             'config' => ['maxDepth' => 3, 'maxUrls' => 500],
@@ -245,12 +247,14 @@ class BacklinkProfileTest extends TestCase
         CrawlUrl::query()->create([
             'crawl_run_id' => $crawlRun->id,
             'url' => 'https://coquiseo.com/deleted-seo-checklist',
+            'url_hash' => hash('sha256', 'https://coquiseo.com/deleted-seo-checklist'),
             'status' => 404,
         ]);
 
         CrawlUrl::query()->create([
             'crawl_run_id' => $crawlRun->id,
             'url' => 'https://coquiseo.com/features',
+            'url_hash' => hash('sha256', 'https://coquiseo.com/features'),
             'status' => 200,
         ]);
 
