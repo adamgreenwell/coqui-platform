@@ -10,6 +10,7 @@ import {
   ChevronRight,
   Clock,
   ExternalLink,
+  FileText,
   Filter,
   Globe,
   History,
@@ -316,6 +317,14 @@ export default function KeywordsIndex({
             >
               <Users className="h-3.5 w-3.5 text-indigo-400" />
               <span>Keyword Gap</span>
+            </Link>
+
+            <Link
+              href={`/workspaces/${workspace.id}/projects/${project.id}/keywords/brief`}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-300 text-xs font-medium transition cursor-pointer"
+            >
+              <FileText className="h-3.5 w-3.5 text-teal-400" />
+              <span>Content Brief</span>
             </Link>
 
             {canEdit && (
@@ -825,6 +834,13 @@ export default function KeywordsIndex({
                         {/* Actions */}
                         <td className="py-3 px-4 text-right">
                           <div className="flex items-center justify-end gap-1">
+                            <Link
+                              href={`/workspaces/${workspace.id}/projects/${project.id}/keywords/brief?keyword=${encodeURIComponent(kw.keyword)}`}
+                              title="Generate SERP Content Brief"
+                              className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-teal-400 transition cursor-pointer"
+                            >
+                              <FileText className="h-3.5 w-3.5" />
+                            </Link>
                             <button
                               type="button"
                               onClick={() => openHistory(kw)}

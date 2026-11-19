@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\CloudCrawlController;
+use App\Http\Controllers\ContentBriefController;
 use App\Http\Controllers\CrawlCompareController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\KeywordExplorerController;
@@ -55,6 +56,10 @@ Route::middleware(['auth'])->group(function (): void {
     Route::post('/workspaces/{workspace}/projects/{project}/keywords', [TrackedKeywordController::class, 'store'])->name('workspaces.projects.keywords.store');
     Route::delete('/workspaces/{workspace}/projects/{project}/keywords/{keyword}', [TrackedKeywordController::class, 'destroy'])->name('workspaces.projects.keywords.destroy');
     Route::get('/workspaces/{workspace}/projects/{project}/keywords/{keyword}/snapshots', [TrackedKeywordController::class, 'snapshots'])->name('workspaces.projects.keywords.snapshots');
+
+    Route::get('/workspaces/{workspace}/projects/{project}/keywords/brief', [ContentBriefController::class, 'show'])->name('workspaces.projects.keywords.brief');
+    Route::post('/workspaces/{workspace}/projects/{project}/keywords/brief', [ContentBriefController::class, 'generate'])->name('workspaces.projects.keywords.brief.generate');
+    Route::get('/workspaces/{workspace}/projects/{project}/keywords/brief/download', [ContentBriefController::class, 'download'])->name('workspaces.projects.keywords.brief.download');
 
     Route::get('/workspaces/{workspace}/projects/{project}/keyword-explorer', [KeywordExplorerController::class, 'index'])->name('workspaces.projects.keyword-explorer.index');
     Route::post('/workspaces/{workspace}/projects/{project}/keyword-explorer/overview', [KeywordExplorerController::class, 'overview'])->name('workspaces.projects.keyword-explorer.overview');
