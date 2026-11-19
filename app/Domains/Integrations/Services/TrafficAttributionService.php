@@ -282,24 +282,22 @@ class TrafficAttributionService
             ];
         }
 
-        if ($recordsToUpsert !== []) {
-            foreach (array_chunk($recordsToUpsert, 500) as $chunk) {
-                PageTrafficSnapshot::query()->upsert(
-                    $chunk,
-                    ['project_id', 'provider', 'path_hash', 'date'],
-                    [
-                        'path',
-                        'organic_sessions',
-                        'ai_referral_sessions',
-                        'direct_sessions',
-                        'total_sessions',
-                        'bounce_rate',
-                        'avg_engagement_time_sec',
-                        'ai_referrals_breakdown',
-                        'updated_at',
-                    ]
-                );
-            }
+        foreach (array_chunk($recordsToUpsert, 500) as $chunk) {
+            PageTrafficSnapshot::query()->upsert(
+                $chunk,
+                ['project_id', 'provider', 'path_hash', 'date'],
+                [
+                    'path',
+                    'organic_sessions',
+                    'ai_referral_sessions',
+                    'direct_sessions',
+                    'total_sessions',
+                    'bounce_rate',
+                    'avg_engagement_time_sec',
+                    'ai_referrals_breakdown',
+                    'updated_at',
+                ]
+            );
         }
 
         $count = count($recordsToUpsert);
@@ -406,24 +404,22 @@ class TrafficAttributionService
             ];
         }
 
-        if ($recordsToUpsert !== []) {
-            foreach (array_chunk($recordsToUpsert, 500) as $chunk) {
-                PageTrafficSnapshot::query()->upsert(
-                    $chunk,
-                    ['project_id', 'provider', 'path_hash', 'date'],
-                    [
-                        'path',
-                        'organic_sessions',
-                        'ai_referral_sessions',
-                        'direct_sessions',
-                        'total_sessions',
-                        'bounce_rate',
-                        'avg_engagement_time_sec',
-                        'ai_referrals_breakdown',
-                        'updated_at',
-                    ]
-                );
-            }
+        foreach (array_chunk($recordsToUpsert, 500) as $chunk) {
+            PageTrafficSnapshot::query()->upsert(
+                $chunk,
+                ['project_id', 'provider', 'path_hash', 'date'],
+                [
+                    'path',
+                    'organic_sessions',
+                    'ai_referral_sessions',
+                    'direct_sessions',
+                    'total_sessions',
+                    'bounce_rate',
+                    'avg_engagement_time_sec',
+                    'ai_referrals_breakdown',
+                    'updated_at',
+                ]
+            );
         }
 
         $count = count($recordsToUpsert);
@@ -523,7 +519,9 @@ class TrafficAttributionService
                 }
             }
 
-            if ($cu->redirect_chain !== null && $cu->redirect_chain !== []) {
+            /** @var mixed $chain */
+            $chain = $cu->redirect_chain;
+            if ((is_array($chain) && $chain !== []) || (is_string($chain) && $chain !== '' && $chain !== '[]')) {
                 $issues[] = 'Redirect Chain';
             }
 
