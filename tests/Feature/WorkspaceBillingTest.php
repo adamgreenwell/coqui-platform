@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Domains\Billing\Models\WorkspaceSubscription;
+use App\Domains\Crawls\Jobs\DispatchCloudCrawlJob;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
 use App\Domains\Serp\DataForSeo\DataForSeoBudgetException;
@@ -12,6 +13,7 @@ use App\Domains\Serp\DataForSeo\DataForSeoSpendGuard;
 use App\Domains\Serp\Models\TrackedKeyword;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Pennant\Feature;
@@ -125,6 +127,8 @@ class WorkspaceBillingTest extends TestCase
 
     public function test_cloud_crawl_controller_enforces_url_limit(): void
     {
+        Queue::fake();
+
         // Free tier has 1,000 URL limit - test controller endpoint
         $response = $this->actingAs($this->owner)
             ->post(route('workspaces.projects.crawls.dispatch', [$this->workspace, $this->project]), [
@@ -147,6 +151,7 @@ class WorkspaceBillingTest extends TestCase
             'source' => 'worker',
             'status' => 'pending',
         ]);
+        Queue::assertPushed(DispatchCloudCrawlJob::class);
     }
 
     public function test_runnr_entitlement_unlocking(): void
