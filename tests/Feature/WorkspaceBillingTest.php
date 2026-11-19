@@ -265,20 +265,40 @@ class WorkspaceBillingTest extends TestCase
         $this->assertStringContainsString('portal_mock=1', $target);
     }
 
-    public function test_change_tier_directly(): void
+    public function test_workspace_admin_cannot_change_plan_without_payment(): void
     {
         $response = $this->actingAs($this->owner)
-            ->post(route('workspaces.billing.change-tier', $this->workspace), [
+            ->post('/workspaces/'.$this->workspace->id.'/billing/change-tier', [
                 'plan_tier' => 'agency',
+                'has_runnr_addon' => true,
             ]);
 
-        $response->assertRedirect(route('workspaces.billing.index', $this->workspace));
+        $this->assertContains($response->getStatusCode(), [404, 405]);
+        $this->workspace->refresh();
+
+        $this->assertSame('free', $this->workspace->plan_tier);
+        $this->assertFalse((bool) $this->workspace->has_runnr_addon);
+    }
+
+    public function test_operator_command_overrides_plan_tier(): void
+    {
+        $this->artisan('billing:set-tier', ['workspace' => $this->workspace->slug, 'tier' => 'agency'])
+            ->assertSuccessful();
+
         $this->workspace->refresh();
 
         $this->assertSame('agency', $this->workspace->plan_tier);
         $this->assertSame(10000, $this->workspace->tracked_keyword_limit);
         $this->assertSame(250000, $this->workspace->cloud_crawl_url_limit);
         $this->assertEquals(750.00, $this->workspace->monthly_dfs_budget_usd);
+    }
+
+    public function test_operator_command_rejects_unknown_tier(): void
+    {
+        $this->artisan('billing:set-tier', ['workspace' => (string) $this->workspace->id, 'tier' => 'platinum'])
+            ->assertFailed();
+
+        $this->assertSame('free', $this->workspace->refresh()->plan_tier);
     }
 
     public function test_stripe_webhook_checkout_session_completed(): void
