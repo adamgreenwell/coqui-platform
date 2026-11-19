@@ -492,6 +492,113 @@ class DataForSeoClient
     }
 
     /**
+     * Discover referring domains linking to competitor targets while excluding project domain.
+     * Cached for 14 days per competitor set.
+     *
+     * @param  array<string, string>  $targets  Map of index to competitor domain, e.g. ["1" => "comp1.com", "2" => "comp2.com"]
+     * @param  list<string>  $excludeTargets  List of domains to exclude, e.g. [$projectDomain]
+     * @return array<string, mixed>
+     */
+    public function backlinksDomainIntersection(
+        array $targets,
+        array $excludeTargets,
+        Project $project,
+        int $limit = 100,
+        bool $forceFresh = false,
+    ): array {
+        $endpoint = '/v3/backlinks/domain_intersection/live';
+        $estimatedCost = (float) config('coqui.dataforseo.prices.backlinks_task', 0.024);
+
+        $payload = [
+            [
+                'targets' => $targets,
+                'exclude_targets' => $excludeTargets,
+                'limit' => min(500, max(1, $limit)),
+                'order_by' => ['rank,desc'],
+            ],
+        ];
+
+        $cacheParams = [
+            'targets' => $targets,
+            'exclude_targets' => $excludeTargets,
+            'limit' => $limit,
+        ];
+
+        if (! $forceFresh) {
+            $cached = $this->cache->get($endpoint, $cacheParams);
+            if ($cached !== null) {
+                return $cached;
+            }
+        }
+
+        $this->spendGuard->assertCanSpend($estimatedCost, $project->workspace, false);
+
+        $response = $this->postPaid(
+            endpoint: $endpoint,
+            payload: $payload,
+            mode: 'live',
+            estimatedCostUsd: $estimatedCost,
+            project: $project,
+        );
+
+        $ttl = (int) config('coqui.dataforseo.cache_ttl_hours.backlinks_intersection', 24 * 14);
+        $this->cache->put($endpoint, $cacheParams, $response, $ttl);
+
+        return $response;
+    }
+
+    /**
+     * Discover broken (404/5xx) pages receiving backlinks on competitor domains for reclaim outreach.
+     *
+     * @return array<string, mixed>
+     */
+    public function backlinksBrokenPages(
+        string $target,
+        Project $project,
+        int $limit = 100,
+        bool $forceFresh = false,
+    ): array {
+        $endpoint = '/v3/backlinks/pages/live';
+        $estimatedCost = (float) config('coqui.dataforseo.prices.backlinks_task', 0.024);
+
+        $payload = [
+            [
+                'target' => $target,
+                'limit' => min(500, max(1, $limit)),
+                'order_by' => ['backlinks,desc'],
+            ],
+        ];
+
+        $cacheParams = [
+            'target' => $target,
+            'limit' => $limit,
+            'type' => 'broken_reclaim',
+        ];
+
+        if (! $forceFresh) {
+            $cached = $this->cache->get($endpoint, $cacheParams);
+            if ($cached !== null) {
+                return $cached;
+            }
+        }
+
+        $this->spendGuard->assertCanSpend($estimatedCost, $project->workspace, false);
+
+        $response = $this->postPaid(
+            endpoint: $endpoint,
+            payload: $payload,
+            mode: 'live',
+            estimatedCostUsd: $estimatedCost,
+            project: $project,
+        );
+
+        $ttl = (int) config('coqui.dataforseo.cache_ttl_hours.backlinks_pages', 24 * 14);
+        $this->cache->put($endpoint, $cacheParams, $response, $ttl);
+
+        return $response;
+    }
+
+    /**
      * Submit Standard-queue SERP tasks with a signed postback URL.
      *
      * @param  list<array<string, mixed>>  $tasks

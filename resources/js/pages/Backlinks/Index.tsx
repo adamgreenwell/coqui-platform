@@ -327,6 +327,14 @@ export default function BacklinksIndex({
             </button>
 
             <Link
+              href={`/workspaces/${workspace.id}/projects/${project.id}/backlinks/intersect`}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-300 text-xs font-medium transition cursor-pointer"
+            >
+              <Sparkles className="h-3.5 w-3.5 text-sky-400" />
+              <span>Link Intersect</span>
+            </Link>
+
+            <Link
               href={`/workspaces/${workspace.id}/projects/${project.id}/backlinks/watchlist`}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 text-xs font-medium transition cursor-pointer"
             >

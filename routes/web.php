@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\BacklinkController;
+use App\Http\Controllers\BacklinkIntersectController;
 use App\Http\Controllers\BacklinkWatchlistController;
 use App\Http\Controllers\CloudCrawlController;
 use App\Http\Controllers\ContentBriefController;
@@ -81,6 +82,9 @@ Route::middleware(['auth'])->group(function (): void {
     Route::post('/workspaces/{workspace}/projects/{project}/backlinks/watchlist/import-dfs', [BacklinkWatchlistController::class, 'importDfs'])->name('workspaces.projects.backlinks.watchlist.import-dfs');
     Route::post('/workspaces/{workspace}/projects/{project}/backlinks/watchlist/import-csv', [BacklinkWatchlistController::class, 'importCsv'])->name('workspaces.projects.backlinks.watchlist.import-csv');
     Route::delete('/workspaces/{workspace}/projects/{project}/backlinks/watchlist/{monitoredBacklink}', [BacklinkWatchlistController::class, 'destroy'])->name('workspaces.projects.backlinks.watchlist.destroy');
+
+    Route::get('/workspaces/{workspace}/projects/{project}/backlinks/intersect', [BacklinkIntersectController::class, 'index'])->name('workspaces.projects.backlinks.intersect.index');
+    Route::post('/workspaces/{workspace}/projects/{project}/backlinks/intersect/refresh', [BacklinkIntersectController::class, 'refresh'])->name('workspaces.projects.backlinks.intersect.refresh');
 
     Route::get('/workspaces/{workspace}/projects/{project}/integrations', [ProjectIntegrationController::class, 'index'])->name('workspaces.projects.integrations.index');
     Route::get('/workspaces/{workspace}/projects/{project}/integrations/google/connect', [ProjectIntegrationController::class, 'connectGoogle'])->name('workspaces.projects.integrations.google.connect');
