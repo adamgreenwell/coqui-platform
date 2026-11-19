@@ -179,7 +179,7 @@ class BacklinkVerificationService
                 ];
             }
 
-            $doc = new DOMDocument();
+            $doc = new DOMDocument;
             @$doc->loadHTML('<?xml encoding="UTF-8">'.$html, LIBXML_NOERROR | LIBXML_NOWARNING);
             $xpath = new DOMXPath($doc);
 
