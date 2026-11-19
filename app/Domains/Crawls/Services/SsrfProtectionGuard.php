@@ -46,9 +46,11 @@ class SsrfProtectionGuard
             throw SsrfProtectionException::blocked($url, sprintf('Private internal domain "%s".', $host));
         }
 
+        $cleanHost = trim($host, '[]');
+
         // Check if host is direct IP address
-        if (filter_var($host, FILTER_VALIDATE_IP)) {
-            $this->assertSafeIp($host, $url);
+        if (filter_var($cleanHost, FILTER_VALIDATE_IP)) {
+            $this->assertSafeIp($cleanHost, $url);
 
             return;
         }
