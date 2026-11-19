@@ -7,22 +7,21 @@ namespace App\Domains\Backlinks\Services;
 use App\Domains\Backlinks\Events\BacklinkAlertTriggered;
 use App\Domains\Backlinks\Models\MonitoredBacklink;
 use App\Domains\Crawls\Services\CoquiWorkerClient;
-use App\Domains\Crawls\Services\SsrfProtectionGuard;
+use App\Domains\Crawls\Services\SafeHttpClient;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Serp\DataForSeo\DataForSeoClient;
 use DOMDocument;
 use DOMElement;
 use DOMXPath;
-use Illuminate\Support\Facades\Http;
 use Throwable;
 
 class BacklinkVerificationService
 {
     public function __construct(
         private readonly CoquiWorkerClient $worker,
-        private readonly SsrfProtectionGuard $ssrf,
         private readonly DataForSeoClient $dataForSeo,
+        private readonly SafeHttpClient $http = new SafeHttpClient,
     ) {}
 
     /**
@@ -149,11 +148,8 @@ class BacklinkVerificationService
     public function inspectDirectly(string $sourceUrl, string $targetUrl): array
     {
         try {
-            $this->ssrf->assertAllowed($sourceUrl);
-
-            $response = Http::timeout(6)
-                ->withUserAgent('Mozilla/5.0 (compatible; CoquiBot/1.0; +https://coquiseo.com/bot)')
-                ->get($sourceUrl);
+            // Validates every redirect hop and pins DNS (see SafeHttpClient).
+            $response = $this->http->get($sourceUrl, timeoutSeconds: 6);
 
             $status = $response->status();
             if ($status >= 400) {
