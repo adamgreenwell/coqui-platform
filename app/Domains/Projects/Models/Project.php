@@ -8,6 +8,7 @@ use App\Domains\Backlinks\Models\BacklinkHistorySnapshot;
 use App\Domains\Backlinks\Models\MonitoredBacklink;
 use App\Domains\Crawls\Models\CrawlDiffReport;
 use App\Domains\Crawls\Models\CrawlRun;
+use App\Domains\Integrations\Models\BotCrawlLog;
 use App\Domains\Integrations\Models\ProjectIntegration;
 use App\Domains\Integrations\Models\SearchPerformancePage;
 use App\Domains\Integrations\Models\SearchPerformanceQuery;
@@ -151,6 +152,14 @@ class Project extends Model
     public function backlinkHistorySnapshots(): HasMany
     {
         return $this->hasMany(BacklinkHistorySnapshot::class);
+    }
+
+    /**
+     * @return HasMany<BotCrawlLog, $this>
+     */
+    public function botCrawlLogs(): HasMany
+    {
+        return $this->hasMany(BotCrawlLog::class);
     }
 
     /**

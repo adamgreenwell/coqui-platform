@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\Api\V1\BotTelemetryApiController;
 use App\Http\Controllers\Api\V1\CrawlSyncController;
 use App\Http\Controllers\Api\V1\MeApiController;
 use App\Http\Controllers\Api\V1\ProjectApiController;
@@ -49,7 +50,15 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function (): void {
     // Runnr deploy smoke test inspection
     Route::get('/projects/{project}/deploy-smoke/latest', [RunnrDeploySmokeController::class, 'latest'])
         ->middleware('ability:projects:read,crawls:read');
+
+    // Bot crawl logs telemetry inspection
+    Route::get('/projects/{project}/telemetry/bot-logs', [BotTelemetryApiController::class, 'show'])
+        ->middleware('ability:projects:read,crawls:read');
 });
+
+// Runnr edge bot crawler telemetry ingestion
+Route::post('/v1/telemetry/bot-logs', [BotTelemetryApiController::class, 'ingest'])
+    ->name('api.telemetry.bot_logs.ingest');
 
 // Public deploy smoke SVG status badge
 Route::get('/v1/projects/{project}/deploy-smoke/badge', [RunnrDeploySmokeController::class, 'badge'])

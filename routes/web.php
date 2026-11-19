@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Controllers\BacklinkController;
 use App\Http\Controllers\BacklinkIntersectController;
 use App\Http\Controllers\BacklinkWatchlistController;
+use App\Http\Controllers\BotTelemetryController;
 use App\Http\Controllers\CloudCrawlController;
 use App\Http\Controllers\ContentBriefController;
 use App\Http\Controllers\CrawlCompareController;
@@ -94,6 +95,9 @@ Route::middleware(['auth'])->group(function (): void {
     Route::delete('/workspaces/{workspace}/projects/{project}/integrations/runnr/disconnect', [ProjectIntegrationController::class, 'disconnectRunnr'])->name('workspaces.projects.integrations.runnr.disconnect');
     Route::post('/workspaces/{workspace}/projects/{project}/integrations/{integration}/sync', [ProjectIntegrationController::class, 'sync'])->name('workspaces.projects.integrations.sync');
     Route::delete('/workspaces/{workspace}/projects/{project}/integrations/{integration}', [ProjectIntegrationController::class, 'destroy'])->name('workspaces.projects.integrations.destroy');
+
+    Route::get('/workspaces/{workspace}/projects/{project}/bot-logs', [BotTelemetryController::class, 'index'])->name('workspaces.projects.bot-logs.index');
+    Route::post('/workspaces/{workspace}/projects/{project}/bot-logs/remediate', [BotTelemetryController::class, 'remediate'])->name('workspaces.projects.bot-logs.remediate');
 
     Route::get('/workspaces/{workspace}/projects/{project}/crawls/compare', [CrawlCompareController::class, 'show'])->name('workspaces.projects.crawls.compare');
     Route::post('/workspaces/{workspace}/projects/{project}/crawls/compare/share', [CrawlCompareController::class, 'share'])->name('workspaces.projects.crawls.compare.share');
