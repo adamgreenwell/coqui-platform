@@ -23,6 +23,20 @@ use Throwable;
 
 class ProjectIntegrationController extends Controller
 {
+    private const GOOGLE_OAUTH_SESSION_PREFIX = 'google_oauth.';
+
+    private const GOOGLE_OAUTH_STATE_TTL_SECONDS = 900;
+
+    /**
+     * The single redirect URI registered in Google Cloud Console.
+     */
+    private function googleRedirectUri(): string
+    {
+        $configured = trim((string) config('services.google.redirect_uri'));
+
+        return $configured !== '' ? $configured : route('integrations.google.callback');
+    }
+
     public function index(Workspace $workspace, Project $project): JsonResponse
     {
         abort_if($project->workspace_id !== $workspace->id, 404);
@@ -46,32 +60,40 @@ class ProjectIntegrationController extends Controller
         abort_if($project->workspace_id !== $workspace->id, 404);
         Gate::authorize('update', $project);
 
+        // The callback URL is the same for every project, so the project travels
+        // in server-side session state keyed by the unguessable OAuth state value.
         $state = Str::random(40);
-        $request->session()->put('gsc_oauth_state_'.$project->id, $state);
+        $request->session()->put(self::GOOGLE_OAUTH_SESSION_PREFIX.$state, [
+            'workspace_id' => $workspace->id,
+            'project_id' => $project->id,
+            'issued_at' => now()->getTimestamp(),
+        ]);
 
-        $redirectUri = route('workspaces.projects.integrations.google.callback', [$workspace, $project]);
-        $authUrl = $gscClient->getAuthorizationUrl($project, $redirectUri, $state);
+        $authUrl = $gscClient->getAuthorizationUrl($project, $this->googleRedirectUri(), $state);
 
         return redirect()->away($authUrl);
     }
 
     public function callbackGoogle(
         Request $request,
-        Workspace $workspace,
-        Project $project,
         GoogleSearchConsoleClient $gscClient
     ): RedirectResponse {
+        $state = $request->query('state');
+        $pending = is_string($state) && preg_match('/^[A-Za-z0-9]{40}$/', $state) === 1
+            ? $request->session()->pull(self::GOOGLE_OAUTH_SESSION_PREFIX.$state)
+            : null;
+
+        $issuedAt = is_array($pending) ? (int) ($pending['issued_at'] ?? 0) : 0;
+        if (! is_array($pending) || now()->getTimestamp() - $issuedAt > self::GOOGLE_OAUTH_STATE_TTL_SECONDS) {
+            return redirect()
+                ->route('dashboard')
+                ->with('error', 'Invalid or expired Google OAuth state. Please try reconnecting.');
+        }
+
+        $workspace = Workspace::query()->findOrFail((int) ($pending['workspace_id'] ?? 0));
+        $project = Project::query()->findOrFail((int) ($pending['project_id'] ?? 0));
         abort_if($project->workspace_id !== $workspace->id, 404);
         Gate::authorize('update', $project);
-
-        $state = $request->query('state');
-        $expectedState = $request->session()->pull('gsc_oauth_state_'.$project->id);
-
-        if (! is_string($state) || $state === '' || $state !== $expectedState) {
-            return redirect()
-                ->route('workspaces.projects.keywords.index', [$workspace, $project])
-                ->with('error', 'Invalid Google OAuth state. Please try reconnecting.');
-        }
 
         $code = $request->query('code');
         if (! is_string($code) || $code === '') {
@@ -82,10 +104,8 @@ class ProjectIntegrationController extends Controller
                 ->with('error', (string) $errorDesc);
         }
 
-        $redirectUri = route('workspaces.projects.integrations.google.callback', [$workspace, $project]);
-
         try {
-            $tokens = $gscClient->exchangeCodeForTokens($code, $redirectUri);
+            $tokens = $gscClient->exchangeCodeForTokens($code, $this->googleRedirectUri());
 
             /** @var ProjectIntegration $integration */
             $integration = ProjectIntegration::query()->firstOrNew([
