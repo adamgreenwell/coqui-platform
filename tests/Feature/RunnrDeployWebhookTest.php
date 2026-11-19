@@ -4,12 +4,9 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
-use App\Domains\Crawls\Actions\IngestDesktopCrawlSnapshot;
 use App\Domains\Crawls\Models\CrawlRun;
-use App\Domains\Integrations\Models\ProjectIntegration;
 use App\Domains\Integrations\Services\RunnrDeploySmokeService;
 use App\Domains\Projects\Models\Project;
-use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\Workspace;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -405,7 +402,7 @@ class RunnrDeployWebhookTest extends TestCase
                 && $request['passed'] === true
                 && $request['status'] === 'passed'
                 && $request['deployId'] === 'dep_101'
-                && ! empty($request->header('X-Runnr-Signature'));
+                && (string) $request->header('X-Runnr-Signature') !== '';
         });
     }
 
