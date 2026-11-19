@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Domains\Integrations\Models\ProjectIntegration;
-use App\Domains\Integrations\Models\SearchPerformanceQuery;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\ProjectCompetitor;
@@ -14,6 +13,7 @@ use App\Domains\Serp\Models\KeywordRankSnapshot;
 use App\Domains\Serp\Models\TrackedKeyword;
 use App\Models\User;
 use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -84,7 +84,7 @@ class TrackedKeywordController extends Controller
         // Query trailing 28 finalized days for first-party search performance overlay
         $cutoffDate = Carbon::now()->subDays(32)->format('Y-m-d');
 
-        $performanceStats = SearchPerformanceQuery::query()
+        $performanceStats = DB::table('search_performance_queries')
             ->where('project_id', $project->id)
             ->where('date', '>=', $cutoffDate)
             ->selectRaw('provider, LOWER(query) as query_lower, SUM(clicks) as total_clicks, SUM(impressions) as total_impressions, AVG(position) as avg_position')
@@ -142,21 +142,23 @@ class TrackedKeywordController extends Controller
 
             $kwKey = strtolower(trim($kw->keyword));
 
+            /** @var object{total_clicks?: mixed, total_impressions?: mixed, avg_position?: mixed}|null $gsc */
             $gsc = $gscStatsByQuery->get($kwKey);
-            $gscClicks = $gsc !== null ? (int) $gsc->total_clicks : null;
-            $gscImpressions = $gsc !== null ? (int) $gsc->total_impressions : null;
+            $gscClicks = ($gsc !== null && isset($gsc->total_clicks)) ? (int) $gsc->total_clicks : null;
+            $gscImpressions = ($gsc !== null && isset($gsc->total_impressions)) ? (int) $gsc->total_impressions : null;
             $gscCtr = ($gscClicks !== null && $gscImpressions !== null && $gscImpressions > 0)
                 ? round(($gscClicks / $gscImpressions) * 100, 2)
                 : null;
-            $gscPosition = $gsc !== null ? round((float) $gsc->avg_position, 1) : null;
+            $gscPosition = ($gsc !== null && isset($gsc->avg_position)) ? round((float) $gsc->avg_position, 1) : null;
 
+            /** @var object{total_clicks?: mixed, total_impressions?: mixed, avg_position?: mixed}|null $bing */
             $bing = $bingStatsByQuery->get($kwKey);
-            $bingClicks = $bing !== null ? (int) $bing->total_clicks : null;
-            $bingImpressions = $bing !== null ? (int) $bing->total_impressions : null;
+            $bingClicks = ($bing !== null && isset($bing->total_clicks)) ? (int) $bing->total_clicks : null;
+            $bingImpressions = ($bing !== null && isset($bing->total_impressions)) ? (int) $bing->total_impressions : null;
             $bingCtr = ($bingClicks !== null && $bingImpressions !== null && $bingImpressions > 0)
                 ? round(($bingClicks / $bingImpressions) * 100, 2)
                 : null;
-            $bingPosition = $bing !== null ? round((float) $bing->avg_position, 1) : null;
+            $bingPosition = ($bing !== null && isset($bing->avg_position)) ? round((float) $bing->avg_position, 1) : null;
 
             return [
                 'id' => $kw->id,
@@ -277,18 +279,18 @@ class TrackedKeywordController extends Controller
             ],
             'canEdit' => $user->can('update', $project),
             'gscIntegration' => [
-                'status' => $gscIntegration?->status ?? 'not_connected',
+                'status' => $gscIntegration !== null ? $gscIntegration->status : 'not_connected',
                 'site_url' => $gscIntegration?->site_url,
-                'last_synced_at' => $gscIntegration?->last_synced_at?->toIso8601String(),
+                'last_synced_at' => $gscIntegration?->last_synced_at instanceof CarbonInterface ? $gscIntegration->last_synced_at->toIso8601String() : null,
                 'error_message' => is_array($gscIntegration?->credentials_encrypted)
                     ? ($gscIntegration->credentials_encrypted['error'] ?? null)
                     : null,
                 'connect_url' => route('workspaces.projects.integrations.google.connect', [$workspace, $project]),
             ],
             'bingIntegration' => [
-                'status' => $bingIntegration?->status ?? 'not_connected',
+                'status' => $bingIntegration !== null ? $bingIntegration->status : 'not_connected',
                 'site_url' => $bingIntegration?->site_url,
-                'last_synced_at' => $bingIntegration?->last_synced_at?->toIso8601String(),
+                'last_synced_at' => $bingIntegration?->last_synced_at instanceof CarbonInterface ? $bingIntegration->last_synced_at->toIso8601String() : null,
                 'error_message' => is_array($bingIntegration?->credentials_encrypted)
                     ? ($bingIntegration->credentials_encrypted['error'] ?? null)
                     : null,

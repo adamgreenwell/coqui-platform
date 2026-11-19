@@ -10,12 +10,26 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Support\Carbon;
 
+/**
+ * @property int $id
+ * @property int $project_id
+ * @property string $provider
+ * @property string|null $site_url
+ * @property string|null $external_identifier
+ * @property array<string, mixed>|null $credentials_encrypted
+ * @property string $status
+ * @property \Carbon\CarbonInterface|null $last_synced_at
+ * @property \Carbon\CarbonInterface $created_at
+ * @property \Carbon\CarbonInterface $updated_at
+ * @property-read Project|null $project
+ */
 class ProjectIntegration extends Model
 {
     /** @var list<string> */
     protected $fillable = [
         'project_id',
         'provider',
+        'site_url',
         'external_identifier',
         'credentials_encrypted',
         'status',

@@ -48,8 +48,8 @@ class SearchPerformanceSyncService
 
             foreach ($rows as $row) {
                 $keys = $row['keys'];
-                $query = isset($keys[0]) && is_string($keys[0]) ? trim($keys[0]) : '';
-                $dateStr = isset($keys[1]) && is_string($keys[1]) ? trim($keys[1]) : '';
+                $query = isset($keys[0]) ? trim($keys[0]) : '';
+                $dateStr = isset($keys[1]) ? trim($keys[1]) : '';
 
                 if ($query === '' || $dateStr === '') {
                     continue;

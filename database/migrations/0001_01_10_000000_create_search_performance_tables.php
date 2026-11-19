@@ -10,6 +10,12 @@ return new class extends Migration
 {
     public function up(): void
     {
+        Schema::table('project_integrations', function (Blueprint $table): void {
+            if (! Schema::hasColumn('project_integrations', 'site_url')) {
+                $table->string('site_url')->nullable()->after('provider');
+            }
+        });
+
         Schema::create('search_performance_queries', function (Blueprint $table): void {
             $table->id();
             $table->foreignId('project_id')->constrained('projects')->cascadeOnDelete();
@@ -49,5 +55,11 @@ return new class extends Migration
     {
         Schema::dropIfExists('search_performance_pages');
         Schema::dropIfExists('search_performance_queries');
+
+        Schema::table('project_integrations', function (Blueprint $table): void {
+            if (Schema::hasColumn('project_integrations', 'site_url')) {
+                $table->dropColumn('site_url');
+            }
+        });
     }
 };

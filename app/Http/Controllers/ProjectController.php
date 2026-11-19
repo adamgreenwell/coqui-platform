@@ -255,7 +255,7 @@ class ProjectController extends Controller
                     'provider' => $i->provider,
                     'site_url' => $i->site_url,
                     'status' => $i->status,
-                    'last_synced_at' => $i->last_synced_at?->toIso8601String(),
+                    'last_synced_at' => $i->last_synced_at instanceof CarbonInterface ? $i->last_synced_at->toIso8601String() : null,
                 ])
                 ->all(),
             'activities' => $activities,

@@ -141,7 +141,7 @@ class ProjectIntegrationController extends Controller
             return redirect()
                 ->route('workspaces.projects.keywords.index', [$workspace, $project])
                 ->with('success', 'Google Search Console connected successfully. Data sync has started in the background.');
-        } catch (SearchConsoleAuthException|Throwable $e) {
+        } catch (Throwable $e) {
             Log::error('GSC OAuth callback error: '.$e->getMessage());
 
             return redirect()
