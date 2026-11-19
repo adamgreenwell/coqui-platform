@@ -57,7 +57,7 @@ class SanctumTokenController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:255'],
             'abilities' => ['required', 'array', 'min:1'],
-            'abilities.*' => ['string', 'in:crawls:sync,projects:read'],
+            'abilities.*' => ['string', 'in:crawls:sync,crawls:read,projects:read,projects:write'],
         ]);
 
         /** @var list<string> $abilities */

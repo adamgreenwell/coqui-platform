@@ -1,20 +1,41 @@
-# Coqui Desktop ↔ Cloud Sync Contract
+# Coqui Desktop ↔ Cloud Sync Contract & Standalone App API Architecture
 
-This contract defines the JSON payloads exchanged between the **Coqui** desktop application (`crates/coqui-core/src/lib.rs`) and **Coqui SEO Platform** (`api.coquiseo.com/api/v1/crawls/*`).
+This contract defines the REST and streaming JSON API exchanged between the **Coqui** desktop application (`crates/coqui-core/src/lib.rs`) and **Coqui SEO Platform** (`api.coquiseo.com/api/v1/*`).
 
-Because `coqui-core` serializes every struct with `#[serde(rename_all = "camelCase")]`, all API requests use `camelCase` field names directly so the desktop app and `coqui-worker` can stream records without translation overhead.
+Because `coqui-core` serializes every struct with `#[serde(rename_all = "camelCase")]`, all API requests and responses use `camelCase` field names directly so the desktop app and `coqui-worker` can stream records without translation overhead.
 
 ---
 
-## Authentication
+## Authentication & Authorization
 
 - **Scheme:** `Authorization: Bearer <sanctum_personal_access_token>`
-- **Required Token Ability:** `crawls:sync`
-- **Scoping:** Every sync route resolves the target `Project` and authorizes workspace membership (`update` policy).
+- **Scoped Token Abilities:**
+  - `crawls:sync`: Initialize crawl runs, stream chunks, and finalize crawl snapshots.
+  - `crawls:read`: Retrieve historical crawl runs and inspect issue distributions.
+  - `projects:read`: Discover workspaces and list projects for targeting.
+  - `projects:write`: Register new projects directly from Coqui Desktop.
+- **Scoping & RBAC:** Every project route resolves the target `Project` and validates workspace membership (`view` or `update` policy via Laravel Gate).
 
 ---
 
-## Lifecycle Endpoints
+## Standalone App Endpoints
+
+### 1. Identity & Account Discovery
+`GET /api/v1/me`
+- Returns current authenticated user and list of accessible workspaces with user roles.
+
+### 2. Project Directory & Registration
+- `GET /api/v1/projects`: List accessible projects with latest crawl summary and search filter.
+- `POST /api/v1/projects`: Register a new project directly from Coqui Desktop.
+- `GET /api/v1/projects/{project}`: Retrieve project detail and crawl statistics.
+
+### 3. Crawl History & Inspection
+- `GET /api/v1/projects/{project}/crawls`: Paginated list of historical crawl runs.
+- `GET /api/v1/projects/{project}/crawls/{crawlId}`: Crawl details with aggregated issue summary breakdown.
+
+---
+
+## Crawl Synchronization Lifecycle
 
 ### 1. Initialize or Upsert Crawl Run
 `POST /api/v1/projects/{project}/crawls/sync`

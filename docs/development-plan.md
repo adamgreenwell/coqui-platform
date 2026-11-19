@@ -47,7 +47,7 @@ Building a global web-scale link and SERP index from scratch requires petabytes 
 
 ---
 
-## 3. Laravel Domain Boundaries
+## 3. Laravel Domain Boundaries & Standalone App API Architecture
 
 ```text
 app/Domains/
@@ -57,6 +57,13 @@ app/Domains/
 ├── Backlinks/      # DataForSEO backlink summaries + active watchlist link-rot checks
 └── Integrations/   # GSC, Bing, GA4, Plausible, Runnr deploy webhooks, server bot telemetry
 ```
+
+### Standalone App API Layer (`api.coquiseo.com/api/v1/*`)
+The standalone desktop app (`coqui`) and headless container (`coqui-worker`) interface with the platform via high-throughput, camelCase JSON endpoints:
+- **Authentication**: Laravel Sanctum personal access tokens scoped with abilities: `crawls:sync`, `crawls:read`, `projects:read`, `projects:write`.
+- **Identity & Discovery**: `GET /api/v1/me` (account & workspace switcher), `GET /api/v1/projects` (workspace site directory), `POST /api/v1/projects` (one-click project creation from desktop client).
+- **Crawl History & Inspection**: `GET /api/v1/projects/{project}/crawls` (paginated run history), `GET /api/v1/projects/{project}/crawls/{crawlId}` (run details with aggregated issue breakdown).
+- **Zero-Copy Streaming**: `POST /crawls/sync` (initializes cloud `CrawlRun` and scrubs sensitive credentials/headers), `POST /chunks` (streams up to 1,000 URLs, 2,500 links, 2,500 issues per transaction with deduplicated upserts), `POST /finalize` (seals status, computes severity aggregates, and broadcasts via Reverb WebSockets).
 
 ---
 

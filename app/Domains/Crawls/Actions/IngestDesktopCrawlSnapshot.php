@@ -49,14 +49,16 @@ class IngestDesktopCrawlSnapshot
 
         DB::transaction(function () use ($run, $urls, $links, $issues, $now): void {
             if ($urls !== []) {
-                $urlRows = array_map(static function (array $row) use ($run, $now): array {
+                $dedupedUrls = [];
+                foreach ($urls as $row) {
                     $urlString = (string) $row['url'];
+                    $hash = hash('sha256', $urlString);
 
-                    return [
+                    $dedupedUrls[$hash] = [
                         'crawl_run_id' => $run->id,
                         'client_row_id' => isset($row['id']) ? (int) $row['id'] : null,
                         'url' => $urlString,
-                        'url_hash' => hash('sha256', $urlString),
+                        'url_hash' => $hash,
                         'status' => isset($row['status']) ? (int) $row['status'] : null,
                         'content_type' => $row['contentType'] ?? null,
                         'title' => $row['title'] ?? null,
@@ -76,32 +78,34 @@ class IngestDesktopCrawlSnapshot
                         'created_at' => $now,
                         'updated_at' => $now,
                     ];
-                }, $urls);
+                }
 
-                DB::table('crawl_urls')->upsert(
-                    $urlRows,
-                    ['crawl_run_id', 'url_hash'],
-                    [
-                        'client_row_id',
-                        'status',
-                        'content_type',
-                        'title',
-                        'meta_description',
-                        'h1',
-                        'h1_count',
-                        'canonical',
-                        'meta_robots',
-                        'redirect_target',
-                        'redirect_chain',
-                        'word_count',
-                        'depth',
-                        'response_time_ms',
-                        'size_bytes',
-                        'error',
-                        'discovered_at_ms',
-                        'updated_at',
-                    ],
-                );
+                foreach (array_chunk(array_values($dedupedUrls), 500) as $urlBatch) {
+                    DB::table('crawl_urls')->upsert(
+                        $urlBatch,
+                        ['crawl_run_id', 'url_hash'],
+                        [
+                            'client_row_id',
+                            'status',
+                            'content_type',
+                            'title',
+                            'meta_description',
+                            'h1',
+                            'h1_count',
+                            'canonical',
+                            'meta_robots',
+                            'redirect_target',
+                            'redirect_chain',
+                            'word_count',
+                            'depth',
+                            'response_time_ms',
+                            'size_bytes',
+                            'error',
+                            'discovered_at_ms',
+                            'updated_at',
+                        ],
+                    );
+                }
             }
 
             if ($links !== []) {
@@ -122,26 +126,31 @@ class IngestDesktopCrawlSnapshot
             }
 
             if ($issues !== []) {
-                $issueRows = array_map(static function (array $row) use ($run, $now): array {
+                $dedupedIssues = [];
+                foreach ($issues as $row) {
                     $urlString = (string) $row['url'];
+                    $hash = hash('sha256', $urlString);
+                    $rule = (string) $row['rule'];
 
-                    return [
+                    $dedupedIssues[$hash.'|'.$rule] = [
                         'crawl_run_id' => $run->id,
                         'url' => $urlString,
-                        'url_hash' => hash('sha256', $urlString),
-                        'rule' => (string) $row['rule'],
+                        'url_hash' => $hash,
+                        'rule' => $rule,
                         'severity' => (string) $row['severity'],
                         'detail' => $row['detail'] ?? null,
                         'created_at' => $now,
                         'updated_at' => $now,
                     ];
-                }, $issues);
+                }
 
-                DB::table('crawl_issues')->upsert(
-                    $issueRows,
-                    ['crawl_run_id', 'url_hash', 'rule'],
-                    ['severity', 'detail', 'updated_at'],
-                );
+                foreach (array_chunk(array_values($dedupedIssues), 500) as $issueBatch) {
+                    DB::table('crawl_issues')->upsert(
+                        $issueBatch,
+                        ['crawl_run_id', 'url_hash', 'rule'],
+                        ['severity', 'detail', 'updated_at'],
+                    );
+                }
             }
         });
 
