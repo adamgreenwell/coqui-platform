@@ -8,6 +8,7 @@ use App\Domains\Backlinks\Services\BacklinkIntersectService;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\Workspace;
+use App\Domains\Serp\ReadOnlySpendScope;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -37,20 +38,26 @@ class BacklinkIntersectController extends Controller
         $maxSpam = max(0, min(100, (int) $request->input('max_spam', 100)));
         $minIntersections = max(1, min(3, (int) $request->input('min_intersections', 2)));
 
-        $intersectData = $this->intersectService->getIntersectData(
-            project: $project,
-            competitors: $competitors,
-            minRank: $minRank,
-            maxSpam: $maxSpam,
-            minIntersections: $minIntersections,
-            fresh: false,
-        );
+        $lookups = fn (): array => [
+            $this->intersectService->getIntersectData(
+                project: $project,
+                competitors: $competitors,
+                minRank: $minRank,
+                maxSpam: $maxSpam,
+                minIntersections: $minIntersections,
+                fresh: false,
+            ),
+            $this->intersectService->getBrokenReclaimOpportunities(
+                project: $project,
+                competitors: $competitors,
+                fresh: false,
+            ),
+        ];
 
-        $brokenReclaim = $this->intersectService->getBrokenReclaimOpportunities(
-            project: $project,
-            competitors: $competitors,
-            fresh: false,
-        );
+        // Page views by read-only members never trigger new paid lookups.
+        [$intersectData, $brokenReclaim] = Gate::allows('spend', $project)
+            ? $lookups()
+            : ReadOnlySpendScope::run($lookups);
 
         $configuredCompetitors = $project->competitors()->pluck('domain')->all();
 

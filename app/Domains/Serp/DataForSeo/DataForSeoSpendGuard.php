@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domains\Serp\DataForSeo;
 
 use App\Domains\Projects\Models\Workspace;
+use App\Domains\Serp\ReadOnlySpendScope;
 use Illuminate\Support\Facades\DB;
 
 class DataForSeoSpendGuard
@@ -14,6 +15,8 @@ class DataForSeoSpendGuard
         ?Workspace $workspace = null,
         bool $isScheduled = false,
     ): void {
+        ReadOnlySpendScope::assertSpendAllowed();
+
         if ($isScheduled && ! config('coqui.dataforseo.scheduled_spend')) {
             throw new DataForSeoBudgetException(
                 'Scheduled DataForSEO spend is disabled (DATAFORSEO_SCHEDULED_SPEND=false).'

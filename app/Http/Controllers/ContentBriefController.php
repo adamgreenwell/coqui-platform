@@ -37,10 +37,7 @@ class ContentBriefController extends Controller
                 ->where('keyword', strtolower($keyword))
                 ->latest('id')
                 ->first();
-
-            if ($brief === null && $request->boolean('generate', false)) {
-                $brief = $this->briefService->buildBrief($project, $keyword);
-            }
+            // Generation is paid and only happens via POST (requires the update policy).
         }
 
         $recentBriefs = $project->contentBriefs()

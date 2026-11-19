@@ -9,7 +9,9 @@ use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\Workspace;
 use App\Domains\Serp\DataForSeo\DataForSeoBudgetException;
 use App\Domains\Serp\DataForSeo\DataForSeoCacheRepository;
+use App\Domains\Serp\DataForSeo\DataForSeoReadOnlyException;
 use App\Domains\Serp\Models\TrackedKeyword;
+use App\Domains\Serp\ReadOnlySpendScope;
 use App\Domains\Serp\Services\KeywordGapService;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -89,17 +91,26 @@ class KeywordGapController extends Controller
         $gapMode = isset($validated['gap_mode']) && is_string($validated['gap_mode']) ? $validated['gap_mode'] : 'all';
         $bypassCache = ! empty($validated['bypass_cache']);
 
+        $canSpend = Gate::allows('spend', $project);
+        $analyze = fn (): array => $service->analyze(
+            project: $project,
+            competitorDomains: $competitors,
+            locationCode: $locationCode,
+            languageCode: $languageCode,
+            gapMode: $gapMode,
+            bypassCache: $bypassCache && $canSpend,
+        );
+
         try {
-            $result = $service->analyze(
-                project: $project,
-                competitorDomains: $competitors,
-                locationCode: $locationCode,
-                languageCode: $languageCode,
-                gapMode: $gapMode,
-                bypassCache: $bypassCache,
-            );
+            // Read-only members only receive cached gap data (no new paid lookups).
+            $result = $canSpend ? $analyze() : ReadOnlySpendScope::run($analyze);
 
             return response()->json($result);
+        } catch (DataForSeoReadOnlyException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'error' => 'read_only',
+            ], 403);
         } catch (DataForSeoBudgetException $e) {
             return response()->json([
                 'message' => $e->getMessage(),
