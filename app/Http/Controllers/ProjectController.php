@@ -185,6 +185,35 @@ class ProjectController extends Controller
         /** @var CrawlRun|null $latestCrawl */
         $latestCrawl = $project->crawlRuns()->latest('id')->first();
 
+        /** @var CrawlRun|null $latestSmoke */
+        $latestSmoke = $project->crawlRuns()
+            ->where('source', 'deploy_smoke')
+            ->latest('id')
+            ->first();
+
+        $deploySmoke = null;
+        if ($latestSmoke !== null) {
+            $smokeConfig = $latestSmoke->config;
+            /** @var array<string, mixed>|null $smokeResults */
+            $smokeResults = is_array($smokeConfig['smoke_results'] ?? null) ? $smokeConfig['smoke_results'] : null;
+            /** @var array<string, mixed>|null $smokeDeploy */
+            $smokeDeploy = is_array($smokeConfig['deploy'] ?? null) ? $smokeConfig['deploy'] : null;
+
+            $deploySmoke = [
+                'id' => $latestSmoke->id,
+                'externalCrawlId' => $latestSmoke->external_crawl_id,
+                'status' => $latestSmoke->status,
+                'passed' => $smokeResults['passed'] ?? ($latestSmoke->status === 'completed' && $latestSmoke->error_count === 0),
+                'smokeStatus' => $smokeResults['status'] ?? ($latestSmoke->status === 'completed' ? 'passed' : 'failed'),
+                'summary' => $smokeResults['summary'] ?? "Deploy smoke crawl {$latestSmoke->status}",
+                'regressions' => $smokeResults['regressions'] ?? [],
+                'totalUrlsChecked' => $smokeResults['total_urls_checked'] ?? $latestSmoke->total_urls,
+                'deploy' => $smokeDeploy,
+                'createdAt' => $latestSmoke->created_at instanceof CarbonInterface ? $latestSmoke->created_at->toIso8601String() : null,
+                'finalizedAt' => $latestSmoke->finalized_at instanceof CarbonInterface ? $latestSmoke->finalized_at->toIso8601String() : null,
+            ];
+        }
+
         /** @var list<array{id: int, domain: string, label: string|null, sort_order: int}> $competitors */
         $competitors = $project->competitors()
             ->orderBy('sort_order')
@@ -258,6 +287,9 @@ class ProjectController extends Controller
                     'last_synced_at' => $i->last_synced_at instanceof CarbonInterface ? $i->last_synced_at->toIso8601String() : null,
                 ])
                 ->all(),
+            'deploySmoke' => $deploySmoke,
+            'runnrWebhookUrl' => url('/api/webhooks/runnr/deploy'),
+            'runnrBadgeUrl' => url("/api/v1/projects/{$project->id}/deploy-smoke/badge"),
             'activities' => $activities,
             'canEdit' => $user->can('update', $project),
             'canDelete' => $user->can('delete', $project),

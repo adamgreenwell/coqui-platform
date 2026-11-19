@@ -7,6 +7,7 @@ namespace App\Domains\Crawls\Actions;
 use App\Domains\Crawls\DTOs\CrawlSyncPayload;
 use App\Domains\Crawls\Events\CrawlProgressUpdated;
 use App\Domains\Crawls\Models\CrawlRun;
+use App\Domains\Integrations\Services\RunnrDeploySmokeService;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use Illuminate\Support\Facades\DB;
@@ -227,6 +228,10 @@ class IngestDesktopCrawlSnapshot
                     'source' => $refreshed->source,
                 ]
             );
+        }
+
+        if ($refreshed->source === 'deploy_smoke') {
+            app(RunnrDeploySmokeService::class)->evaluate($refreshed);
         }
 
         return $refreshed;

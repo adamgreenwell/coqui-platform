@@ -90,6 +90,8 @@ Route::middleware(['auth'])->group(function (): void {
     Route::get('/workspaces/{workspace}/projects/{project}/integrations/google/connect', [ProjectIntegrationController::class, 'connectGoogle'])->name('workspaces.projects.integrations.google.connect');
     Route::get('/workspaces/{workspace}/projects/{project}/integrations/google/callback', [ProjectIntegrationController::class, 'callbackGoogle'])->name('workspaces.projects.integrations.google.callback');
     Route::post('/workspaces/{workspace}/projects/{project}/integrations/bing/connect', [ProjectIntegrationController::class, 'connectBing'])->name('workspaces.projects.integrations.bing.connect');
+    Route::post('/workspaces/{workspace}/projects/{project}/integrations/runnr/connect', [ProjectIntegrationController::class, 'connectRunnr'])->name('workspaces.projects.integrations.runnr.connect');
+    Route::delete('/workspaces/{workspace}/projects/{project}/integrations/runnr/disconnect', [ProjectIntegrationController::class, 'disconnectRunnr'])->name('workspaces.projects.integrations.runnr.disconnect');
     Route::post('/workspaces/{workspace}/projects/{project}/integrations/{integration}/sync', [ProjectIntegrationController::class, 'sync'])->name('workspaces.projects.integrations.sync');
     Route::delete('/workspaces/{workspace}/projects/{project}/integrations/{integration}', [ProjectIntegrationController::class, 'destroy'])->name('workspaces.projects.integrations.destroy');
 

@@ -36,11 +36,21 @@ class RunnrDeployWebhookController extends Controller
         $validated = $request->validate([
             'site_id' => ['required', 'string', 'max:120'],
             'deploy_url' => ['nullable', 'url', 'max:2048'],
+            'deploy_id' => ['nullable', 'string', 'max:120'],
+            'environment' => ['nullable', 'string', 'max:64'],
+            'commit_sha' => ['nullable', 'string', 'max:64'],
+            'callback_url' => ['nullable', 'url', 'max:2048'],
         ]);
 
         $run = $this->handler->handleDeploy(
             (string) $validated['site_id'],
             isset($validated['deploy_url']) ? (string) $validated['deploy_url'] : null,
+            [
+                'deploy_id' => isset($validated['deploy_id']) ? (string) $validated['deploy_id'] : null,
+                'environment' => isset($validated['environment']) ? (string) $validated['environment'] : null,
+                'commit_sha' => isset($validated['commit_sha']) ? (string) $validated['commit_sha'] : null,
+                'callback_url' => isset($validated['callback_url']) ? (string) $validated['callback_url'] : null,
+            ],
         );
 
         if ($run === null) {
