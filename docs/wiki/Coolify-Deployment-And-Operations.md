@@ -6,10 +6,10 @@ Production runs on a self-hosted **Coolify** server using `docker-compose.coolif
 
 | Service | Role | Exposure |
 | --- | --- | --- |
-| `nginx` | Serves static/Vite assets, passes PHP to `app`, proxies WebSockets on `/app` to `reverb` | Container port `80`; **assign the domain here** |
-| `app` | PHP 8.4-FPM running Laravel 13. Runs migrations and config/route/view caching on start | Internal `:9000` |
+| `app` | nginx: serves static/Vite assets, passes PHP to `php`, proxies WebSockets on `/app` to `reverb` | Container port `80`; **assign the domain here** |
+| `php` | PHP 8.4-FPM running Laravel 13. Runs migrations and config/route/view caching on start | Internal `:9000` (FastCGI, not HTTP) |
 | `horizon` | `php artisan horizon` processing `default`, `serp`, `crawls`, `backlinks`, `telemetry` | Internal |
-| `reverb` | `php artisan reverb:start` WebSocket server | Internal `:8080` (via nginx `/app`) |
+| `reverb` | `php artisan reverb:start` WebSocket server | Internal `:8080` (via `app` on `/app`) |
 | `scheduler` | `php artisan schedule:work` | Internal |
 | `postgres` | PostgreSQL 17, persistent `postgres_data` volume | Internal `:5432` |
 | `redis` | Redis 7 with AOF, used for queues, cache, sessions and Horizon | Internal `:6379` |
@@ -18,18 +18,18 @@ Production runs on a self-hosted **Coolify** server using `docker-compose.coolif
 
 ### Start-up order
 
-`postgres`/`redis` healthy → `app` migrates and caches config (becomes healthy only if the migration succeeds) → `nginx`, `horizon` and `scheduler` start. A failed migration keeps `app` unhealthy and the deploy fails instead of shipping a half-migrated app.
+`postgres`/`redis` healthy → `php` migrates and caches config (becomes healthy only if the migration succeeds) → `app` (nginx), `horizon` and `scheduler` start. A failed migration keeps `php` unhealthy and the deploy fails instead of shipping a half-migrated app.
 
 ## Creating the Resource in Coolify
 
 1. **New resource → Docker Compose** (from the GitHub repo, branch `main`), with compose file location `/docker-compose.coolify.yml`.
-2. **Domain:** set `https://<app domain>` on the **`nginx`** service only. Coolify's proxy issues the certificate and terminates TLS. Laravel trusts the forwarded headers (`bootstrap/app.php`), so URLs and redirects are generated as `https://`.
+2. **Domain:** set `https://<app domain>` on the **`app`** service only (it is nginx on port 80; `php` speaks FastCGI and would return 502). Coolify's proxy issues the certificate and terminates TLS. Laravel trusts the forwarded headers (`bootstrap/app.php`), so URLs and redirects are generated as `https://`.
 3. **Environment variables:** Coolify lists every `${VAR}` from the compose file. Fill in the checklist below. Mark **`REVERB_APP_KEY`** and **`VITE_REVERB_HOST`** (and any `VITE_*` you change) as available at build time, because Vite bakes them into the browser bundle.
 4. **Deploy.** Then check:
    - `https://<app domain>/up` returns 200.
    - The login page loads its CSS/JS over `https` (no mixed-content warnings).
    - Live updates connect: the browser console shows the WebSocket to `wss://<app domain>/app/...` open.
-5. **First account:** register through the UI. Then, from the `app` container's terminal:
+5. **First account:** register through the UI. Then, from the `php` container's terminal:
    - Grant yourself operator access, which is needed for the Horizon dashboard at `/horizon`: `php artisan coqui:operator <your email>`. Use `--revoke` to remove it.
    - If needed, set the workspace plan: `php artisan billing:set-tier <workspace id or slug> <free|pro|agency>`. Add `--runnr` for the Runnr add-on.
 
@@ -73,9 +73,9 @@ Production runs on a self-hosted **Coolify** server using `docker-compose.coolif
 ## Operations
 
 - **Logs:** Coolify → resource → service → Logs (Laravel writes to stderr).
-- **Artisan:** Coolify → `app` service → Terminal, for example `php artisan migrate:status` or `php artisan horizon:status`.
+- **Artisan:** Coolify → `php` service → Terminal, for example `php artisan migrate:status` or `php artisan horizon:status`.
 - **Backups:** enable Coolify's scheduled backups for the `postgres` service, or back up the `postgres_data` volume. `storage_data` holds uploaded/generated files.
-- **Redeploys:** the `public_assets` volume is refreshed from the new image on every `app` start, so stale assets are not served.
+- **Redeploys:** the `public_assets` volume is refreshed from the new image on every `php` start, so stale assets are not served.
 
 ## Scheduled Commands (`routes/console.php`)
 
