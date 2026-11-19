@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Domains\Billing\Models\WorkspaceSubscription;
+use App\Domains\Billing\Services\StripeWebhookSignature;
 use App\Domains\Crawls\Jobs\DispatchCloudCrawlJob;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
@@ -14,6 +15,7 @@ use App\Domains\Serp\Models\TrackedKeyword;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Testing\TestResponse;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Pennant\Feature;
@@ -27,6 +29,8 @@ class WorkspaceBillingTest extends TestCase
 
     private Workspace $workspace;
 
+    private const STRIPE_WEBHOOK_SECRET = 'whsec_test_billing';
+
     private Project $project;
 
     protected function setUp(): void
@@ -34,6 +38,7 @@ class WorkspaceBillingTest extends TestCase
         parent::setUp();
 
         config()->set('pennant.default', 'array');
+        config()->set('services.stripe.webhook_secret', self::STRIPE_WEBHOOK_SECRET);
 
         $this->owner = User::factory()->create();
         $this->workspace = Workspace::query()->create([
@@ -293,7 +298,7 @@ class WorkspaceBillingTest extends TestCase
             ],
         ];
 
-        $response = $this->postJson('/api/webhooks/stripe', $payload);
+        $response = $this->postStripeWebhook($payload);
 
         $response->assertOk();
         $response->assertJson([
@@ -350,7 +355,7 @@ class WorkspaceBillingTest extends TestCase
             ],
         ];
 
-        $response = $this->postJson('/api/webhooks/stripe', $payload);
+        $response = $this->postStripeWebhook($payload);
 
         $response->assertOk();
         $response->assertJson([
@@ -395,7 +400,7 @@ class WorkspaceBillingTest extends TestCase
             ],
         ];
 
-        $response = $this->postJson('/api/webhooks/stripe', $payload);
+        $response = $this->postStripeWebhook($payload);
 
         $response->assertOk();
         $response->assertJson([
@@ -434,10 +439,24 @@ class WorkspaceBillingTest extends TestCase
             ],
         ];
 
-        $response = $this->postJson('/api/webhooks/stripe', $payload);
+        $response = $this->postStripeWebhook($payload);
 
         $response->assertOk();
         $this->workspace->refresh();
         $this->assertSame('past_due', $this->workspace->subscription_status);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function postStripeWebhook(array $payload): TestResponse
+    {
+        $body = (string) json_encode($payload);
+
+        return $this->call('POST', '/api/webhooks/stripe', [], [], [], [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_ACCEPT' => 'application/json',
+            'HTTP_STRIPE_SIGNATURE' => StripeWebhookSignature::sign($body, self::STRIPE_WEBHOOK_SECRET),
+        ], $body);
     }
 }
