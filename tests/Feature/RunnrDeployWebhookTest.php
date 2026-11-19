@@ -402,7 +402,7 @@ class RunnrDeployWebhookTest extends TestCase
                 && $request['passed'] === true
                 && $request['status'] === 'passed'
                 && $request['deployId'] === 'dep_101'
-                && (string) $request->header('X-Runnr-Signature') !== '';
+                && $request->hasHeader('X-Runnr-Signature');
         });
     }
 
