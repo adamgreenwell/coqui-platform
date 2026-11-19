@@ -84,6 +84,107 @@ class DataForSeoClient
     }
 
     /**
+     * Direct live keyword overview post without whole-batch cache (used by KeywordResearchService).
+     *
+     * @param  list<string>  $keywords
+     * @return array<string, mixed>
+     */
+    public function keywordOverviewLive(
+        array $keywords,
+        ?Project $project = null,
+        int $locationCode = 2840,
+        string $languageCode = 'en',
+    ): array {
+        $endpoint = '/v3/dataforseo_labs/google/keyword_overview/live';
+        $normalizedKeywords = array_values(array_unique(array_filter(array_map(
+            static fn (string $k): string => strtolower(trim($k)),
+            $keywords,
+        ))));
+
+        if ($normalizedKeywords === []) {
+            return [];
+        }
+
+        $estimatedCost = (float) config('coqui.dataforseo.prices.labs_keyword_overview_task', 0.012)
+            + (count($normalizedKeywords) * (float) config('coqui.dataforseo.prices.labs_keyword_overview_item', 0.00012));
+
+        $this->spendGuard->assertCanSpend($estimatedCost, $project?->workspace);
+
+        $payload = [[
+            'keywords' => $normalizedKeywords,
+            'location_code' => $locationCode,
+            'language_code' => $languageCode,
+        ]];
+
+        return $this->postPaid(
+            endpoint: $endpoint,
+            payload: $payload,
+            mode: 'live',
+            estimatedCostUsd: $estimatedCost,
+            project: $project,
+        );
+    }
+
+    /**
+     * DataForSEO Labs related keywords lookup for a seed keyword.
+     *
+     * @return array<string, mixed>
+     */
+    public function relatedKeywords(
+        string $keyword,
+        ?Project $project = null,
+        int $locationCode = 2840,
+        string $languageCode = 'en',
+        int $limit = 100,
+        int $depth = 1,
+        bool $bypassCache = false,
+    ): array {
+        $endpoint = '/v3/dataforseo_labs/google/related_keywords/live';
+        $normalizedKeyword = strtolower(trim($keyword));
+
+        $signature = [
+            'keyword' => $normalizedKeyword,
+            'location_code' => $locationCode,
+            'language_code' => $languageCode,
+            'limit' => $limit,
+            'depth' => $depth,
+        ];
+
+        if (! $bypassCache) {
+            $cached = $this->cache->get($endpoint, $signature);
+            if ($cached !== null) {
+                return $cached;
+            }
+        }
+
+        $estimatedCost = (float) config('coqui.dataforseo.prices.labs_related_keywords_task', 0.012)
+            + ($limit * (float) config('coqui.dataforseo.prices.labs_related_keywords_item', 0.00012));
+
+        $this->spendGuard->assertCanSpend($estimatedCost, $project?->workspace);
+
+        $payload = [[
+            'keyword' => $normalizedKeyword,
+            'location_code' => $locationCode,
+            'language_code' => $languageCode,
+            'limit' => $limit,
+            'depth' => $depth,
+        ]];
+
+        $response = $this->postPaid(
+            endpoint: $endpoint,
+            payload: $payload,
+            mode: 'live',
+            estimatedCostUsd: $estimatedCost,
+            project: $project,
+        );
+
+        $ttl = (int) config('coqui.dataforseo.cache_ttl_hours.related_keywords', 720);
+        $this->cache->put($endpoint, $signature, $response, $ttl);
+
+        return $response;
+    }
+
+    /**
      * Submit Standard-queue SERP tasks with a signed postback URL.
      *
      * @param  list<array<string, mixed>>  $tasks

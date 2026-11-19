@@ -16,6 +16,7 @@ import {
   Search,
   Settings,
   Shield,
+  Sparkles,
   Trash2,
   Users,
 } from 'lucide-react';
@@ -288,6 +289,14 @@ export default function ProjectShow({
             >
               <Search className="h-3.5 w-3.5 text-emerald-400" />
               <span>Rank Tracker</span>
+            </Link>
+
+            <Link
+              href={`/workspaces/${workspace.id}/projects/${project.id}/keyword-explorer`}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-300 text-xs font-medium transition cursor-pointer"
+            >
+              <Sparkles className="h-3.5 w-3.5 text-sky-400" />
+              <span>Keyword Explorer</span>
             </Link>
 
             {canEdit && (

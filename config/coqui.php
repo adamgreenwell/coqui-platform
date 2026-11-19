@@ -30,6 +30,7 @@ return [
 
         'cache_ttl_hours' => [
             'keyword_overview' => 24 * 30,
+            'related_keywords' => 24 * 30,
             'domain_overview' => 24 * 14,
             'backlinks_summary' => 24 * 14,
             'serp_snapshot' => 24 * 7,
@@ -44,6 +45,8 @@ return [
             'serp_paa_surcharge' => 0.00015,
             'labs_keyword_overview_task' => 0.012,
             'labs_keyword_overview_item' => 0.00012,
+            'labs_related_keywords_task' => 0.012,
+            'labs_related_keywords_item' => 0.00012,
             'labs_domain_intersection_task' => 0.012,
             'labs_domain_intersection_item' => 0.00012,
             'backlinks_task' => 0.024,
