@@ -95,7 +95,7 @@ class DataForSeoCacheRepository
     /**
      * Batch store keyword metrics in a single upsert query.
      *
-     * @param  array<string, array<string, mixed>>  $keywordMetricsMap Map of keyword => metrics
+     * @param  array<string, array<string, mixed>>  $keywordMetricsMap  Map of keyword => metrics
      */
     public function putKeywordMetricsBatch(
         array $keywordMetricsMap,
