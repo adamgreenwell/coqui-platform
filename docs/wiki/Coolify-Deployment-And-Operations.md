@@ -29,7 +29,9 @@ Production runs on a self-hosted **Coolify** server using `docker-compose.coolif
    - `https://<app domain>/up` returns 200.
    - The login page loads its CSS/JS over `https` (no mixed-content warnings).
    - Live updates connect: the browser console shows the WebSocket to `wss://<app domain>/app/...` open.
-5. **First account:** register through the UI, then, if needed, set its plan from the `app` container's terminal with `php artisan billing:set-tier <workspace id or slug> <free|pro|agency>` (add `--runnr` for the Runnr add-on).
+5. **First account:** register through the UI. Then, from the `app` container's terminal:
+   - Grant yourself operator access, which is needed for the Horizon dashboard at `/horizon`: `php artisan coqui:operator <your email>`. Use `--revoke` to remove it.
+   - If needed, set the workspace plan: `php artisan billing:set-tier <workspace id or slug> <free|pro|agency>`. Add `--runnr` for the Runnr add-on.
 
 ## Environment Variable Checklist
 
