@@ -102,23 +102,4 @@ class WorkspaceBillingController extends Controller
 
         return redirect()->away($portalUrl);
     }
-
-    public function changeTier(Request $request, Workspace $workspace): RedirectResponse
-    {
-        Gate::authorize('update', $workspace);
-
-        $validated = $request->validate([
-            'plan_tier' => ['required', 'string', 'in:free,pro,agency'],
-            'has_runnr_addon' => ['nullable', 'boolean'],
-        ]);
-
-        $tier = (string) $validated['plan_tier'];
-        $hasRunnrAddon = (bool) ($validated['has_runnr_addon'] ?? false);
-
-        $workspace->applyPlanTier($tier, $hasRunnrAddon);
-
-        return redirect()
-            ->route('workspaces.billing.index', $workspace)
-            ->with('success', "Workspace plan updated to {$tier}. Quotas and feature entitlements have been recalibrated.");
-    }
 }

@@ -79,18 +79,6 @@ export default function WorkspaceBilling({
     );
   };
 
-  const handleDirectSwitch = (tier: string) => {
-    setProcessingTier(tier);
-    router.post(
-      `/workspaces/${workspace.id}/billing/change-tier`,
-      { plan_tier: tier },
-      {
-        preserveScroll: true,
-        onFinish: () => setProcessingTier(null),
-      }
-    );
-  };
-
   const handlePortal = () => {
     router.post(`/workspaces/${workspace.id}/billing/portal`);
   };
@@ -310,11 +298,12 @@ export default function WorkspaceBilling({
                 ) : (
                   <button
                     type="button"
-                    onClick={() => handleDirectSwitch('free')}
-                    disabled={processingTier !== null}
+                    onClick={handlePortal}
+                    disabled={processingTier !== null || !canEdit}
+                    title="Cancel or change your subscription in the Stripe customer portal"
                     className="w-full py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs transition cursor-pointer"
                   >
-                    Downgrade to Free
+                    Downgrade via Billing Portal
                   </button>
                 )}
               </div>
