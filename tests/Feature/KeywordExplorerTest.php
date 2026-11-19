@@ -483,6 +483,40 @@ class KeywordExplorerTest extends TestCase
         $this->assertSame(31, $kw2->keyword_difficulty);
     }
 
+    public function test_tracking_preserves_item_specific_locale_and_supports_large_batches(): void
+    {
+        $items = [];
+        for ($i = 1; $i <= 120; $i++) {
+            $items[] = [
+                'keyword' => "bulk item {$i}",
+                'search_volume' => 1000 + $i,
+                'keyword_difficulty' => 45,
+                'location_code' => 2276, // Germany
+                'language_code' => 'de',
+            ];
+        }
+
+        $response = $this->actingAs($this->user)
+            ->postJson("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-explorer/track", [
+                'keywords' => $items,
+                'device' => 'desktop',
+                'cadence' => 'weekly',
+            ]);
+
+        $response->assertOk();
+        $response->assertJsonPath('count', 120);
+
+        $germanKw = TrackedKeyword::query()
+            ->where('project_id', $this->project->id)
+            ->where('keyword', 'bulk item 1')
+            ->first();
+
+        $this->assertNotNull($germanKw);
+        $this->assertSame(2276, $germanKw->location_code);
+        $this->assertSame('de', $germanKw->language_code);
+        $this->assertSame(1001, $germanKw->search_volume);
+    }
+
     public function test_unauthorized_user_cannot_access_keyword_explorer_or_track_keywords(): void
     {
         $otherUser = User::factory()->create();

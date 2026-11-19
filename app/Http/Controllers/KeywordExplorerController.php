@@ -195,7 +195,7 @@ class KeywordExplorerController extends Controller
         Gate::authorize('update', $project);
 
         $validated = $request->validate([
-            'keywords' => ['required', 'array', 'min:1', 'max:100'],
+            'keywords' => ['required', 'array', 'min:1', 'max:700'],
             'device' => ['nullable', 'string', 'in:desktop,mobile'],
             'cadence' => ['nullable', 'string', 'in:daily,weekly'],
             'location_code' => ['nullable', 'integer'],

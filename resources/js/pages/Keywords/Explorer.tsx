@@ -108,12 +108,17 @@ const COMMON_LANGUAGES = [
   { code: 'pt', label: 'Portuguese (pt)' },
 ];
 
-function getCsrfToken(): string {
-  if (typeof document === 'undefined') return '';
+function getCsrfHeaders(): Record<string, string> {
+  if (typeof document === 'undefined') return {};
   const meta = document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement | null;
-  if (meta?.content) return meta.content;
+  if (meta?.content) {
+    return { 'X-CSRF-TOKEN': meta.content };
+  }
   const match = document.cookie.match(/XSRF-TOKEN=([^;]+)/);
-  return match ? decodeURIComponent(match[1]) : '';
+  if (match) {
+    return { 'X-XSRF-TOKEN': decodeURIComponent(match[1]) };
+  }
+  return {};
 }
 
 function formatNumber(num: number | null | undefined): string {
@@ -292,8 +297,8 @@ export default function KeywordExplorer({
           headers: {
             'Content-Type': 'application/json',
             Accept: 'application/json',
-            'X-CSRF-TOKEN': getCsrfToken(),
             'X-Requested-With': 'XMLHttpRequest',
+            ...getCsrfHeaders(),
           },
           body: JSON.stringify({
             keyword: seedKeyword.trim(),
@@ -337,8 +342,8 @@ export default function KeywordExplorer({
           headers: {
             'Content-Type': 'application/json',
             Accept: 'application/json',
-            'X-CSRF-TOKEN': getCsrfToken(),
             'X-Requested-With': 'XMLHttpRequest',
+            ...getCsrfHeaders(),
           },
           body: JSON.stringify({
             keywords: bulkInput,
@@ -383,34 +388,42 @@ export default function KeywordExplorer({
     setErrorMsg(null);
 
     try {
-      const response = await fetch(
-        `/workspaces/${workspace.id}/projects/${project.id}/keyword-explorer/track`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Accept: 'application/json',
-            'X-CSRF-TOKEN': getCsrfToken(),
-            'X-Requested-With': 'XMLHttpRequest',
-          },
-          body: JSON.stringify({
-            keywords: keywordsToTrack.map((k) => ({
-              keyword: k.keyword,
-              search_volume: k.search_volume,
-              keyword_difficulty: k.keyword_difficulty,
-            })),
-            device: trackDevice,
-            cadence: trackCadence,
-            location_code: locationCode,
-            language_code: languageCode,
-          }),
+      const CHUNK_SIZE = 100;
+      let totalAdded = 0;
+
+      for (let i = 0; i < keywordsToTrack.length; i += CHUNK_SIZE) {
+        const chunk = keywordsToTrack.slice(i, i + CHUNK_SIZE);
+        const response = await fetch(
+          `/workspaces/${workspace.id}/projects/${project.id}/keyword-explorer/track`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Accept: 'application/json',
+              'X-Requested-With': 'XMLHttpRequest',
+              ...getCsrfHeaders(),
+            },
+            body: JSON.stringify({
+              keywords: chunk.map((k) => ({
+                keyword: k.keyword,
+                search_volume: k.search_volume,
+                keyword_difficulty: k.keyword_difficulty,
+                location_code: k.location_code,
+                language_code: k.language_code,
+              })),
+              device: trackDevice,
+              cadence: trackCadence,
+            }),
+          }
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || 'Failed to add keywords to Rank Tracker.');
         }
-      );
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || 'Failed to add keywords to Rank Tracker.');
+        totalAdded += typeof data.count === 'number' ? data.count : chunk.length;
       }
 
       // Update local set
@@ -423,7 +436,7 @@ export default function KeywordExplorer({
       setSelectedKeywords(new Set());
       setTrackModalOpen(false);
       setSuccessMsg(
-        `Added ${keywordsToTrack.length} keyword(s) to Rank Tracker for ${trackDevice} monitoring!`
+        `Added ${totalAdded} keyword(s) to Rank Tracker for ${trackDevice} monitoring!`
       );
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Failed to track keywords.';
@@ -1350,8 +1363,16 @@ export default function KeywordExplorer({
                 <div className="rounded-lg bg-slate-950/60 border border-slate-800 p-2.5 text-[11px] text-slate-400">
                   Target Project: <span className="text-white font-mono">{project.domain}</span>
                   <br />
-                  Location: <span className="text-white font-mono">{locationCode}</span> • Language:{' '}
-                  <span className="text-white font-mono">{languageCode.toUpperCase()}</span>
+                  Market:{' '}
+                  <span className="text-white font-mono">
+                    {Array.from(
+                      new Set(
+                        keywordsToTrack.map(
+                          (k) => `LOC:${k.location_code} (${k.language_code.toUpperCase()})`
+                        )
+                      )
+                    ).join(', ')}
+                  </span>
                 </div>
               </div>
 
