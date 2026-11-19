@@ -28,7 +28,7 @@ class PublicCrawlDiffController extends Controller
 
         return Inertia::render('Crawls/Compare', [
             'workspace' => [
-                'name' => $report->project->workspace?->name ?? 'Coqui SEO Workspace',
+                'name' => $report->project->workspace->name,
             ],
             'project' => [
                 'id' => $report->project->id,

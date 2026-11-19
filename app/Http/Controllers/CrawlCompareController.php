@@ -72,7 +72,9 @@ class CrawlCompareController extends Controller
         } elseif (count($availableRuns) >= 2) {
             // Default target is latest run, baseline is previous run
             $targetRun = $project->crawlRuns()->latest('id')->first();
-            $baselineRun = $project->crawlRuns()->where('id', '<', $targetRun?->id ?? 0)->latest('id')->first();
+            $baselineRun = $targetRun !== null
+                ? $project->crawlRuns()->where('id', '<', $targetRun->id)->latest('id')->first()
+                : null;
         }
 
         $diff = null;
