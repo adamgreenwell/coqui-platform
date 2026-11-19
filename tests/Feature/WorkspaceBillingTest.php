@@ -31,6 +31,8 @@ class WorkspaceBillingTest extends TestCase
     {
         parent::setUp();
 
+        config()->set('pennant.default', 'array');
+
         $this->owner = User::factory()->create();
         $this->workspace = Workspace::query()->create([
             'name' => 'Acme Billing Workspace',
@@ -64,7 +66,7 @@ class WorkspaceBillingTest extends TestCase
             ->has('usage')
             ->where('usage.keywords_limit', 100)
             ->where('usage.crawl_urls_limit', 1000)
-            ->where('usage.dfs_budget_usd', 25.0)
+            ->where('usage.dfs_budget_usd', fn ($val): bool => (float) $val === 25.0)
             ->has('plans')
             ->has('invoices')
             ->where('canEdit', true)
@@ -79,7 +81,6 @@ class WorkspaceBillingTest extends TestCase
             $keywords[] = [
                 'project_id' => $this->project->id,
                 'keyword' => "keyword-{$i}",
-                'normalized_keyword' => "keyword-{$i}",
                 'device' => 'desktop',
                 'location_code' => 2840,
                 'language_code' => 'en',
@@ -126,7 +127,7 @@ class WorkspaceBillingTest extends TestCase
     {
         // Free tier has 1,000 URL limit - test controller endpoint
         $response = $this->actingAs($this->owner)
-            ->post(route('workspaces.projects.crawls.cloud', [$this->workspace, $this->project]), [
+            ->post(route('workspaces.projects.crawls.dispatch', [$this->workspace, $this->project]), [
                 'max_urls' => 5000,
             ]);
 
@@ -136,7 +137,7 @@ class WorkspaceBillingTest extends TestCase
         $this->workspace->applyPlanTier('pro');
 
         $allowedResponse = $this->actingAs($this->owner)
-            ->post(route('workspaces.projects.crawls.cloud', [$this->workspace, $this->project]), [
+            ->post(route('workspaces.projects.crawls.dispatch', [$this->workspace, $this->project]), [
                 'max_urls' => 5000,
             ]);
 
@@ -157,19 +158,19 @@ class WorkspaceBillingTest extends TestCase
         // Enabled via workspace add-on
         $this->workspace->update(['has_runnr_addon' => true]);
         $this->assertTrue($this->workspace->hasRunnrEntitlement());
-        $this->assertTrue($this->project->hasRunnrEntitlement());
+        $this->assertTrue($this->project->refresh()->hasRunnrEntitlement());
 
         // Reset add-on and test agency plan tier
         $this->workspace->update(['has_runnr_addon' => false, 'plan_tier' => 'agency']);
         $this->assertTrue($this->workspace->hasRunnrEntitlement());
-        $this->assertTrue($this->project->hasRunnrEntitlement());
+        $this->assertTrue($this->project->refresh()->hasRunnrEntitlement());
 
         // Reset workspace to free, test project-level runnr_site_id
         $this->workspace->update(['plan_tier' => 'free']);
         $this->assertFalse($this->workspace->hasRunnrEntitlement());
 
         $this->project->update(['runnr_site_id' => 'runnr_site_xyz789']);
-        $this->assertTrue($this->project->hasRunnrEntitlement());
+        $this->assertTrue($this->project->refresh()->hasRunnrEntitlement());
     }
 
     public function test_dataforseo_spend_allowance_limit_enforcement(): void
@@ -201,6 +202,7 @@ class WorkspaceBillingTest extends TestCase
     public function test_pennant_feature_flags_by_plan_tier(): void
     {
         // Free tier checks
+        Feature::flushCache();
         $this->workspace->applyPlanTier('free');
         $this->assertFalse(Feature::for($this->workspace)->active('content-briefs'));
         $this->assertFalse(Feature::for($this->workspace)->active('backlink-intelligence'));
@@ -209,6 +211,7 @@ class WorkspaceBillingTest extends TestCase
         $this->assertFalse(Feature::for($this->workspace)->active('runnr-smoke-tests'));
 
         // Pro tier checks
+        Feature::flushCache();
         $this->workspace->applyPlanTier('pro');
         $this->assertTrue(Feature::for($this->workspace)->active('content-briefs'));
         $this->assertTrue(Feature::for($this->workspace)->active('backlink-intelligence'));
@@ -218,6 +221,7 @@ class WorkspaceBillingTest extends TestCase
         $this->assertFalse(Feature::for($this->workspace)->active('runnr-smoke-tests'));
 
         // Agency tier checks
+        Feature::flushCache();
         $this->workspace->applyPlanTier('agency');
         $this->assertTrue(Feature::for($this->workspace)->active('content-briefs'));
         $this->assertTrue(Feature::for($this->workspace)->active('backlink-intelligence'));
