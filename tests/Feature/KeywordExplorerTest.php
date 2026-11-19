@@ -65,6 +65,15 @@ class KeywordExplorerTest extends TestCase
             'cadence' => 'weekly',
         ]);
 
+        TrackedKeyword::query()->create([
+            'project_id' => $this->project->id,
+            'keyword' => 'rank tracking tool',
+            'device' => 'mobile',
+            'location_code' => 2840,
+            'language_code' => 'en',
+            'cadence' => 'weekly',
+        ]);
+
         $response = $this->actingAs($this->user)
             ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-explorer");
 
@@ -74,7 +83,10 @@ class KeywordExplorerTest extends TestCase
             ->has('workspace')
             ->has('project')
             ->where('project.domain', 'coquiseo.com')
-            ->where('trackedKeywords', ['rank tracking tool:2840:en'])
+            ->where('trackedKeywords', [
+                'rank tracking tool:desktop:2840:en',
+                'rank tracking tool:mobile:2840:en',
+            ])
             ->where('defaultLocationCode', 2840)
             ->where('defaultLanguageCode', 'en')
         );

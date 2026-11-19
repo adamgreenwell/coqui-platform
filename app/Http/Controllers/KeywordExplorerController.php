@@ -30,11 +30,12 @@ class KeywordExplorerController extends Controller
 
         /** @var list<string> $trackedKeywords */
         $trackedKeywords = $project->trackedKeywords()
-            ->select(['keyword', 'location_code', 'language_code'])
+            ->select(['keyword', 'device', 'location_code', 'language_code'])
             ->get()
             ->map(static fn (TrackedKeyword $k): string => sprintf(
-                '%s:%d:%s',
+                '%s:%s:%d:%s',
                 strtolower(trim($k->keyword)),
+                strtolower(trim($k->device)),
                 $k->location_code,
                 strtolower(trim($k->language_code)),
             ))
@@ -291,8 +292,9 @@ class KeywordExplorerController extends Controller
                 }
 
                 $trackedKeywords[] = sprintf(
-                    '%s:%d:%s',
+                    '%s:%s:%d:%s',
                     strtolower($kw),
+                    strtolower($device),
                     $itemLocation,
                     strtolower($itemLanguage),
                 );

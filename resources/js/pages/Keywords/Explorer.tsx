@@ -128,8 +128,13 @@ function formatNumber(num: number | null | undefined): string {
   return num.toLocaleString();
 }
 
-function makeTrackedKey(keyword: string, locationCode: number, languageCode: string): string {
-  return `${keyword.toLowerCase().trim()}:${locationCode}:${languageCode.toLowerCase().trim()}`;
+function makeTrackedKey(
+  keyword: string,
+  device: string,
+  locationCode: number,
+  languageCode: string
+): string {
+  return `${keyword.toLowerCase().trim()}:${device.toLowerCase().trim()}:${locationCode}:${languageCode.toLowerCase().trim()}`;
 }
 
 function MiniTrendBars({ monthlySearches }: { monthlySearches: MonthlySearch[] }) {
@@ -373,7 +378,22 @@ export default function KeywordExplorer({
     }
   };
 
-  const openTrackSingle = (item: KeywordItem) => {
+  const openTrackSingle = (item: KeywordItem, preferredDevice?: 'desktop' | 'mobile') => {
+    if (preferredDevice) {
+      setTrackDevice(preferredDevice);
+    } else {
+      const isDesktop = trackedSet.has(
+        makeTrackedKey(item.keyword, 'desktop', item.location_code, item.language_code)
+      );
+      const isMobile = trackedSet.has(
+        makeTrackedKey(item.keyword, 'mobile', item.location_code, item.language_code)
+      );
+      if (isDesktop && !isMobile) {
+        setTrackDevice('mobile');
+      } else if (isMobile && !isDesktop) {
+        setTrackDevice('desktop');
+      }
+    }
     setKeywordsToTrack([item]);
     setTrackModalOpen(true);
   };
@@ -381,10 +401,10 @@ export default function KeywordExplorer({
   const openTrackSelected = () => {
     const items = results.filter((r) => {
       const isSelected = selectedKeywords.has(r.keyword.toLowerCase());
-      const isTracked = trackedSet.has(
-        makeTrackedKey(r.keyword, r.location_code, r.language_code)
-      );
-      return isSelected && !isTracked;
+      const isFullyTracked =
+        trackedSet.has(makeTrackedKey(r.keyword, 'desktop', r.location_code, r.language_code)) &&
+        trackedSet.has(makeTrackedKey(r.keyword, 'mobile', r.location_code, r.language_code));
+      return isSelected && !isFullyTracked;
     });
     if (items.length === 0) return;
     setKeywordsToTrack(items);
@@ -436,11 +456,11 @@ export default function KeywordExplorer({
         totalAdded += typeof data.count === 'number' ? data.count : chunk.length;
       }
 
-      // Update local set
+      // Update local set with newly tracked device
       setTrackedSet((prev) => {
         const next = new Set(prev);
         keywordsToTrack.forEach((k) => {
-          next.add(makeTrackedKey(k.keyword, k.location_code, k.language_code));
+          next.add(makeTrackedKey(k.keyword, trackDevice, k.location_code, k.language_code));
         });
         return next;
       });
@@ -515,24 +535,32 @@ export default function KeywordExplorer({
   }, [results, searchFilter, intentFilter, kdFilter, volumeFilter, sortBy]);
 
   const selectedUntrackedCount = useMemo(() => {
-    return filteredKeywords.filter(
-      (k) =>
-        selectedKeywords.has(k.keyword.toLowerCase()) &&
-        !trackedSet.has(makeTrackedKey(k.keyword, k.location_code, k.language_code))
-    ).length;
+    return filteredKeywords.filter((k) => {
+      const isSelected = selectedKeywords.has(k.keyword.toLowerCase());
+      const isFullyTracked =
+        trackedSet.has(makeTrackedKey(k.keyword, 'desktop', k.location_code, k.language_code)) &&
+        trackedSet.has(makeTrackedKey(k.keyword, 'mobile', k.location_code, k.language_code));
+      return isSelected && !isFullyTracked;
+    }).length;
   }, [filteredKeywords, selectedKeywords, trackedSet]);
 
   const filteredUntrackedCount = useMemo(() => {
-    return filteredKeywords.filter(
-      (k) => !trackedSet.has(makeTrackedKey(k.keyword, k.location_code, k.language_code))
-    ).length;
+    return filteredKeywords.filter((k) => {
+      const isFullyTracked =
+        trackedSet.has(makeTrackedKey(k.keyword, 'desktop', k.location_code, k.language_code)) &&
+        trackedSet.has(makeTrackedKey(k.keyword, 'mobile', k.location_code, k.language_code));
+      return !isFullyTracked;
+    }).length;
   }, [filteredKeywords, trackedSet]);
 
   const toggleSelectAll = () => {
     const untracked = filteredKeywords
-      .filter(
-        (k) => !trackedSet.has(makeTrackedKey(k.keyword, k.location_code, k.language_code))
-      )
+      .filter((k) => {
+        const isFullyTracked =
+          trackedSet.has(makeTrackedKey(k.keyword, 'desktop', k.location_code, k.language_code)) &&
+          trackedSet.has(makeTrackedKey(k.keyword, 'mobile', k.location_code, k.language_code));
+        return !isFullyTracked;
+      })
       .map((k) => k.keyword.toLowerCase());
 
     if (untracked.length === 0) return;
@@ -576,19 +604,32 @@ export default function KeywordExplorer({
       'Tracked',
     ];
 
-    const rows = itemsToExport.map((item) => [
-      `"${item.keyword.replace(/"/g, '""')}"`,
-      item.search_volume ?? '',
-      item.keyword_difficulty ?? '',
-      item.main_intent ?? '',
-      item.cpc ? item.cpc.toFixed(2) : '',
-      item.competition ?? '',
-      trackedSet.has(
-        makeTrackedKey(item.keyword, item.location_code, item.language_code)
-      )
-        ? 'Yes'
-        : 'No',
-    ]);
+    const rows = itemsToExport.map((item) => {
+      const isDesktop = trackedSet.has(
+        makeTrackedKey(item.keyword, 'desktop', item.location_code, item.language_code)
+      );
+      const isMobile = trackedSet.has(
+        makeTrackedKey(item.keyword, 'mobile', item.location_code, item.language_code)
+      );
+      const trackedStatus =
+        isDesktop && isMobile
+          ? 'Desktop & Mobile'
+          : isDesktop
+          ? 'Desktop'
+          : isMobile
+          ? 'Mobile'
+          : 'No';
+
+      return [
+        `"${item.keyword.replace(/"/g, '""')}"`,
+        item.search_volume ?? '',
+        item.keyword_difficulty ?? '',
+        item.main_intent ?? '',
+        item.cpc ? item.cpc.toFixed(2) : '',
+        item.competition ?? '',
+        trackedStatus,
+      ];
+    });
 
     const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -1090,8 +1131,8 @@ export default function KeywordExplorer({
                         className="rounded border-slate-700 bg-slate-900 text-sky-500 focus:ring-sky-500 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
                         title={
                           filteredUntrackedCount === 0
-                            ? 'All visible keywords are already tracked'
-                            : 'Select all untracked keywords'
+                            ? 'All visible keywords are tracked on both desktop and mobile'
+                            : 'Select all keywords with untracked devices'
                         }
                       />
                     </th>
@@ -1115,24 +1156,28 @@ export default function KeywordExplorer({
                     </tr>
                   ) : (
                     filteredKeywords.map((item) => {
-                      const isTracked = trackedSet.has(
-                        makeTrackedKey(item.keyword, item.location_code, item.language_code)
+                      const isDesktopTracked = trackedSet.has(
+                        makeTrackedKey(item.keyword, 'desktop', item.location_code, item.language_code)
                       );
+                      const isMobileTracked = trackedSet.has(
+                        makeTrackedKey(item.keyword, 'mobile', item.location_code, item.language_code)
+                      );
+                      const isFullyTracked = isDesktopTracked && isMobileTracked;
                       const isSelected = selectedKeywords.has(item.keyword.toLowerCase());
 
                       return (
                         <tr
                           key={item.keyword}
                           className={`hover:bg-slate-800/30 transition ${
-                            isSelected && !isTracked ? 'bg-sky-500/5' : ''
+                            isSelected && !isFullyTracked ? 'bg-sky-500/5' : ''
                           }`}
                         >
                           {/* Checkbox */}
                           <td className="py-3 px-3">
-                            {isTracked ? (
+                            {isFullyTracked ? (
                               <span
                                 className="inline-flex h-4 w-4 rounded border border-slate-800 bg-slate-900/50 text-slate-600 items-center justify-center cursor-not-allowed"
-                                title="Already tracked in this market"
+                                title="Already tracked on desktop & mobile in this market"
                               >
                                 <Check className="h-2.5 w-2.5 text-slate-600" />
                               </span>
@@ -1230,10 +1275,49 @@ export default function KeywordExplorer({
 
                           {/* Actions */}
                           <td className="py-3 px-3 text-right">
-                            {isTracked ? (
-                              <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                            {isFullyTracked ? (
+                              <span
+                                className="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20"
+                                title="Tracked on both Desktop and Mobile in this market"
+                              >
                                 <CheckCircle2 className="h-3 w-3" /> Tracked
                               </span>
+                            ) : isDesktopTracked ? (
+                              <div className="inline-flex items-center justify-end gap-1.5">
+                                <span
+                                  className="text-[10px] text-emerald-400 font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20"
+                                  title="Currently tracked on Desktop"
+                                >
+                                  Desktop
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => openTrackSingle(item, 'mobile')}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-emerald-500/20 hover:text-emerald-400 hover:border-emerald-500/30 border border-slate-700 text-slate-300 text-[11px] font-medium transition cursor-pointer"
+                                  title="Add Mobile tracking for this keyword"
+                                >
+                                  <Plus className="h-3 w-3" />
+                                  <span>+ Mobile</span>
+                                </button>
+                              </div>
+                            ) : isMobileTracked ? (
+                              <div className="inline-flex items-center justify-end gap-1.5">
+                                <span
+                                  className="text-[10px] text-emerald-400 font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20"
+                                  title="Currently tracked on Mobile"
+                                >
+                                  Mobile
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => openTrackSingle(item, 'desktop')}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-emerald-500/20 hover:text-emerald-400 hover:border-emerald-500/30 border border-slate-700 text-slate-300 text-[11px] font-medium transition cursor-pointer"
+                                  title="Add Desktop tracking for this keyword"
+                                >
+                                  <Plus className="h-3 w-3" />
+                                  <span>+ Desktop</span>
+                                </button>
+                              </div>
                             ) : (
                               <button
                                 type="button"
@@ -1385,6 +1469,26 @@ export default function KeywordExplorer({
                         <Smartphone className="h-3 w-3" /> Mobile
                       </button>
                     </div>
+                    {keywordsToTrack.length === 1 && (
+                      <div className="text-[10px] text-slate-400 mt-1">
+                        {trackedSet.has(
+                          makeTrackedKey(
+                            keywordsToTrack[0].keyword,
+                            trackDevice,
+                            keywordsToTrack[0].location_code,
+                            keywordsToTrack[0].language_code
+                          )
+                        ) ? (
+                          <span className="text-amber-400">
+                            Already tracked on {trackDevice} (will backfill metrics)
+                          </span>
+                        ) : (
+                          <span className="text-emerald-400">
+                            Will add new {trackDevice} monitor
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div>
