@@ -413,28 +413,26 @@ class CrawlCompareTest extends TestCase
 
         $response->assertOk();
         $response->assertJsonStructure([
-            'baseline' => ['id', 'externalCrawlId', 'status', 'totalUrls'],
-            'target' => ['id', 'externalCrawlId', 'status', 'totalUrls'],
-            'diff' => [
-                'summary' => [
-                    'delta' => [
-                        'totalUrls',
-                        'newUrlsCount',
-                        'removedUrlsCount',
-                        'newlyBrokenCount',
-                        'statusChangesCount',
-                        'newIssuesCount',
-                        'resolvedIssuesCount',
-                        'persistentIssuesCount',
-                        'trafficImpactedBrokenUrls',
-                        'totalLostClicks',
-                    ],
+            'summary' => [
+                'baseline' => ['id', 'externalCrawlId', 'status', 'totalUrls'],
+                'target' => ['id', 'externalCrawlId', 'status', 'totalUrls'],
+                'delta' => [
+                    'totalUrls',
+                    'newUrlsCount',
+                    'removedUrlsCount',
+                    'newlyBrokenCount',
+                    'statusChangesCount',
+                    'newIssuesCount',
+                    'resolvedIssuesCount',
+                    'persistentIssuesCount',
+                    'trafficImpactedBrokenUrls',
+                    'totalLostClicks',
                 ],
-                'newlyBroken',
-                'transitions',
-                'issueDeltas',
-                'urlSamples',
             ],
+            'newlyBroken',
+            'transitions',
+            'issueDeltas',
+            'urlSamples',
         ]);
     }
 
