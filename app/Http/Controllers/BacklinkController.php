@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Domains\Backlinks\Services\BacklinkProfileService;
+use App\Domains\Backlinks\Services\BacklinkTimelineService;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\Workspace;
@@ -18,13 +19,20 @@ class BacklinkController extends Controller
 {
     public function __construct(
         private readonly BacklinkProfileService $backlinkService,
+        private readonly BacklinkTimelineService $timelineService,
     ) {}
 
     public function index(Request $request, Workspace $workspace, Project $project): Response
     {
         Gate::authorize('view', $project);
 
+        $days = (int) $request->input('days', 90);
+        if ($days <= 0) {
+            $days = 90;
+        }
+
         $profile = $this->backlinkService->getBacklinkProfile($project, false);
+        $timelineData = $this->timelineService->getTimelineData($project, $days, false);
 
         return Inertia::render('Backlinks/Index', [
             'workspace' => [
@@ -44,6 +52,12 @@ class BacklinkController extends Controller
             'topPages' => $profile['top_pages'],
             'brokenPages' => $profile['broken_pages_needing_redirects'],
             'crawlRun' => $profile['crawl_run'],
+            'timeline' => $timelineData['timeline'],
+            'newDomains' => $timelineData['new_domains'],
+            'lostDomains' => $timelineData['lost_domains'],
+            'velocity' => $timelineData['velocity'],
+            'alerts' => $timelineData['alerts'],
+            'selectedDays' => $days,
         ]);
     }
 
@@ -51,7 +65,13 @@ class BacklinkController extends Controller
     {
         Gate::authorize('update', $project);
 
+        $days = (int) $request->input('days', 90);
+        if ($days <= 0) {
+            $days = 90;
+        }
+
         $profile = $this->backlinkService->getBacklinkProfile($project, true);
+        $this->timelineService->syncHistorySnapshots($project, $days);
 
         ProjectActivity::log(
             project: $project,
@@ -72,7 +92,12 @@ class BacklinkController extends Controller
             user: $request->user(),
         );
 
-        return redirect()->route('workspaces.projects.backlinks.index', [$workspace, $project])
-            ->with('success', sprintf('Backlink profile for %s successfully refreshed.', $project->domain));
+        $redirectParams = [$workspace, $project];
+        if ($request->has('days')) {
+            $redirectParams['days'] = $days;
+        }
+
+        return redirect()->route('workspaces.projects.backlinks.index', $redirectParams)
+            ->with('success', sprintf('Backlink profile and history timeline for %s successfully refreshed.', $project->domain));
     }
 }
