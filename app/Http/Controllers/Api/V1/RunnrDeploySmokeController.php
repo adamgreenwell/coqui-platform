@@ -10,14 +10,17 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Gate;
 
 class RunnrDeploySmokeController extends Controller
 {
     /**
      * Render an embeddable SVG status badge for the project's Runnr post-deploy smoke tests.
      */
-    public function badge(Request $request, Project $project): Response
+    public function badge(Request $request, string $token): Response
     {
+        $project = Project::query()->where('deploy_badge_token', $token)->firstOrFail();
+
         /** @var CrawlRun|null $latestRun */
         $latestRun = CrawlRun::query()
             ->where('project_id', $project->id)
@@ -108,6 +111,8 @@ SVG;
      */
     public function latest(Request $request, Project $project): JsonResponse
     {
+        Gate::authorize('view', $project);
+
         /** @var CrawlRun|null $latestRun */
         $latestRun = CrawlRun::query()
             ->where('project_id', $project->id)

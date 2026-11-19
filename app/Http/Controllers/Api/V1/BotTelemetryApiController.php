@@ -25,14 +25,9 @@ class BotTelemetryApiController extends Controller
         $expectedToken = (string) config('services.runnr.telemetry_token');
         $bearer = (string) $request->bearerToken();
 
-        $authorized = false;
-        if ($expectedToken !== '' && hash_equals($expectedToken, $bearer)) {
-            $authorized = true;
-        } elseif ($request->user() !== null) {
-            $authorized = true;
-        }
+        $isRunnr = $expectedToken !== '' && $bearer !== '' && hash_equals($expectedToken, $bearer);
 
-        if (! $authorized) {
+        if (! $isRunnr && $request->user() === null) {
             return response()->json(['message' => 'Unauthorized telemetry access.'], 401);
         }
 
@@ -53,6 +48,15 @@ class BotTelemetryApiController extends Controller
         ]);
 
         $siteId = (string) ($validated['siteId'] ?? $validated['site_id']);
+
+        // The Runnr platform token may write telemetry for any site; a signed-in
+        // user may only write telemetry for a project they can edit.
+        if (! $isRunnr) {
+            $project = Project::query()->where('runnr_site_id', $siteId)->first();
+            if ($project === null || ! Gate::forUser($request->user())->allows('update', $project)) {
+                return response()->json(['message' => 'Unauthorized telemetry access.'], 403);
+            }
+        }
 
         /** @var list<array{botFamily: string, statusBucket: int, hitCount: int, bytesServed?: int|null, bucketHour: string, topErrorPaths?: list<array{path: string, hits: int, status?: int|null}>|null}> $entries */
         $entries = $validated['entries'];

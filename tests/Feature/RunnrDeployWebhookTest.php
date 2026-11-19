@@ -409,7 +409,7 @@ class RunnrDeployWebhookTest extends TestCase
     public function test_deploy_smoke_badge_renders_svg(): void
     {
         // 1. When no smoke crawl exists
-        $response = $this->get("/api/v1/projects/{$this->project->id}/deploy-smoke/badge");
+        $response = $this->get('/api/v1/deploy-smoke/badge/'.$this->project->deployBadgeToken());
         $response->assertOk();
         $response->assertHeader('Content-Type', 'image/svg+xml; charset=utf-8');
         $this->assertStringContainsString('runnr deploy: none', $response->getContent() ?: '');
@@ -433,7 +433,7 @@ class RunnrDeployWebhookTest extends TestCase
             ],
         ]);
 
-        $responsePass = $this->get("/api/v1/projects/{$this->project->id}/deploy-smoke/badge");
+        $responsePass = $this->get('/api/v1/deploy-smoke/badge/'.$this->project->deployBadgeToken());
         $responsePass->assertOk();
         $this->assertStringContainsString('runnr deploy: passing', $responsePass->getContent() ?: '');
         $this->assertStringContainsString('#4c1', $responsePass->getContent() ?: '');
@@ -451,7 +451,7 @@ class RunnrDeployWebhookTest extends TestCase
             ],
         ]);
 
-        $responseFail = $this->get("/api/v1/projects/{$this->project->id}/deploy-smoke/badge");
+        $responseFail = $this->get('/api/v1/deploy-smoke/badge/'.$this->project->deployBadgeToken());
         $responseFail->assertOk();
         $this->assertStringContainsString('runnr deploy: failing', $responseFail->getContent() ?: '');
         $this->assertStringContainsString('#e05d44', $responseFail->getContent() ?: '');
