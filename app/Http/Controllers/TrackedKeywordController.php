@@ -87,7 +87,7 @@ class TrackedKeywordController extends Controller
         $performanceStats = DB::table('search_performance_queries')
             ->where('project_id', $project->id)
             ->where('date', '>=', $cutoffDate)
-            ->selectRaw('provider, LOWER(query) as query_lower, SUM(clicks) as total_clicks, SUM(impressions) as total_impressions, AVG(position) as avg_position')
+            ->selectRaw('provider, LOWER(query) as query_lower, SUM(clicks) as total_clicks, SUM(impressions) as total_impressions, CASE WHEN SUM(impressions) > 0 THEN ROUND(SUM(position * impressions) / SUM(impressions), 1) ELSE ROUND(AVG(position), 1) END as avg_position')
             ->groupBy('provider', 'query_lower')
             ->get();
 

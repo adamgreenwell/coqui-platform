@@ -35,13 +35,24 @@ class SearchPerformanceSyncService
             $endDate = Carbon::now()->subDays(4);
             $startDate = Carbon::now()->subDays(32);
 
-            $rows = $this->gscClient->querySearchAnalytics(
-                integration: $integration,
-                startDate: $startDate,
-                endDate: $endDate,
-                dimensions: ['query', 'date'],
-                rowLimit: 5000,
-            );
+            $rows = [];
+            $startRow = 0;
+            $pageSize = 5000;
+            $maxRows = 25000;
+
+            do {
+                $pageRows = $this->gscClient->querySearchAnalytics(
+                    integration: $integration,
+                    startDate: $startDate,
+                    endDate: $endDate,
+                    dimensions: ['query', 'date'],
+                    startRow: $startRow,
+                    rowLimit: $pageSize,
+                );
+
+                $rows = array_merge($rows, $pageRows);
+                $startRow += $pageSize;
+            } while (count($pageRows) === $pageSize && count($rows) < $maxRows);
 
             $recordsToUpsert = [];
             $now = Carbon::now();

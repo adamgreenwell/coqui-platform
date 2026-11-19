@@ -195,7 +195,7 @@ class GoogleSearchConsoleClient
             }
         }
 
-        return $sites[0]['siteUrl'] ?? null;
+        return null;
     }
 
     /**
@@ -210,6 +210,7 @@ class GoogleSearchConsoleClient
         CarbonInterface $startDate,
         CarbonInterface $endDate,
         array $dimensions = ['query', 'date'],
+        int $startRow = 0,
         int $rowLimit = 5000,
     ): array {
         $token = $this->getValidAccessToken($integration);
@@ -225,6 +226,7 @@ class GoogleSearchConsoleClient
             'startDate' => $startDate->format('Y-m-d'),
             'endDate' => $endDate->format('Y-m-d'),
             'dimensions' => $dimensions,
+            'startRow' => $startRow,
             'rowLimit' => $rowLimit,
             'dataState' => 'final', // Respect 4-day finalization lag
         ];
