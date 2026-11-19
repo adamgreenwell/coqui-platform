@@ -24,6 +24,8 @@ class ContentBriefService
 
     /**
      * Build or refresh a comprehensive SERP content brief for a target keyword.
+     *
+     * @param  array<string, mixed>|null  $serpOverride
      */
     public function buildBrief(
         Project $project,
