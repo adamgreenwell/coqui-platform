@@ -74,7 +74,7 @@ class KeywordExplorerTest extends TestCase
             ->has('workspace')
             ->has('project')
             ->where('project.domain', 'coquiseo.com')
-            ->where('trackedKeywords', ['rank tracking tool'])
+            ->where('trackedKeywords', ['rank tracking tool:2840:en'])
             ->where('defaultLocationCode', 2840)
             ->where('defaultLanguageCode', 'en')
         );

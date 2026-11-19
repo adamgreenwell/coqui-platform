@@ -30,8 +30,14 @@ class KeywordExplorerController extends Controller
 
         /** @var list<string> $trackedKeywords */
         $trackedKeywords = $project->trackedKeywords()
-            ->pluck('keyword')
-            ->map(static fn (string $k): string => strtolower(trim($k)))
+            ->select(['keyword', 'location_code', 'language_code'])
+            ->get()
+            ->map(static fn (TrackedKeyword $k): string => sprintf(
+                '%s:%d:%s',
+                strtolower(trim($k->keyword)),
+                $k->location_code,
+                strtolower(trim($k->language_code)),
+            ))
             ->unique()
             ->values()
             ->all();
@@ -264,7 +270,12 @@ class KeywordExplorerController extends Controller
                     ],
                 );
 
-                $trackedKeywords[] = strtolower($kw);
+                $trackedKeywords[] = sprintf(
+                    '%s:%d:%s',
+                    strtolower($kw),
+                    $itemLocation,
+                    strtolower($itemLanguage),
+                );
             }
         });
 

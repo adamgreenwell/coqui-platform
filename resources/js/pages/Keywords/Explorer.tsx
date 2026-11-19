@@ -128,6 +128,10 @@ function formatNumber(num: number | null | undefined): string {
   return num.toLocaleString();
 }
 
+function makeTrackedKey(keyword: string, locationCode: number, languageCode: string): string {
+  return `${keyword.toLowerCase().trim()}:${locationCode}:${languageCode.toLowerCase().trim()}`;
+}
+
 function MiniTrendBars({ monthlySearches }: { monthlySearches: MonthlySearch[] }) {
   if (!monthlySearches || monthlySearches.length === 0) {
     return <span className="text-[11px] text-slate-600">-</span>;
@@ -429,7 +433,9 @@ export default function KeywordExplorer({
       // Update local set
       setTrackedSet((prev) => {
         const next = new Set(prev);
-        keywordsToTrack.forEach((k) => next.add(k.keyword.toLowerCase()));
+        keywordsToTrack.forEach((k) => {
+          next.add(makeTrackedKey(k.keyword, k.location_code, k.language_code));
+        });
         return next;
       });
 
@@ -548,7 +554,11 @@ export default function KeywordExplorer({
       item.main_intent ?? '',
       item.cpc ? item.cpc.toFixed(2) : '',
       item.competition ?? '',
-      trackedSet.has(item.keyword.toLowerCase()) ? 'Yes' : 'No',
+      trackedSet.has(
+        makeTrackedKey(item.keyword, item.location_code, item.language_code)
+      )
+        ? 'Yes'
+        : 'No',
     ]);
 
     const csvContent = [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');
@@ -1070,7 +1080,9 @@ export default function KeywordExplorer({
                     </tr>
                   ) : (
                     filteredKeywords.map((item) => {
-                      const isTracked = trackedSet.has(item.keyword.toLowerCase());
+                      const isTracked = trackedSet.has(
+                        makeTrackedKey(item.keyword, item.location_code, item.language_code)
+                      );
                       const isSelected = selectedKeywords.has(item.keyword.toLowerCase());
 
                       return (
