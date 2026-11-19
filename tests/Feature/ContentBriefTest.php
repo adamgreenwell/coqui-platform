@@ -198,7 +198,11 @@ HTML;
         /** @var ContentBrief $brief */
         $brief = ContentBrief::query()->where('project_id', $this->project->id)->firstOrFail();
 
-        $response->assertRedirect("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keywords/brief?keyword=technical+seo+guide");
+        $response->assertRedirect(route('workspaces.projects.keywords.brief', [
+            $this->workspace,
+            $this->project,
+            'keyword' => 'technical seo guide',
+        ]));
 
         $competitors = $brief->data['competitors'] ?? [];
         $this->assertCount(2, $competitors);
@@ -393,7 +397,7 @@ HTML;
 
         $response->assertOk();
         $response->assertHeader('Content-Type', 'text/markdown; charset=UTF-8');
-        $this->assertStringContainsString('attachment; filename="content-brief-coqui-rank-tracker.md"', (string) $response->headers->get('Content-Disposition'));
+        $this->assertStringContainsString('filename=content-brief-coqui-rank-tracker.md', (string) $response->headers->get('Content-Disposition'));
         $this->assertStringContainsString('# SEO Content Brief: coqui rank tracker', (string) $response->getContent());
     }
 

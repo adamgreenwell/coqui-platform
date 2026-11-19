@@ -130,7 +130,7 @@ class ContentBriefService
                     'internalLinks' => 0,
                     'externalLinks' => 0,
                     'status' => null,
-                    'error' => Str::limit($e->getMessage(), 60, '...'),
+                    'error' => Str::limit($e->getMessage(), 120, '...'),
                 ];
             }
         }
