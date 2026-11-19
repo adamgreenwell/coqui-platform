@@ -10,7 +10,6 @@ use App\Domains\Projects\Models\ProjectCompetitor;
 use App\Domains\Projects\Models\Workspace;
 use App\Domains\Serp\DataForSeo\DataForSeoCacheRepository;
 use App\Domains\Serp\Models\TrackedKeyword;
-use App\Domains\Serp\Services\KeywordGapService;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
