@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domains\Projects\Models;
 
 use App\Domains\Backlinks\Models\MonitoredBacklink;
+use App\Domains\Crawls\Models\CrawlDiffReport;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Integrations\Models\ProjectIntegration;
 use App\Domains\Integrations\Models\SearchPerformancePage;
@@ -124,6 +125,14 @@ class Project extends Model
     public function searchPerformancePages(): HasMany
     {
         return $this->hasMany(SearchPerformancePage::class);
+    }
+
+    /**
+     * @return HasMany<CrawlDiffReport, $this>
+     */
+    public function diffReports(): HasMany
+    {
+        return $this->hasMany(CrawlDiffReport::class);
     }
 
     /**

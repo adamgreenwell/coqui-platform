@@ -2,12 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Http\Controllers\CrawlCompareController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\KeywordExplorerController;
 use App\Http\Controllers\KeywordGapController;
 use App\Http\Controllers\ProjectCompetitorController;
 use App\Http\Controllers\ProjectController;
 use App\Http\Controllers\ProjectIntegrationController;
+use App\Http\Controllers\PublicCrawlDiffController;
 use App\Http\Controllers\SanctumTokenController;
 use App\Http\Controllers\TrackedKeywordController;
 use App\Http\Controllers\WorkspaceController;
@@ -68,4 +70,9 @@ Route::middleware(['auth'])->group(function (): void {
     Route::post('/workspaces/{workspace}/projects/{project}/integrations/bing/connect', [ProjectIntegrationController::class, 'connectBing'])->name('workspaces.projects.integrations.bing.connect');
     Route::post('/workspaces/{workspace}/projects/{project}/integrations/{integration}/sync', [ProjectIntegrationController::class, 'sync'])->name('workspaces.projects.integrations.sync');
     Route::delete('/workspaces/{workspace}/projects/{project}/integrations/{integration}', [ProjectIntegrationController::class, 'destroy'])->name('workspaces.projects.integrations.destroy');
+
+    Route::get('/workspaces/{workspace}/projects/{project}/crawls/compare', [CrawlCompareController::class, 'show'])->name('workspaces.projects.crawls.compare');
+    Route::post('/workspaces/{workspace}/projects/{project}/crawls/compare/share', [CrawlCompareController::class, 'share'])->name('workspaces.projects.crawls.compare.share');
 });
+
+Route::get('/reports/crawls/diff/{shareToken}', [PublicCrawlDiffController::class, 'show'])->name('reports.crawls.diff');

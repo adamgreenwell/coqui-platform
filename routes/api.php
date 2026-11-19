@@ -29,6 +29,9 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function (): void {
     Route::get('/projects/{project}/crawls', [CrawlSyncController::class, 'index'])
         ->middleware('ability:crawls:read,crawls:sync,projects:read');
 
+    Route::get('/projects/{project}/crawls/compare', [CrawlSyncController::class, 'compare'])
+        ->middleware('ability:crawls:read,crawls:sync,projects:read');
+
     Route::get('/projects/{project}/crawls/{crawlId}', [CrawlSyncController::class, 'show'])
         ->middleware('ability:crawls:read,crawls:sync,projects:read');
 
