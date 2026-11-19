@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Tools;
 
 use App\Domains\Projects\Models\Project;
+use App\Mcp\Concerns\ResolvesAccessibleProject;
 use App\Models\User;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
 use Laravel\Mcp\Request;
@@ -13,6 +14,8 @@ use Laravel\Mcp\Server\Tool;
 
 class ListCrawlIssuesTool extends Tool
 {
+    use ResolvesAccessibleProject;
+
     protected string $name = 'list_crawl_issues';
 
     protected string $description = 'List technical SEO issues from the latest crawl run of a project domain.';
@@ -25,20 +28,16 @@ class ListCrawlIssuesTool extends Tool
             'limit' => ['nullable', 'integer', 'min:1', 'max:100'],
         ]);
 
-        $normalized = Project::normalizeDomain((string) $validated['domain']);
-        $project = Project::query()->where('domain', $normalized)->first();
-
-        if ($project === null) {
-            return Response::error("Project not found for domain [{$normalized}].");
-        }
-
         $user = $request->user();
-        if ((bool) config('coqui.mcp.require_auth', false) && $user === null) {
+        if (! $user instanceof User) {
             return Response::error('Authentication required to list crawl issues.');
         }
 
-        if ($user instanceof User && ! $user->can('view', $project)) {
-            return Response::error("Unauthorized access to project [{$normalized}].");
+        $normalized = Project::normalizeDomain((string) $validated['domain']);
+        $project = $this->resolveAccessibleProject($user, $normalized);
+
+        if ($project === null) {
+            return Response::error("Project not found for domain [{$normalized}].");
         }
 
         $latestCrawl = $project->crawlRuns()->latest('id')->first();
