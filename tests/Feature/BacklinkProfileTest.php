@@ -8,7 +8,6 @@ use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Crawls\Models\CrawlUrl;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
-use App\Domains\Serp\DataForSeo\DataForSeoCacheRepository;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
