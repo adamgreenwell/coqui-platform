@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Sync public template and built Vite assets into the shared public volume.
 if [ -d /tmp/public-template ]; then
-    cp -rn /tmp/public-template/. /var/www/html/public/ 2>/dev/null || true
+    cp -r /tmp/public-template/. /var/www/html/public/
 fi
 
 if [ -d /tmp/build-assets ]; then
@@ -16,7 +16,8 @@ chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
 
 # Only run migrations from the primary php-fpm container.
 if [ "${1:-}" = "php-fpm" ]; then
-    php artisan migrate --force --no-interaction || true
+    # Fail loudly: a container that can't migrate must not report healthy.
+    php artisan migrate --force --no-interaction
     php artisan config:cache || true
     php artisan route:cache || true
     php artisan view:cache || true

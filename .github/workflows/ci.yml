@@ -21,6 +21,11 @@ jobs:
         run: npm install
       - name: Build roadmap artifacts
         run: npm run plan:build
+      - name: Validate Coolify compose file
+        run: |
+          APP_KEY=base64:ci APP_URL=https://ci.example DB_PASSWORD=ci \
+          REVERB_APP_KEY=ci REVERB_APP_SECRET=ci VITE_REVERB_HOST=ci.example \
+            docker compose -f docker-compose.coolify.yml config --quiet
       - name: Typecheck & build frontend
         run: |
           npm run types:check
@@ -40,6 +45,8 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - name: Validate composer.json / composer.lock
+        run: composer validate --strict --no-check-publish
       - name: Install dependencies
         run: |
           composer install --no-interaction --prefer-dist
