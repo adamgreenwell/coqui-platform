@@ -2,6 +2,7 @@ import { Link, router, usePage } from '@inertiajs/react';
 import {
   Building2,
   ChevronDown,
+  CreditCard,
   Key,
   Laptop,
   LayoutDashboard,
@@ -155,6 +156,13 @@ export default function AppLayout({
               >
                 <Laptop className="h-3.5 w-3.5 text-slate-400" />
                 <span>Desktop Sync</span>
+              </Link>
+              <Link
+                href={`/workspaces/${currentWorkspace.id}/billing`}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-slate-300 hover:text-white hover:bg-slate-800 transition"
+              >
+                <CreditCard className="h-3.5 w-3.5 text-slate-400" />
+                <span>Billing &amp; Plans</span>
               </Link>
             </nav>
           )}

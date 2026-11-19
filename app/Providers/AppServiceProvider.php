@@ -10,6 +10,7 @@ use App\Policies\ProjectPolicy;
 use App\Policies\WorkspacePolicy;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
+use Laravel\Pennant\Feature;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -22,5 +23,14 @@ class AppServiceProvider extends ServiceProvider
     {
         Gate::policy(Project::class, ProjectPolicy::class);
         Gate::policy(Workspace::class, WorkspacePolicy::class);
+
+        // Laravel Pennant Plan Tier Feature Gating
+        Feature::define('content-briefs', fn (Workspace $workspace): bool => in_array($workspace->plan_tier, ['pro', 'agency'], true));
+        Feature::define('backlink-intelligence', fn (Workspace $workspace): bool => in_array($workspace->plan_tier, ['pro', 'agency'], true));
+        Feature::define('traffic-attribution', fn (Workspace $workspace): bool => in_array($workspace->plan_tier, ['pro', 'agency'], true));
+        Feature::define('white-label-reports', fn (Workspace $workspace): bool => $workspace->plan_tier === 'agency');
+        Feature::define('priority-queue', fn (Workspace $workspace): bool => $workspace->plan_tier === 'agency');
+        Feature::define('runnr-smoke-tests', fn (Workspace $workspace): bool => $workspace->hasRunnrEntitlement());
+        Feature::define('bot-telemetry', fn (Workspace $workspace): bool => $workspace->hasRunnrEntitlement() || in_array($workspace->plan_tier, ['pro', 'agency'], true));
     }
 }
