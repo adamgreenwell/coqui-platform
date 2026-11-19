@@ -209,12 +209,15 @@ class DataForSeoClient
             'location_code' => $locationCode,
             'language_code' => strtolower(trim($languageCode)),
             'intersections' => $intersections,
+            'item_types' => ['organic'],
             'limit' => $limit,
         ];
 
         if (! $bypassCache) {
             $cached = $this->cache->get($endpoint, $signature);
             if ($cached !== null) {
+                $cached['_from_cache'] = true;
+
                 return $cached;
             }
         }
@@ -230,6 +233,7 @@ class DataForSeoClient
             'location_code' => $locationCode,
             'language_code' => strtolower(trim($languageCode)),
             'intersections' => $intersections,
+            'item_types' => ['organic'],
             'limit' => $limit,
             'order_by' => ['keyword_data.keyword_info.search_volume,desc'],
         ]];

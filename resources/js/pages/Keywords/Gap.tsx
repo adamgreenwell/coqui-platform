@@ -345,6 +345,11 @@ export default function KeywordGap({
     }
   };
 
+  const removeCustomCompetitor = (domain: string) => {
+    const norm = domain.toLowerCase().trim();
+    setSelectedCompetitors(selectedCompetitors.filter((d) => d !== norm));
+  };
+
   const addCustomCompetitor = () => {
     const raw = customCompetitorInput.trim().toLowerCase();
     if (!raw) return;
@@ -836,6 +841,27 @@ export default function KeywordGap({
                     </button>
                   );
                 })}
+
+                {/* Custom Added Competitors */}
+                {selectedCompetitors
+                  .filter((d) => !competitors.some((c) => c.domain.toLowerCase() === d))
+                  .map((customDomain) => (
+                    <span
+                      key={customDomain}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-medium bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 shadow-xs"
+                    >
+                      <span>{customDomain}</span>
+                      <button
+                        type="button"
+                        onClick={() => removeCustomCompetitor(customDomain)}
+                        className="text-emerald-400 hover:text-emerald-200 transition cursor-pointer ml-0.5"
+                        title={`Remove ${customDomain}`}
+                        aria-label={`Remove ${customDomain}`}
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  ))}
 
                 {/* Add Custom Competitor Input */}
                 <div className="inline-flex items-center rounded-xl bg-slate-950 border border-slate-800 px-2 py-1">

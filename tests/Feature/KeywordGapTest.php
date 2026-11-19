@@ -290,7 +290,13 @@ class KeywordGapTest extends TestCase
                 'gap_mode' => 'missing',
             ]);
         $response1->assertOk();
+        $response1->assertJsonPath('summary.cached_tasks_count', 0);
         Http::assertSentCount(1);
+        Http::assertSent(function ($request) {
+            $data = $request->data();
+
+            return isset($data[0]['item_types']) && $data[0]['item_types'] === ['organic'];
+        });
 
         // Second call: serves from cache, 0 new API calls sent
         Http::fake(); // Reset fake to ensure nothing is sent
@@ -301,6 +307,7 @@ class KeywordGapTest extends TestCase
             ]);
         $response2->assertOk();
         $response2->assertJsonPath('keywords.0.keyword', 'cached gap query');
+        $response2->assertJsonPath('summary.cached_tasks_count', 1);
         Http::assertNothingSent();
     }
 
