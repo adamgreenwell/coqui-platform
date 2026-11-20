@@ -25,6 +25,7 @@ class SerphouseResultAdapter
         'local_results' => 'local_pack',
         'inline_shopping' => 'shopping',
         'images' => 'images',
+        'inline_images' => 'images',
         'knowledge_graph' => 'knowledge_graph',
     ];
 
