@@ -42,6 +42,8 @@ class StripeBillingService
                     '1,000 Cloud Crawl URLs per audit',
                     '$25/mo DataForSEO API Spend Allowance',
                     'Basic Technical Issue Inspection',
+                    'Google Search Console & Bing Performance Overlay',
+                    'GA4, Umami & Plausible Organic & AI Traffic Attribution',
                 ],
             ],
             'personal' => [
@@ -57,8 +59,6 @@ class StripeBillingService
                     '$8/mo DataForSEO API Spend Allowance',
                     'Live SERP Top-10 Content Brief Generator',
                     'Backlink Profile Explorer & 404 Recovery',
-                    'Google Search Console & Bing Performance Overlay',
-                    'GA4 & Plausible Organic & AI Traffic Attribution',
                     'Bot & AI Crawler Telemetry',
                 ],
             ],
@@ -76,8 +76,6 @@ class StripeBillingService
                     'Live SERP Top-10 Content Brief Generator',
                     'Keyword Gap & Dual-Competitor Matrix',
                     'Backlink Profile Explorer & 404 Recovery',
-                    'Google Search Console & Bing Performance Overlay',
-                    'GA4 & Plausible Organic & AI Traffic Attribution',
                 ],
             ],
             'agency' => [
