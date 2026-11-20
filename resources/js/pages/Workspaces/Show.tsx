@@ -161,7 +161,7 @@ export default function WorkspaceShow({
             <div className="mt-2 text-xl font-bold text-white font-mono">
               ${workspace.monthlyDfsBudgetUsd.toFixed(2)}
             </div>
-            <p className="mt-1 text-[11px] text-slate-500">DataForSEO & SE Ranking cap</p>
+            <p className="mt-1 text-[11px] text-slate-500">Live data spend cap</p>
           </div>
 
           <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">

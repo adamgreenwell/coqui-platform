@@ -9,6 +9,7 @@ use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\Workspace;
 use App\Domains\Serp\DataForSeo\DataForSeoCacheRepository;
 use App\Domains\Serp\Models\TrackedKeyword;
+use App\Domains\Serp\SpendRefusedMessages;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -314,6 +315,7 @@ class KeywordExplorerTest extends TestCase
 
         $response->assertStatus(422);
         $response->assertJsonPath('error', 'budget_exceeded');
+        $response->assertJsonPath('message', SpendRefusedMessages::workspaceAllowance(0.0));
     }
 
     public function test_related_keywords_discovery_fetches_and_persists_suggestions(): void

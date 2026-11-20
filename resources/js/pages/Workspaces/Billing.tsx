@@ -122,7 +122,7 @@ export default function WorkspaceBilling({
                 )}
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Manage your plan tier, DataForSEO spend guardrails, keyword quotas, and Stripe customer billing.
+                Manage your plan tier, live data spend guardrails, keyword quotas, and Stripe customer billing.
               </p>
             </div>
           </div>
@@ -160,10 +160,10 @@ export default function WorkspaceBilling({
 
         {/* Usage & Metering KPI Grid */}
         <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${runnrIntegration ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
-          {/* DataForSEO Monthly Spend Guard */}
+          {/* Monthly live data spend guard */}
           <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-slate-400">Monthly DataForSEO Allowance</span>
+              <span className="text-xs font-medium text-slate-400">Monthly Live Data Allowance</span>
               <span className="p-1 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20">
                 <Zap className="h-3.5 w-3.5" />
               </span>

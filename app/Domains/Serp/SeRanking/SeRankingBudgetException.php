@@ -4,6 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domains\Serp\SeRanking;
 
-use RuntimeException;
+use App\Domains\Serp\SpendRefusedException;
 
-class SeRankingBudgetException extends RuntimeException {}
+class SeRankingBudgetException extends SpendRefusedException {}

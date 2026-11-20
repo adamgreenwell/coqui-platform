@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domains\Serp\SeRanking;
 
 use App\Domains\Serp\ReadOnlySpendScope;
+use App\Domains\Serp\SpendRefusedMessages;
 use DateTimeInterface;
 use Illuminate\Support\Facades\DB;
 
@@ -30,7 +31,7 @@ class SeRankingSpendGuard
                 $dailyCap,
                 $todayCredits,
                 $estimatedCredits,
-            ));
+            ), SpendRefusedMessages::DAILY_LIMIT);
         }
 
         $monthCredits = $this->creditsSince(now()->startOfMonth());

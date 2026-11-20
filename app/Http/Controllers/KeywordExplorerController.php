@@ -154,12 +154,12 @@ class KeywordExplorerController extends Controller
             ));
         } catch (DataForSeoReadOnlyException $e) {
             return response()->json([
-                'message' => $e->getMessage(),
+                'message' => $e->publicMessage(),
                 'error' => 'read_only',
             ], 403);
         } catch (DataForSeoBudgetException $e) {
             return response()->json([
-                'message' => $e->getMessage(),
+                'message' => $e->publicMessage(),
                 'error' => 'budget_exceeded',
             ], 422);
         }
@@ -212,12 +212,12 @@ class KeywordExplorerController extends Controller
             ));
         } catch (DataForSeoReadOnlyException $e) {
             return response()->json([
-                'message' => $e->getMessage(),
+                'message' => $e->publicMessage(),
                 'error' => 'read_only',
             ], 403);
         } catch (DataForSeoBudgetException $e) {
             return response()->json([
-                'message' => $e->getMessage(),
+                'message' => $e->publicMessage(),
                 'error' => 'budget_exceeded',
             ], 422);
         }

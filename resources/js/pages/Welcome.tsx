@@ -15,7 +15,7 @@ export default function Welcome({ appName, domain }: WelcomeProps) {
         </span>
         <h1 className="text-4xl font-semibold tracking-tight text-white">{appName}</h1>
         <p className="mt-4 max-w-2xl text-base text-slate-300">
-          Cloud SERP intelligence, DataForSEO rank tracking, backlink monitoring, and hybrid
+          Cloud SERP intelligence, rank tracking, backlink monitoring, and hybrid
           Coqui Desktop crawl synchronization built on Laravel 13.
         </p>
       </main>

@@ -18,6 +18,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -112,17 +113,19 @@ class KeywordGapController extends Controller
             return response()->json($result);
         } catch (DataForSeoReadOnlyException $e) {
             return response()->json([
-                'message' => $e->getMessage(),
+                'message' => $e->publicMessage(),
                 'error' => 'read_only',
             ], 403);
         } catch (DataForSeoBudgetException $e) {
             return response()->json([
-                'message' => $e->getMessage(),
+                'message' => $e->publicMessage(),
                 'error' => 'budget_exceeded',
             ], 422);
         } catch (\Throwable $e) {
+            Log::warning("Keyword gap analysis failed for project {$project->id}: {$e->getMessage()}");
+
             return response()->json([
-                'message' => 'Failed to analyze competitor keyword gaps: '.$e->getMessage(),
+                'message' => 'Couldn\'t analyze competitor keyword gaps right now. Try again in a few minutes.',
             ], 500);
         }
     }
