@@ -60,6 +60,11 @@ class DataForSeoWebhookController extends Controller
             return response()->json(['status' => 'already_collected']);
         }
 
+        // A fallback check already recorded this keyword's rankings.
+        if ($task->status === 'superseded') {
+            return response()->json(['status' => 'superseded']);
+        }
+
         /** @var array<string, mixed>|null $firstTask */
         $firstTask = $payload['tasks'][0] ?? null;
         if (is_array($firstTask)) {

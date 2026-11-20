@@ -52,7 +52,8 @@ class DataForSeoSpendGuard
         }
 
         if ($workspace !== null) {
-            $workspaceMonthSpend = $this->spendSince(now()->startOfMonth(), $workspace->id);
+            // Includes backup rank checks, which share the allowance.
+            $workspaceMonthSpend = $workspace->currentMonthDfsSpend();
             $workspaceBudget = (float) $workspace->monthly_dfs_budget_usd;
 
             if (($workspaceMonthSpend + $estimatedCostUsd) > $workspaceBudget) {

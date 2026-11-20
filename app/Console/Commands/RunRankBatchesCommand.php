@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Domains\Serp\DataForSeo\DataForSeoClient;
+use App\Domains\Serp\Models\RankFallbackCheck;
 use App\Domains\Serp\Models\TrackedKeyword;
+use App\Domains\Serp\SpendRefusedException;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -141,8 +143,14 @@ class RunRankBatchesCommand extends Command
 
                 try {
                     $response = $client->submitStandardSerpTasks($tasksPayload, $project, isScheduled: true);
+                } catch (SpendRefusedException $e) {
+                    // A spend cap refused it: don't pay another provider instead.
+                    $this->warn("Skipped SERP tasks for project {$project->id}: {$e->getMessage()}");
+
+                    continue;
                 } catch (Throwable $e) {
                     $this->error("Failed submitting SERP tasks for project {$project->id}: {$e->getMessage()}");
+                    $this->queueFallback($chunk, $project->workspace_id);
 
                     continue;
                 }
@@ -187,5 +195,29 @@ class RunRankBatchesCommand extends Command
         $this->info("Successfully submitted {$submittedCount} SERP rank tracking tasks to DataForSEO standard queue.");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Leave fallback checks for keywords whose batch couldn't be submitted;
+     * rank:fallback runs them if the fallback is on.
+     *
+     * @param  list<TrackedKeyword>  $keywords
+     */
+    private function queueFallback(array $keywords, int $workspaceId): void
+    {
+        $rows = array_map(fn (TrackedKeyword $keyword): array => [
+            'tracked_keyword_id' => $keyword->id,
+            'project_id' => $keyword->project_id,
+            'workspace_id' => $workspaceId,
+            'dataforseo_task_id' => null,
+            'reason' => RankFallbackCheck::REASON_SUBMIT_ERROR,
+            'status' => 'pending',
+            'checked_on' => today()->toDateString(),
+            'reference_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ], $keywords);
+
+        DB::table('rank_fallback_checks')->insertOrIgnore($rows);
     }
 }
