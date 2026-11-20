@@ -12,9 +12,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * A backup rank check for one keyword on one day.
  *
  * @property int $id
- * @property int $tracked_keyword_id
- * @property int $project_id
- * @property int $workspace_id
+ * @property int|null $tracked_keyword_id
+ * @property int|null $project_id
+ * @property int|null $workspace_id
  * @property int|null $dataforseo_task_id
  * @property string $reason
  * @property string $status
@@ -22,6 +22,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonInterface $reference_at
  * @property int $pages_fetched
  * @property string $cost_usd
+ * @property string $reserved_usd
  * @property string|null $error_message
  * @property CarbonInterface|null $completed_at
  */
@@ -47,6 +48,7 @@ class RankFallbackCheck extends Model
         'reference_at',
         'pages_fetched',
         'cost_usd',
+        'reserved_usd',
         'error_message',
         'completed_at',
     ];

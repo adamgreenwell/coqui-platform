@@ -8,6 +8,7 @@ use App\Domains\Serp\Actions\RecordSerpRankSnapshots;
 use App\Domains\Serp\Models\RankFallbackCheck;
 use App\Domains\Serp\Models\TrackedKeyword;
 use App\Domains\Serp\Services\SerpResultParser;
+use DateTimeInterface;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -24,7 +25,11 @@ class FetchFallbackRankJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable;
 
-    public int $tries = 3;
+    /**
+     * Provider errors before the job gives up. Waiting on the rate limiter
+     * doesn't count, so a backlog can wait its turn until retryUntil().
+     */
+    public int $maxExceptions = 3;
 
     public int $timeout = 180;
 
@@ -32,6 +37,15 @@ class FetchFallbackRankJob implements ShouldQueue
     public array $backoff = [60, 300];
 
     public function __construct(public readonly int $checkId) {}
+
+    /**
+     * Rate-limit releases count as attempts, so the job is bounded by time
+     * instead of a try count.
+     */
+    public function retryUntil(): DateTimeInterface
+    {
+        return now()->addHours(6);
+    }
 
     /**
      * @return list<object>
@@ -80,7 +94,7 @@ class FetchFallbackRankJob implements ShouldQueue
         // Reserve the worst case up front, so a check never stops halfway
         // and records a partial SERP as "not ranking".
         try {
-            $guard->assertCanSpend($pageCost * $maxPages, $workspace);
+            $guard->reserve($check, $pageCost * $maxPages, $workspace);
         } catch (RankFallbackBudgetException $e) {
             $this->finish($check, 'skipped', $e->getMessage());
 
@@ -152,6 +166,8 @@ class FetchFallbackRankJob implements ShouldQueue
             'status' => $status,
             'error_message' => $error,
             'completed_at' => now(),
+            // Release the hold; only what was paid counts from here.
+            'reserved_usd' => 0,
         ]);
     }
 }

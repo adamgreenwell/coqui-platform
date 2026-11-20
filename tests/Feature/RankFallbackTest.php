@@ -149,6 +149,7 @@ class RankFallbackTest extends TestCase
         $this->assertSame('completed', $check->status);
         $this->assertSame(2, $check->pages_fetched);
         $this->assertEqualsWithDelta(0.0015, (float) $check->cost_usd, 0.000001);
+        $this->assertEqualsWithDelta(0.0, (float) $check->reserved_usd, 0.000001);
         $this->assertSame('superseded', DB::table('dataforseo_tasks')->where('id', $taskId)->value('status'));
         $this->assertNotNull($keyword->fresh()?->last_checked_at);
     }
@@ -245,6 +246,44 @@ class RankFallbackTest extends TestCase
         $this->artisan('dataforseo:run-rank-batches')->assertSuccessful();
 
         $this->assertSame(0, RankFallbackCheck::query()->count());
+    }
+
+    public function test_running_checks_hold_their_worst_case_cost_against_the_allowance(): void
+    {
+        Http::fake();
+        // Room for one worst-case check ($0.0075), not two.
+        $this->workspace->update(['monthly_dfs_budget_usd' => 0.01]);
+
+        $running = $this->check($this->keyword('first keyword'), null, now()->subHour());
+        $running->update(['reserved_usd' => 0.0075]);
+        $second = $this->check($this->keyword('second keyword'), null, now()->subHour());
+
+        FetchFallbackRankJob::dispatchSync($second->id);
+
+        Http::assertNothingSent();
+        $this->assertSame('skipped', $second->fresh()?->status);
+        $this->assertEqualsWithDelta(0.0075, $this->workspace->fresh()?->currentMonthDfsSpend(), 0.000001);
+    }
+
+    public function test_deleting_a_keyword_keeps_its_fallback_spend(): void
+    {
+        $keyword = $this->keyword('voice generator');
+        $check = $this->check($keyword, null, now());
+        $check->update(['cost_usd' => 0.5]);
+
+        $keyword->delete();
+
+        $this->assertNull($check->fresh()?->tracked_keyword_id);
+        $this->assertEqualsWithDelta(0.5, $this->workspace->fresh()?->currentMonthDfsSpend(), 0.000001);
+    }
+
+    public function test_job_waits_on_the_rate_limiter_by_time_not_by_attempts(): void
+    {
+        $job = new FetchFallbackRankJob(1);
+
+        $this->assertFalse(property_exists($job, 'tries'));
+        $this->assertSame(3, $job->maxExceptions);
+        $this->assertTrue($job->retryUntil() > now()->addHours(5));
     }
 
     public function test_fallback_spend_counts_toward_the_workspace_allowance(): void

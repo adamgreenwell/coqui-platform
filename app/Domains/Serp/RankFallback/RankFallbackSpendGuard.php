@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Domains\Serp\RankFallback;
 
 use App\Domains\Projects\Models\Workspace;
+use App\Domains\Serp\Models\RankFallbackCheck;
 use App\Domains\Serp\SpendRefusedMessages;
 use DateTimeInterface;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -61,6 +63,30 @@ class RankFallbackSpendGuard
         }
     }
 
+    /**
+     * Check the caps and hold the worst-case cost on the check in one step,
+     * under a lock, so checks running at the same time see each other's
+     * holds. The hold is the cost already paid on earlier attempts plus
+     * $estimatedCostUsd, and it is released when the check finishes.
+     *
+     * @throws RankFallbackBudgetException
+     */
+    public function reserve(RankFallbackCheck $check, float $estimatedCostUsd, Workspace $workspace): void
+    {
+        Cache::lock('rank-fallback:spend', 30)->block(15, function () use ($check, $estimatedCostUsd, $workspace): void {
+            // Drop this check's own hold first so it isn't counted twice.
+            $check->update(['reserved_usd' => 0]);
+
+            $this->assertCanSpend($estimatedCostUsd, $workspace);
+
+            $check->update(['reserved_usd' => (float) $check->cost_usd + $estimatedCostUsd]);
+        });
+    }
+
+    /**
+     * Fallback spend since a time: what each check paid, or its hold while
+     * it is still running, whichever is larger.
+     */
     public static function spendSince(DateTimeInterface $since, ?int $workspaceId = null): float
     {
         $query = DB::table('rank_fallback_checks')->where('created_at', '>=', $since);
@@ -69,6 +95,6 @@ class RankFallbackSpendGuard
             $query->where('workspace_id', $workspaceId);
         }
 
-        return (float) $query->sum('cost_usd');
+        return (float) $query->sum(DB::raw('CASE WHEN reserved_usd > cost_usd THEN reserved_usd ELSE cost_usd END'));
     }
 }
