@@ -18,6 +18,16 @@ Other refusals, also shown as a clear error:
 - The portal is opened before the workspace has a Stripe customer.
 - Stripe returns an error. The detail is logged, never shown to the user.
 
+## How webhooks keep the workspace in sync
+
+Each workspace can have one base plan subscription (Pro or Agency) and one Runnr add-on subscription. Both are stored in `workspace_subscriptions` with type `default` or `runnr_addon`.
+
+- **`checkout.session.completed`** applies the purchased plan or turns on the add-on. Buying the add-on never replaces the base plan's subscription ID or status.
+- **`customer.subscription.updated`** works out the plan from the subscription's price, by matching it against the `STRIPE_PRICE_*` IDs. That's how a Pro ↔ Agency switch in the customer portal reaches the app. The subscription's `plan_tier` metadata is only a fallback, because it keeps naming the plan bought at checkout. A scheduled cancellation is recorded as the subscription's `ends_at`, and the plan stays until it actually ends. Plan changes only apply while the status is `active`, `trialing` or `past_due`.
+- **`customer.subscription.deleted`** ends only the subscription that was cancelled. Cancelling the add-on removes Runnr access and leaves the base plan alone. Cancelling the base plan drops the workspace to Free but keeps an active add-on.
+
+Changing a `STRIPE_PRICE_*` value doesn't move existing subscribers. Subscriptions on an old price fall back to their metadata until they're switched to a new price.
+
 ## Environment variables
 
 | Variable | Value |
