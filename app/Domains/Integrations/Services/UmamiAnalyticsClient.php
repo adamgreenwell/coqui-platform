@@ -40,6 +40,13 @@ class UmamiAnalyticsClient
 
     private const int REFERRERS_PER_BATCH = 20;
 
+    private const int PAGE_LIMIT = 1000;
+
+    private const int REFERRER_LIMIT = 500;
+
+    /** Stop after this many pages of one metric (1,000 rows each). */
+    private const int MAX_PAGES = 25;
+
     /** @var list<int> when recent Cloud requests were sent, in ms */
     private array $cloudSentAt = [];
 
@@ -106,18 +113,29 @@ class UmamiAnalyticsClient
                 $requests = [];
                 foreach ($batch as $date) {
                     $requests[] = $this->pooled($pool->as("pages:{$date}"), $target, $apiKey)
-                        ->get("{$endpoint}/metrics/expanded", $this->query($date, ['type' => 'path', 'limit' => 1000]));
+                        ->get("{$endpoint}/metrics/expanded", $this->query($date, ['type' => 'path', 'limit' => self::PAGE_LIMIT]));
                     $requests[] = $this->pooled($pool->as("referrers:{$date}"), $target, $apiKey)
-                        ->get("{$endpoint}/metrics", $this->query($date, ['type' => 'referrer', 'limit' => 500]));
+                        ->get("{$endpoint}/metrics", $this->query($date, ['type' => 'referrer', 'limit' => self::REFERRER_LIMIT]));
                 }
 
                 return $requests;
             });
 
             foreach ($batch as $date) {
+                $pages = $this->remainingPages(
+                    $integration, $target, $apiKey, "{$endpoint}/metrics/expanded",
+                    $this->query($date, ['type' => 'path', 'limit' => self::PAGE_LIMIT]),
+                    $this->decode($integration, $responses["pages:{$date}"] ?? null, 'page'), 'page',
+                );
+                $referrers = $this->remainingPages(
+                    $integration, $target, $apiKey, "{$endpoint}/metrics",
+                    $this->query($date, ['type' => 'referrer', 'limit' => self::REFERRER_LIMIT]),
+                    $this->decode($integration, $responses["referrers:{$date}"] ?? null, 'referrer'), 'referrer',
+                );
+
                 $daily[$date] = [
-                    'pages' => $this->parsePages($this->decode($integration, $responses["pages:{$date}"] ?? null, 'page')),
-                    'referrers' => $this->parseReferrers($this->decode($integration, $responses["referrers:{$date}"] ?? null, 'referrer')),
+                    'pages' => $this->parsePages($pages),
+                    'referrers' => $this->parseReferrers($referrers),
                 ];
             }
         }
@@ -148,14 +166,18 @@ class UmamiAnalyticsClient
                 $requests = [];
                 foreach ($batch as $i => $referrer) {
                     $requests[] = $this->pooled($pool->as("ref:{$i}"), $target, $apiKey)
-                        ->get($endpoint, $this->query($date, ['type' => 'path', 'limit' => 1000, 'referrer' => $referrer]));
+                        ->get($endpoint, $this->query($date, ['type' => 'path', 'limit' => self::PAGE_LIMIT, 'referrer' => $referrer]));
                 }
 
                 return $requests;
             });
 
             foreach ($batch as $i => $referrer) {
-                $pages[$referrer] = $this->parseCounts($this->decode($integration, $responses["ref:{$i}"] ?? null, 'referrer page'));
+                $pages[$referrer] = $this->parseCounts($this->remainingPages(
+                    $integration, $target, $apiKey, $endpoint,
+                    $this->query($date, ['type' => 'path', 'limit' => self::PAGE_LIMIT, 'referrer' => $referrer]),
+                    $this->decode($integration, $responses["ref:{$i}"] ?? null, 'referrer page'), 'referrer page',
+                ));
             }
         }
 
@@ -180,6 +202,48 @@ class UmamiAnalyticsClient
         // Checked on every sync, not just on connect, in case the host's DNS
         // has since been pointed somewhere internal.
         return [$this->guard->check($baseUrl), $apiKey, rawurlencode($websiteId)];
+    }
+
+    /**
+     * Umami returns at most `limit` rows per metric. When the first page is
+     * full, fetch the following ones by offset so a busy day isn't cut short.
+     *
+     * @param  array{base: string, host: string, port: int, ip: string}  $target
+     * @param  array<string, int|string>  $query
+     * @param  array<mixed>  $firstPage
+     * @return array<mixed>
+     */
+    private function remainingPages(
+        ProjectIntegration $integration,
+        array $target,
+        string $apiKey,
+        string $url,
+        array $query,
+        array $firstPage,
+        string $kind,
+    ): array {
+        $limit = (int) $query['limit'];
+        $rows = $firstPage;
+        $previous = $firstPage;
+
+        for ($page = 1; count($previous) >= $limit && $page < self::MAX_PAGES; $page++) {
+            $this->throttle($target, 1);
+            $next = $this->decode(
+                $integration,
+                $this->request($target, $apiKey)->get($url, [...$query, 'offset' => $page * $limit]),
+                $kind,
+            );
+
+            // An instance that ignores offset sends the first page again.
+            if ($next === [] || $next === $previous) {
+                break;
+            }
+
+            $rows = [...$rows, ...$next];
+            $previous = $next;
+        }
+
+        return $rows;
     }
 
     /**

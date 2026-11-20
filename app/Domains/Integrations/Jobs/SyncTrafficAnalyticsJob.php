@@ -12,6 +12,7 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
 
 /**
@@ -33,6 +34,21 @@ class SyncTrafficAnalyticsJob implements ShouldQueue
         public readonly ProjectIntegration $integration,
         public readonly int $days = 30,
     ) {}
+
+    /**
+     * A long first sync can outlive the queue's retry window. Another copy
+     * of the job waits instead of fetching the same days alongside it.
+     *
+     * @return list<object>
+     */
+    public function middleware(): array
+    {
+        return [
+            (new WithoutOverlapping((string) $this->integration->id))
+                ->releaseAfter(60)
+                ->expireAfter($this->timeout + 60),
+        ];
+    }
 
     public function handle(TrafficAttributionService $trafficService): void
     {

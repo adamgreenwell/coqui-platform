@@ -38,6 +38,9 @@ class UmamiIntegrationTest extends TestCase
 
     private Project $project;
 
+    /** Requests for days from this date on fail with a 500. */
+    private ?string $failFrom = null;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -275,6 +278,70 @@ class UmamiIntegrationTest extends TestCase
         $this->assertSame(['/', '/features', '/kept', '/split', '/tiny'], $paths);
     }
 
+    public function test_an_interrupted_first_sync_keeps_finished_weeks_and_resumes_after_them(): void
+    {
+        Carbon::setTestNow('2026-11-20 12:00:00');
+        $integration = $this->umamiIntegration();
+
+        // Weeks run Oct 21-27, Oct 28-Nov 3, Nov 4-10, ...; the third fails.
+        $this->fakeUmami();
+        $this->failFrom = '2026-11-04';
+        try {
+            app(TrafficAttributionService::class)->syncIntegration($integration);
+            $this->fail('Expected the third week to fail.');
+        } catch (\RuntimeException) {
+        }
+
+        $integration->refresh();
+        $this->assertSame('2026-11-03', $integration->last_synced_at?->format('Y-m-d'));
+        $this->assertSame(14 * 4, PageTrafficSnapshot::query()->where('provider', 'umami')->count());
+
+        $this->failFrom = null;
+        $before = Http::recorded()->count();
+        app(TrafficAttributionService::class)->syncIntegration($integration);
+
+        // Resumes two days before the last stored day.
+        $expanded = Http::recorded()->slice($before)
+            ->filter(fn (array $pair): bool => str_contains($pair[0]->url(), '/metrics/expanded'));
+        $this->assertCount(20, $expanded);
+        $this->assertSame(31 * 4, PageTrafficSnapshot::query()->where('provider', 'umami')->count());
+        $this->assertSame('2026-11-20', $integration->fresh()?->last_synced_at?->format('Y-m-d'));
+    }
+
+    public function test_full_metric_pages_are_followed_by_offset(): void
+    {
+        $firstPage = array_map(fn (int $i): array => ['x' => "/p{$i}", 'y' => 1], range(1, 1000));
+        Http::fake(function (Request $request) use ($firstPage) {
+            parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
+            if (($query['type'] ?? null) === 'path' && isset($query['referrer'])) {
+                return Http::response(match ((int) ($query['offset'] ?? 0)) {
+                    0 => $firstPage,
+                    1000 => [['x' => '/last', 'y' => 2]],
+                    default => [],
+                });
+            }
+
+            return Http::response([]);
+        });
+
+        $pages = app(UmamiAnalyticsClient::class)->fetchPagesByReferrer($this->umamiIntegration(), '2026-11-20', ['google.com']);
+
+        $this->assertCount(1001, $pages['google.com']);
+        $this->assertSame(['page' => '/last', 'visitors' => 2], $pages['google.com'][1000]);
+    }
+
+    public function test_an_instance_that_ignores_offset_is_not_paged_forever(): void
+    {
+        $fullPage = array_map(fn (int $i): array => ['x' => "/p{$i}", 'y' => 1], range(1, 1000));
+        Http::fake(['*' => Http::response($fullPage)]);
+
+        $pages = app(UmamiAnalyticsClient::class)->fetchPagesByReferrer($this->umamiIntegration(), '2026-11-20', ['google.com']);
+
+        $this->assertCount(1000, $pages['google.com']);
+        Http::assertSentCount(2);
+    }
+
     public function test_a_rejected_key_marks_the_integration_for_reconnect_without_retrying(): void
     {
         Http::fake(['*' => Http::response(['error' => 'Unauthorized'], 401)]);
@@ -447,6 +514,10 @@ class UmamiIntegrationTest extends TestCase
         Http::fake(function (Request $request) use ($byReferrer) {
             parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
             $path = (string) parse_url($request->url(), PHP_URL_PATH);
+
+            if ($this->failFrom !== null && (int) $query['startAt'] >= Carbon::parse($this->failFrom, 'UTC')->getTimestampMs()) {
+                return Http::response('upstream down', 500);
+            }
 
             if (str_ends_with($path, '/metrics/expanded')) {
                 return Http::response([

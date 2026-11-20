@@ -22,6 +22,9 @@ use Throwable;
 
 class TrafficAttributionService
 {
+    /** Days of Umami traffic fetched and stored at a time. */
+    private const int UMAMI_DAYS_PER_CHUNK = 7;
+
     public function __construct(
         private readonly Ga4AnalyticsClient $ga4Client,
         private readonly PlausibleAnalyticsClient $plausibleClient,
@@ -434,9 +437,45 @@ class TrafficAttributionService
 
         [$startDate, $endDate] = $this->incrementalWindow($integration, $days);
 
-        $daily = $this->umamiClient->fetchDailyMetrics($integration, $startDate, $endDate);
+        // A first sync can take hundreds of requests (Umami Cloud is rate
+        // limited), so each week is stored as soon as it's fetched. If the
+        // job is cut short, the next run resumes after the last stored week.
+        $count = 0;
+        $chunkStart = $startDate->copy();
+        while ($chunkStart->lte($endDate)) {
+            $chunkEnd = $chunkStart->copy()->addDays(self::UMAMI_DAYS_PER_CHUNK - 1);
+            if ($chunkEnd->gt($endDate)) {
+                $chunkEnd = $endDate->copy();
+            }
 
-        $now = Carbon::now();
+            $daily = $this->umamiClient->fetchDailyMetrics($integration, $chunkStart, $chunkEnd);
+            $records = $this->umamiRecords($integration, $project, $daily, Carbon::now());
+            $this->replaceSnapshots($project, TrafficProvider::Umami, $chunkStart, $chunkEnd, $records);
+            $count += count($records);
+
+            if ($chunkEnd->lt($endDate)) {
+                $integration->update(['status' => 'connected', 'last_synced_at' => $chunkEnd->copy()]);
+            }
+
+            $chunkStart = $chunkEnd->copy()->addDay();
+        }
+
+        $this->markSynced($integration, $project, TrafficProvider::Umami, $startDate, $endDate, $count, Carbon::now());
+
+        return $count;
+    }
+
+    /**
+     * Snapshot rows for Umami's daily page and referrer metrics.
+     *
+     * @param  array<string, array{
+     *     pages: list<array{page: string, visitors: int, visits: int, pageviews: int, bounces: int, totaltime: int}>,
+     *     referrers: list<array{referrer: string, visitors: int}>
+     * }>  $daily
+     * @return list<array<string, mixed>>
+     */
+    private function umamiRecords(ProjectIntegration $integration, Project $project, array $daily, Carbon $now): array
+    {
         $records = [];
 
         foreach ($daily as $date => $metrics) {
@@ -518,7 +557,7 @@ class TrafficAttributionService
             }
         }
 
-        return $this->storeDailySnapshots($integration, $project, TrafficProvider::Umami, $startDate, $endDate, $records, $now);
+        return $records;
     }
 
     /**
@@ -599,6 +638,17 @@ class TrafficAttributionService
         array $records,
         Carbon $now,
     ): int {
+        $this->replaceSnapshots($project, $provider, $startDate, $endDate, $records);
+        $this->markSynced($integration, $project, $provider, $startDate, $endDate, count($records), $now);
+
+        return count($records);
+    }
+
+    /**
+     * @param  list<array<string, mixed>>  $records
+     */
+    private function replaceSnapshots(Project $project, TrafficProvider $provider, Carbon $startDate, Carbon $endDate, array $records): void
+    {
         // Each fetched day replaces what was stored for it, so a page with no
         // visits that day doesn't keep an older value.
         DB::transaction(function () use ($project, $provider, $startDate, $endDate, $records): void {
@@ -628,9 +678,17 @@ class TrafficAttributionService
                 );
             }
         });
+    }
 
-        $count = count($records);
-
+    private function markSynced(
+        ProjectIntegration $integration,
+        Project $project,
+        TrafficProvider $provider,
+        Carbon $startDate,
+        Carbon $endDate,
+        int $count,
+        Carbon $now,
+    ): void {
         $integration->update([
             'status' => 'connected',
             'last_synced_at' => $now,
@@ -648,8 +706,6 @@ class TrafficAttributionService
                 'end_date' => $endDate->format('Y-m-d'),
             ],
         );
-
-        return $count;
     }
 
     /**
