@@ -32,6 +32,8 @@ x-app-env: &app-env
   APP_KEY: "${APP_KEY:?}"
   APP_DEBUG: "${APP_DEBUG:-false}"
   APP_URL: "${APP_URL:?}"
+  # Empty = treat requests as https when APP_URL is https (Cloudflare -> Traefik forwards http)
+  APP_FORCE_HTTPS: "${APP_FORCE_HTTPS:-}"
   LOG_CHANNEL: "${LOG_CHANNEL:-stderr}"
   LOG_LEVEL: "${LOG_LEVEL:-info}"
 

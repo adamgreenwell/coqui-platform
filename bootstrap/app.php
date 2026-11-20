@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Middleware\ForceHttpsScheme;
 use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -26,6 +27,9 @@ return Application::configure(basePath: dirname(__DIR__))
         // php-fpm is only reachable inside the compose network, so trust the
         // forwarded scheme/host/IP headers from any hop.
         $middleware->trustProxies(at: '*');
+        // Cloudflare reaches the origin over HTTP, so the forwarded scheme says
+        // http even though visitors use https. Override it when APP_URL is https.
+        $middleware->prepend(ForceHttpsScheme::class);
         $middleware->alias([
             'abilities' => CheckAbilities::class,
             'ability' => CheckForAnyAbility::class,
