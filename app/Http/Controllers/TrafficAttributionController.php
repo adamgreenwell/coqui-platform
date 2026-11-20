@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Domains\Integrations\Services\TrafficAttributionService;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
+use App\Features\RunnrIntegration;
 use Carbon\CarbonInterface;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -46,7 +47,7 @@ class TrafficAttributionController extends Controller
                 'name' => $project->name,
                 'domain' => $project->domain,
                 'canonical_url' => $project->canonical_url,
-                'runnr_site_id' => $project->runnr_site_id,
+                ...(RunnrIntegration::enabled() ? ['runnr_site_id' => $project->runnr_site_id] : []),
             ],
             'days' => $days,
             'kpis' => $report['kpis'],

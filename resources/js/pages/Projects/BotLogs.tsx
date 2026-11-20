@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import AppLayout, { type WorkspaceSummary } from '../../layouts/AppLayout';
+import { useFeatures } from '../../lib/features';
 
 interface ProjectSummary {
   id: string;
@@ -107,6 +108,7 @@ export default function BotLogs({
   flagged404s,
   canEdit,
 }: BotLogsProps) {
+  const { runnrIntegration } = useFeatures();
   const [targetOverrides, setTargetOverrides] = useState<Record<string, string>>({});
   const [remediatedPaths, setRemediatedPaths] = useState<Record<string, boolean>>({});
 
@@ -147,7 +149,7 @@ export default function BotLogs({
                   <Server className="h-3.5 w-3.5" />
                 </span>
                 <h1 className="text-xl font-bold text-white tracking-tight">Bot Telemetry &amp; Crawl Budget</h1>
-                {project.runnr_site_id ? (
+                {runnrIntegration && project.runnr_site_id ? (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
                     <CheckCircle2 className="h-3 w-3" /> Runnr: {project.runnr_site_id}
                   </span>
@@ -358,7 +360,9 @@ export default function BotLogs({
                 {botFamilyBreakdown.length === 0 ? (
                   <tr>
                     <td colSpan={10} className="px-4 py-8 text-center text-slate-500">
-                      No crawler summaries ingested yet. Runnr server logs ingest automatically each hour.
+                      {runnrIntegration
+                        ? 'No crawler summaries ingested yet. Runnr server logs ingest automatically each hour.'
+                        : 'No crawler summaries ingested yet.'}
                     </td>
                   </tr>
                 ) : (

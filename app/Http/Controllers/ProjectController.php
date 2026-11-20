@@ -11,6 +11,7 @@ use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\ProjectCompetitor;
 use App\Domains\Projects\Models\Workspace;
+use App\Features\RunnrIntegration;
 use App\Models\User;
 use Carbon\CarbonInterface;
 use Illuminate\Http\JsonResponse;
@@ -183,6 +184,8 @@ class ProjectController extends Controller
         /** @var User $user */
         $user = $request->user();
 
+        $runnrEnabled = RunnrIntegration::enabled();
+
         /** @var CrawlRun|null $latestCrawl */
         $latestCrawl = $project->crawlRuns()->latest('id')->first();
 
@@ -246,24 +249,36 @@ class ProjectController extends Controller
             ])
             ->all();
 
+        $projectProps = [
+            'id' => $project->uuid,
+            'name' => $project->name,
+            'domain' => $project->domain,
+            'canonical_url' => $project->canonical_url,
+            'location_code' => $project->location_code,
+            'language_code' => $project->language_code,
+            'crawl_cadence' => $project->crawl_cadence,
+            'last_crawled_at' => $project->last_crawled_at?->toIso8601String(),
+            'created_at' => $project->created_at?->toIso8601String(),
+        ];
+
+        // Runnr details stay out of the page while the integration is hidden.
+        $runnrProps = [];
+        if ($runnrEnabled) {
+            $projectProps['runnr_site_id'] = $project->runnr_site_id;
+            $runnrProps = [
+                'deploySmoke' => $deploySmoke,
+                'runnrWebhookUrl' => url('/api/webhooks/runnr/deploy'),
+                'runnrBadgeUrl' => url('/api/v1/deploy-smoke/badge/'.$project->deployBadgeToken()),
+            ];
+        }
+
         return Inertia::render('Projects/Show', [
             'workspace' => [
                 'id' => $workspace->uuid,
                 'name' => $workspace->name,
                 'slug' => $workspace->slug,
             ],
-            'project' => [
-                'id' => $project->uuid,
-                'name' => $project->name,
-                'domain' => $project->domain,
-                'canonical_url' => $project->canonical_url,
-                'location_code' => $project->location_code,
-                'language_code' => $project->language_code,
-                'crawl_cadence' => $project->crawl_cadence,
-                'runnr_site_id' => $project->runnr_site_id,
-                'last_crawled_at' => $project->last_crawled_at?->toIso8601String(),
-                'created_at' => $project->created_at?->toIso8601String(),
-            ],
+            'project' => $projectProps,
             'latestCrawl' => $latestCrawl !== null ? [
                 'id' => $latestCrawl->external_crawl_id,
                 'externalCrawlId' => $latestCrawl->external_crawl_id,
@@ -281,6 +296,7 @@ class ProjectController extends Controller
             'competitors' => $competitors,
             'integrations' => $project->integrations()
                 ->select(['id', 'uuid', 'provider', 'site_url', 'external_identifier', 'status', 'last_synced_at'])
+                ->when(! $runnrEnabled, fn ($query) => $query->where('provider', '!=', 'runnr'))
                 ->get()
                 ->map(fn (ProjectIntegration $i): array => [
                     'id' => $i->uuid,
@@ -290,9 +306,7 @@ class ProjectController extends Controller
                     'last_synced_at' => $i->last_synced_at instanceof CarbonInterface ? $i->last_synced_at->toIso8601String() : null,
                 ])
                 ->all(),
-            'deploySmoke' => $deploySmoke,
-            'runnrWebhookUrl' => url('/api/webhooks/runnr/deploy'),
-            'runnrBadgeUrl' => url('/api/v1/deploy-smoke/badge/'.$project->deployBadgeToken()),
+            ...$runnrProps,
             'activities' => $activities,
             'canEdit' => $user->can('update', $project),
             'canDelete' => $user->can('delete', $project),

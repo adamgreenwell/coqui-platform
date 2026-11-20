@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Domains\Integrations\Models\BotCrawlLog;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
+use App\Features\RunnrIntegration;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -27,6 +28,9 @@ class BotTelemetryTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        // These tests exercise the Runnr surface, which is hidden unless the flag is on.
+        RunnrIntegration::activate();
 
         $this->user = User::factory()->create();
         $this->workspace = Workspace::query()->create([

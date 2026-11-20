@@ -7,6 +7,7 @@ namespace App\Http\Middleware;
 use App\Domains\Billing\PlanFeature;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
+use App\Features\RunnrIntegration;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -60,6 +61,9 @@ class HandleInertiaRequests extends Middleware
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),
                 'status' => fn () => $request->session()->get('status'),
+            ],
+            'features' => [
+                'runnrIntegration' => fn (): bool => RunnrIntegration::enabled(),
             ],
         ];
     }
