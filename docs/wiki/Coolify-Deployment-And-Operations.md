@@ -33,6 +33,7 @@ Production runs on a self-hosted **Coolify** server using `docker-compose.coolif
 5. **First account:** register through the UI. Then, from the `php` container's terminal:
    - Grant yourself operator access, which is needed for the Horizon dashboard at `/horizon`: `php artisan coqui:operator <your email>`. Use `--revoke` to remove it.
    - If needed, set the workspace plan: `php artisan billing:set-tier <workspace id or slug> <free|pro|agency>`. Add `--runnr` for the Runnr add-on.
+   - To clear a workspace's Stripe billing (for example after testing with sandbox keys): `php artisan billing:reset <workspace id, UUID or slug>`. See [Stripe Billing Setup](Stripe-Billing-Setup.md#switching-from-the-sandbox-to-live-mode).
 
 ## Environment Variable Checklist
 
