@@ -68,6 +68,7 @@ class RankFallbackTest extends TestCase
         $first = $this->page(['a.com', 'b.com'], [
             'ai_overview' => ['contents' => [['type' => 'heading']], 'references' => [['link' => 'https://www.coqui.io/guide']]],
             'people_also_ask' => [['question' => 'What?']],
+            'inline_images' => [['link' => 'https://example.com/a.jpg']],
         ]);
         // SERPHouse may restart positions on each page; ranks are counted.
         $second = $this->page(['c.com'], [], 1);
@@ -78,6 +79,7 @@ class RankFallbackTest extends TestCase
         $this->assertSame([1, 2, 3], array_column($organic, 'rank_group'));
         $this->assertSame('c.com', $organic[2]['domain']);
         $this->assertContains('people_also_ask', array_column($items, 'type'));
+        $this->assertContains('images', array_column($items, 'type'));
 
         $overview = collect($items)->firstWhere('type', 'ai_overview');
         $this->assertSame([['url' => 'https://www.coqui.io/guide']], $overview['references']);
