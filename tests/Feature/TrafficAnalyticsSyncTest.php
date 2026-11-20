@@ -48,7 +48,7 @@ class TrafficAnalyticsSyncTest extends TestCase
         $this->assertSame('30 4 * * *', $events->first()->expression);
     }
 
-    public function test_command_queues_connected_analytics_integrations_on_plans_with_attribution(): void
+    public function test_command_queues_connected_analytics_integrations_on_every_plan(): void
     {
         Queue::fake();
 
@@ -58,12 +58,12 @@ class TrafficAnalyticsSyncTest extends TestCase
         $this->integration($this->makeProject($this->workspace, 'other.example'), 'plausible', 'needs_reconnect');
 
         $free = $this->makeWorkspace('free', 'free-analytics');
-        $this->integration($this->makeProject($free, 'free.example'), 'plausible');
+        $freePlausible = $this->integration($this->makeProject($free, 'free.example'), 'plausible');
 
         $this->artisan('traffic:sync')->assertSuccessful();
 
-        Queue::assertPushed(SyncTrafficAnalyticsJob::class, 2);
-        foreach ([$ga4, $plausible] as $integration) {
+        Queue::assertPushed(SyncTrafficAnalyticsJob::class, 3);
+        foreach ([$ga4, $plausible, $freePlausible] as $integration) {
             Queue::assertPushed(SyncTrafficAnalyticsJob::class, fn (SyncTrafficAnalyticsJob $job): bool => $job->integration->is($integration));
         }
     }
@@ -80,17 +80,6 @@ class TrafficAnalyticsSyncTest extends TestCase
         Queue::assertPushed(SyncTrafficAnalyticsJob::class, fn (SyncTrafficAnalyticsJob $job): bool => $job->integration->is($plausible));
 
         $this->artisan('traffic:sync', ['--provider' => 'gsc'])->assertExitCode(2);
-    }
-
-    public function test_job_skips_a_workspace_that_lost_traffic_attribution(): void
-    {
-        Http::fake();
-        $integration = $this->integration($this->project, 'plausible');
-        $this->workspace->applyPlanTier('free');
-
-        (new SyncTrafficAnalyticsJob($integration->fresh() ?? $integration))->handle(app(TrafficAttributionService::class));
-
-        Http::assertNothingSent();
     }
 
     public function test_job_stops_retrying_when_the_provider_rejects_the_key(): void

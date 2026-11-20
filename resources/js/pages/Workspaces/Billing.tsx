@@ -422,7 +422,7 @@ export default function WorkspaceBilling({
                   <span className="text-xs text-slate-400 ml-1">/ month</span>
                 </div>
                 <p className="text-xs text-slate-400">
-                  Full intelligence suite: Live SERP content briefs, keyword gap, backlinks &amp; traffic attribution.
+                  Full intelligence suite: Live SERP content briefs, keyword gap &amp; backlinks.
                 </p>
                 <ul className="space-y-2 text-xs text-slate-300 pt-2 border-t border-slate-800">
                   {plans.pro?.features.map((f) => (

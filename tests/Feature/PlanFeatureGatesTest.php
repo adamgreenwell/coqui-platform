@@ -12,7 +12,6 @@ use App\Domains\Integrations\Jobs\SyncGoogleSearchConsoleJob;
 use App\Domains\Integrations\Models\BotCrawlLog;
 use App\Domains\Integrations\Models\ProjectIntegration;
 use App\Domains\Integrations\Models\SearchPerformanceQuery;
-use App\Domains\Integrations\Services\SearchPerformanceSyncService;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
 use App\Domains\Serp\Models\ContentBrief;
@@ -113,7 +112,7 @@ class PlanFeatureGatesTest extends TestCase
     {
         $this->workspace->applyPlanTier('personal');
 
-        foreach (['/keywords/brief', '/backlinks/watchlist', '/analytics/performance', '/bot-logs'] as $path) {
+        foreach (['/keywords/brief', '/backlinks/watchlist', '/bot-logs'] as $path) {
             $this->actingAs($this->owner)->get($this->projectUrl($path))->assertOk();
         }
     }
@@ -134,45 +133,41 @@ class PlanFeatureGatesTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_traffic_attribution_is_gated(): void
+    public function test_free_gets_traffic_attribution_and_nothing_else_paid(): void
     {
-        $this->assertWebGate('GET', $this->projectUrl('/analytics/performance'), 'pro', 'Search performance and traffic attribution');
+        $this->workspace->applyPlanTier('free');
+
+        $this->assertSame(
+            [
+                'content-briefs' => false,
+                'backlink-intelligence' => false,
+                'traffic-attribution' => true,
+                'white-label-reports' => false,
+                'priority-queue' => false,
+                'runnr-smoke-tests' => false,
+                'bot-telemetry' => false,
+            ],
+            PlanFeature::flagsFor($this->workspace),
+        );
+
+        $this->actingAs($this->owner)->get($this->projectUrl('/analytics/performance'))->assertOk();
     }
 
-    public function test_free_plan_cannot_connect_search_or_analytics_integrations(): void
+    public function test_free_plan_can_connect_search_and_analytics_integrations(): void
     {
-        Http::fake();
         Queue::fake();
+        Http::fake([
+            'plausible.io/*' => Http::response(['results' => []]),
+            '*' => Http::response([]),
+        ]);
 
-        $this->assertSentToBilling($this->actingAs($this->owner)->get($this->projectUrl('/integrations/google/connect')));
-        $this->assertSentToBilling($this->actingAs($this->owner)->post($this->projectUrl('/integrations/bing/connect'), ['api_key' => 'k']));
-        $this->assertSentToBilling($this->actingAs($this->owner)->post($this->projectUrl('/integrations/ga4/connect'), ['property_id' => '123']));
-        $this->assertSentToBilling($this->actingAs($this->owner)->post($this->projectUrl('/integrations/plausible/connect'), ['api_key' => 'k']));
+        $this->actingAs($this->owner)->post($this->projectUrl('/integrations/plausible/connect'), ['site_id' => $this->project->domain, 'api_key' => 'k'])
+            ->assertSessionHasNoErrors();
 
-        $this->assertSame(0, ProjectIntegration::query()->count());
-        Http::assertNothingSent();
-        Queue::assertNothingPushed();
+        $this->assertTrue(ProjectIntegration::query()->where('provider', 'plausible')->exists());
     }
 
-    public function test_google_callback_refuses_a_workspace_that_lost_traffic_attribution(): void
-    {
-        Http::fake();
-        $state = str_repeat('b', 40);
-
-        $this->actingAs($this->owner)
-            ->withSession(['google_oauth.'.$state => [
-                'workspace_id' => $this->workspace->id,
-                'project_id' => $this->project->id,
-                'issued_at' => now()->getTimestamp(),
-            ]])
-            ->get('/integrations/google/callback?state='.$state.'&code=auth-code')
-            ->assertRedirect(route('workspaces.billing.index', $this->workspace));
-
-        Http::assertNothingSent();
-        $this->assertSame(0, ProjectIntegration::query()->count());
-    }
-
-    public function test_keyword_page_hides_the_search_performance_overlay_without_traffic_attribution(): void
+    public function test_keyword_page_shows_the_search_performance_overlay_on_every_plan(): void
     {
         $this->project->trackedKeywords()->create([
             'keyword' => 'cloud rank tracking',
@@ -193,37 +188,18 @@ class PlanFeatureGatesTest extends TestCase
             'position' => 3.0,
         ]);
 
-        $page = fn () => $this->actingAs($this->owner)->get($this->projectUrl('/keywords'))->assertOk();
-
-        $page()->assertInertia(fn (Assert $p) => $p->where('keywords.0.gsc_performance.clicks', null)->etc());
-
-        $this->workspace->applyPlanTier('pro');
-        $page()->assertInertia(fn (Assert $p) => $p->where('keywords.0.gsc_performance.clicks', 12)->etc());
+        $this->actingAs($this->owner)->get($this->projectUrl('/keywords'))->assertOk()
+            ->assertInertia(fn (Assert $p) => $p->where('keywords.0.gsc_performance.clicks', 12)->etc());
     }
 
-    public function test_scheduled_search_console_sync_skips_workspaces_without_traffic_attribution(): void
+    public function test_scheduled_search_console_sync_includes_free_workspaces(): void
     {
         Queue::fake();
         $integration = $this->gscIntegration();
 
         Artisan::call('search-console:sync');
-        Queue::assertNotPushed(SyncGoogleSearchConsoleJob::class);
 
-        $this->workspace->applyPlanTier('pro');
-        Artisan::call('search-console:sync');
         Queue::assertPushed(SyncGoogleSearchConsoleJob::class, fn (SyncGoogleSearchConsoleJob $job): bool => $job->integration->is($integration));
-    }
-
-    public function test_sync_job_queued_before_a_downgrade_does_nothing_after_it(): void
-    {
-        Http::fake();
-        $this->workspace->applyPlanTier('pro');
-        $job = new SyncGoogleSearchConsoleJob($this->gscIntegration());
-
-        $this->workspace->applyPlanTier('free');
-        $job->handle(app(SearchPerformanceSyncService::class));
-
-        Http::assertNothingSent();
     }
 
     public function test_bot_telemetry_is_gated(): void

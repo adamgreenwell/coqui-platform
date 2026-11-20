@@ -220,7 +220,7 @@ class WorkspaceBillingTest extends TestCase
         $this->workspace->applyPlanTier('free');
         $this->assertFalse(Feature::for($this->workspace)->active('content-briefs'));
         $this->assertFalse(Feature::for($this->workspace)->active('backlink-intelligence'));
-        $this->assertFalse(Feature::for($this->workspace)->active('traffic-attribution'));
+        $this->assertTrue(Feature::for($this->workspace)->active('traffic-attribution'));
         $this->assertFalse(Feature::for($this->workspace)->active('white-label-reports'));
         $this->assertFalse(Feature::for($this->workspace)->active('runnr-smoke-tests'));
 

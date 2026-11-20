@@ -32,7 +32,9 @@ class AppServiceProvider extends ServiceProvider
         // Laravel Pennant Plan Tier Feature Gating
         Feature::define('content-briefs', fn (Workspace $workspace): bool => in_array($workspace->plan_tier, Workspace::PRO_FEATURE_TIERS, true));
         Feature::define('backlink-intelligence', fn (Workspace $workspace): bool => in_array($workspace->plan_tier, Workspace::PRO_FEATURE_TIERS, true));
-        Feature::define('traffic-attribution', fn (Workspace $workspace): bool => in_array($workspace->plan_tier, Workspace::PRO_FEATURE_TIERS, true));
+        // Every plan, Free included: it reads the customer's own search and
+        // analytics data. Kept as a feature so it can be gated again later.
+        Feature::define('traffic-attribution', fn (Workspace $workspace): bool => true);
         Feature::define('white-label-reports', fn (Workspace $workspace): bool => $workspace->plan_tier === 'agency');
         Feature::define('priority-queue', fn (Workspace $workspace): bool => $workspace->plan_tier === 'agency');
         Feature::define('runnr-smoke-tests', fn (Workspace $workspace): bool => $workspace->hasRunnrEntitlement());

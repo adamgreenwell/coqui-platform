@@ -556,15 +556,30 @@ class UmamiIntegrationTest extends TestCase
         Http::assertNothingSent();
     }
 
-    public function test_connect_requires_traffic_attribution(): void
+    public function test_a_job_for_a_deleted_project_stops_instead_of_requeueing(): void
     {
-        $this->workspace->applyPlanTier('free');
+        Carbon::setTestNow('2026-11-20 12:00:00');
+        Queue::fake();
         Http::fake();
+        $integration = $this->umamiIntegration();
+        $integration->update(['last_synced_at' => Carbon::parse('2026-11-01')]);
+        $this->project->delete();
 
-        $this->connect(['base_url' => self::BASE, 'api_key' => 'umami_test'])->assertRedirect();
-        $this->assertDatabaseMissing('project_integrations', ['provider' => 'umami']);
+        (new SyncTrafficAnalyticsJob($integration->fresh() ?? $integration))->handle(app(TrafficAttributionService::class));
 
         Http::assertNothingSent();
+        Queue::assertNothingPushed();
+    }
+
+    public function test_free_workspaces_can_connect_umami(): void
+    {
+        $this->workspace->applyPlanTier('free');
+        Queue::fake();
+        $this->fakeWebsites([['id' => self::WEBSITE_ID, 'name' => 'Guard Dog', 'domain' => 'guarddog.cc']]);
+
+        $this->connect(['base_url' => self::BASE, 'api_key' => 'umami_test'])->assertSessionHasNoErrors();
+
+        Queue::assertPushed(SyncTrafficAnalyticsJob::class);
     }
 
     // Helpers
