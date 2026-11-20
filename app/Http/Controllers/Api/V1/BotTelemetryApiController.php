@@ -8,12 +8,27 @@ use App\Domains\Billing\PlanFeature;
 use App\Domains\Integrations\Services\BotTelemetryService;
 use App\Domains\Projects\Models\Project;
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\EnsureRunnrIntegrationEnabled;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Facades\Gate;
 
-class BotTelemetryApiController extends Controller
+class BotTelemetryApiController extends Controller implements HasMiddleware
 {
+    /**
+     * Runnr actions stay hidden (404) until the runnr-integration feature is on.
+     *
+     * @return array<int, Middleware>
+     */
+    public static function middleware(): array
+    {
+        return [
+            new Middleware(EnsureRunnrIntegrationEnabled::class, only: ['ingest']),
+        ];
+    }
+
     public function __construct(
         private readonly BotTelemetryService $telemetry,
     ) {}

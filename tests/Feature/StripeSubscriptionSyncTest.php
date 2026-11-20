@@ -7,6 +7,7 @@ namespace Tests\Feature;
 use App\Domains\Billing\Models\WorkspaceSubscription;
 use App\Domains\Billing\Services\StripeWebhookSignature;
 use App\Domains\Projects\Models\Workspace;
+use App\Features\RunnrIntegration;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
@@ -14,7 +15,9 @@ use Tests\TestCase;
 
 /**
  * Subscription webhooks must follow portal plan switches and keep the base
- * plan and the Runnr add-on apart.
+ * plan and the Runnr add-on apart. They run with the runnr-integration flag
+ * off (its default), because existing add-on subscriptions must keep syncing
+ * while the Runnr UI is hidden.
  */
 class StripeSubscriptionSyncTest extends TestCase
 {
@@ -209,6 +212,7 @@ class StripeSubscriptionSyncTest extends TestCase
 
     public function test_buying_the_add_on_does_not_replace_the_base_subscription(): void
     {
+        $this->assertFalse(RunnrIntegration::enabled(), 'Add-on webhooks must sync while the Runnr UI is hidden.');
         $this->subscribeToPro();
 
         $this->postEvent('checkout.session.completed', [

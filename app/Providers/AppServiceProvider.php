@@ -6,6 +6,7 @@ namespace App\Providers;
 
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
+use App\Features\RunnrIntegration;
 use App\Models\PersonalAccessToken;
 use App\Policies\ProjectPolicy;
 use App\Policies\WorkspacePolicy;
@@ -36,5 +37,10 @@ class AppServiceProvider extends ServiceProvider
         Feature::define('priority-queue', fn (Workspace $workspace): bool => $workspace->plan_tier === 'agency');
         Feature::define('runnr-smoke-tests', fn (Workspace $workspace): bool => $workspace->hasRunnrEntitlement());
         Feature::define('bot-telemetry', fn (Workspace $workspace): bool => $workspace->hasRunnrEntitlement() || in_array($workspace->plan_tier, Workspace::PRO_FEATURE_TIERS, true));
+
+        // Global launch switch for the Runnr integration; off until activated.
+        // Defined on its own persistent store so it survives requests even
+        // when the default store doesn't keep values (see RunnrIntegration).
+        Feature::store(RunnrIntegration::STORE)->define(RunnrIntegration::class);
     }
 }

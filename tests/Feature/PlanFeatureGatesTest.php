@@ -16,6 +16,7 @@ use App\Domains\Integrations\Services\SearchPerformanceSyncService;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
 use App\Domains\Serp\Models\ContentBrief;
+use App\Features\RunnrIntegration;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
@@ -246,6 +247,9 @@ class PlanFeatureGatesTest extends TestCase
 
     public function test_runnr_telemetry_is_stored_even_when_the_plan_lacks_bot_telemetry(): void
     {
+        // Runnr routes 404 until the global launch flag is on; these tests
+        // check the plan gate behind it.
+        RunnrIntegration::activate();
         config()->set('services.runnr.telemetry_token', 'runnr-platform-token');
         $this->project->update(['runnr_site_id' => 'site_gated_1']);
         $payload = [
@@ -296,6 +300,7 @@ class PlanFeatureGatesTest extends TestCase
 
     public function test_runnr_smoke_test_api_is_gated(): void
     {
+        RunnrIntegration::activate();
         Sanctum::actingAs($this->owner, ['projects:read']);
         $url = "/api/v1/projects/{$this->project->uuid}/deploy-smoke/latest";
 
@@ -310,6 +315,7 @@ class PlanFeatureGatesTest extends TestCase
 
     public function test_smoke_badge_reports_inactive_without_runnr_smoke_tests(): void
     {
+        RunnrIntegration::activate();
         $badge = '/api/v1/deploy-smoke/badge/'.$this->project->deployBadgeToken();
 
         $this->get($badge)->assertOk()->assertSee('inactive', false);
@@ -320,6 +326,7 @@ class PlanFeatureGatesTest extends TestCase
 
     public function test_deploy_webhook_skips_smoke_crawls_for_workspaces_without_the_feature(): void
     {
+        RunnrIntegration::activate();
         Http::fake();
         config()->set('services.runnr.webhook_secret', 'webhook-secret');
         $this->project->update(['runnr_site_id' => 'site_gated_1']);
@@ -339,6 +346,7 @@ class PlanFeatureGatesTest extends TestCase
 
     public function test_linking_a_runnr_site_does_not_unlock_runnr_features(): void
     {
+        RunnrIntegration::activate();
         $this->actingAs($this->owner)
             ->post($this->projectUrl('/integrations/runnr/connect'), ['runnr_site_id' => 'site_typed_in'])
             ->assertRedirect()
@@ -357,6 +365,7 @@ class PlanFeatureGatesTest extends TestCase
 
     public function test_a_runnr_site_linked_to_another_project_cannot_be_claimed(): void
     {
+        RunnrIntegration::activate();
         $victim = User::factory()->create();
         $victimWorkspace = Workspace::query()->create([
             'name' => 'Victim Workspace',

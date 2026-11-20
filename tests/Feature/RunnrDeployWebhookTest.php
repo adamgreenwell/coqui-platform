@@ -8,6 +8,7 @@ use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Integrations\Services\RunnrDeploySmokeService;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
+use App\Features\RunnrIntegration;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -28,6 +29,9 @@ class RunnrDeployWebhookTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        // These tests exercise the Runnr surface, which is hidden unless the flag is on.
+        RunnrIntegration::activate();
 
         $this->user = User::factory()->create();
         $this->workspace = Workspace::query()->create([

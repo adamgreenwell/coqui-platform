@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { useState } from 'react';
 import AppLayout, { type WorkspaceSummary } from '../../layouts/AppLayout';
+import { useFeatures } from '../../lib/features';
 
 interface PlanDetail {
   name: string;
@@ -33,7 +34,7 @@ interface WorkspaceBillingProps {
     name: string;
     slug: string;
     plan_tier: string;
-    has_runnr_addon: boolean;
+    has_runnr_addon?: boolean;
     subscription_status: string;
     current_period_end: string | null;
   };
@@ -44,7 +45,7 @@ interface WorkspaceBillingProps {
     dfs_spend_usd: number;
     dfs_budget_usd: number;
     dfs_remaining_usd: number;
-    runnr_entitled: boolean;
+    runnr_entitled?: boolean;
   };
   plans: Record<string, PlanDetail>;
   invoices: Array<{
@@ -68,6 +69,7 @@ export default function WorkspaceBilling({
   canEdit,
   billingMode,
 }: WorkspaceBillingProps) {
+  const { runnrIntegration } = useFeatures();
   const [processingTier, setProcessingTier] = useState<string | null>(null);
 
   const handleUpgrade = (tier: string) => {
@@ -113,7 +115,7 @@ export default function WorkspaceBilling({
                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
                   {workspace.plan_tier} Plan
                 </span>
-                {workspace.has_runnr_addon && (
+                {runnrIntegration && workspace.has_runnr_addon && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-indigo-500/10 text-indigo-400 border border-indigo-500/30">
                     <CheckCircle2 className="h-3 w-3" /> Runnr Bundle
                   </span>
@@ -157,7 +159,7 @@ export default function WorkspaceBilling({
         )}
 
         {/* Usage & Metering KPI Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${runnrIntegration ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
           {/* DataForSEO Monthly Spend Guard */}
           <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 space-y-3">
             <div className="flex items-center justify-between">
@@ -240,27 +242,29 @@ export default function WorkspaceBilling({
           </div>
 
           {/* Runnr Hosting Entitlement */}
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-slate-400">Runnr Hosting Perks</span>
-              <span className="p-1 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                <Server className="h-3.5 w-3.5" />
-              </span>
+          {runnrIntegration && (
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-slate-400">Runnr Hosting Perks</span>
+                <span className="p-1 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                  <Server className="h-3.5 w-3.5" />
+                </span>
+              </div>
+              <div>
+                <span className={`text-base font-bold ${usage.runnr_entitled ? 'text-emerald-400' : 'text-slate-400'}`}>
+                  {usage.runnr_entitled ? 'Active & Unlocked' : 'Add-on Required'}
+                </span>
+                <span className="text-xs text-slate-400 block mt-0.5">
+                  Deploy Smoke &amp; Bot Telemetry
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500">
+                {usage.runnr_entitled
+                  ? 'Unlocked via the Runnr add-on or Agency plan.'
+                  : 'Get the Runnr add-on or upgrade to Agency.'}
+              </p>
             </div>
-            <div>
-              <span className={`text-base font-bold ${usage.runnr_entitled ? 'text-emerald-400' : 'text-slate-400'}`}>
-                {usage.runnr_entitled ? 'Active & Unlocked' : 'Add-on Required'}
-              </span>
-              <span className="text-xs text-slate-400 block mt-0.5">
-                Deploy Smoke &amp; Bot Telemetry
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-500">
-              {usage.runnr_entitled
-                ? 'Unlocked via the Runnr add-on or Agency plan.'
-                : 'Get the Runnr add-on or upgrade to Agency.'}
-            </p>
-          </div>
+          )}
         </div>
 
         {/* Plan Tiers Grid */}
@@ -472,7 +476,9 @@ export default function WorkspaceBilling({
                   <span className="text-xs text-slate-400 ml-1">/ month</span>
                 </div>
                 <p className="text-xs text-slate-400">
-                  Massive 10k keywords, 250k URLs, white-label client diffs, multi-seat &amp; native Runnr hosting perks.
+                  {runnrIntegration
+                    ? 'Massive 10k keywords, 250k URLs, white-label client diffs, multi-seat & native Runnr hosting perks.'
+                    : 'Massive 10k keywords, 250k URLs, white-label client diffs & multi-seat.'}
                 </p>
                 <ul className="space-y-2 text-xs text-slate-300 pt-2 border-t border-slate-800">
                   {plans.agency?.features.map((f) => (
@@ -509,42 +515,44 @@ export default function WorkspaceBilling({
         </div>
 
         {/* Runnr Hosting Bundle Add-on Card */}
-        <div className="rounded-xl border border-indigo-500/30 bg-gradient-to-r from-indigo-950/40 via-slate-900 to-slate-900 p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="p-1 rounded bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
-                <Server className="h-4 w-4" />
-              </span>
-              <h3 className="text-sm font-semibold text-white">Runnr Hosting Moat Add-on</h3>
-              <span className="text-xs font-bold text-indigo-400 font-mono">$29/mo</span>
-              {workspace.has_runnr_addon && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
-                  Active
+        {runnrIntegration && (
+          <div className="rounded-xl border border-indigo-500/30 bg-gradient-to-r from-indigo-950/40 via-slate-900 to-slate-900 p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="p-1 rounded bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
+                  <Server className="h-4 w-4" />
                 </span>
+                <h3 className="text-sm font-semibold text-white">Runnr Hosting Moat Add-on</h3>
+                <span className="text-xs font-bold text-indigo-400 font-mono">$29/mo</span>
+                {workspace.has_runnr_addon && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                    Active
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-300 max-w-2xl">
+                Unlocks automated post-deploy SEO smoke testing with GitHub badges, access log bot &amp; AI crawler telemetry, and automated 301 remediation on any project.
+              </p>
+            </div>
+
+            <div>
+              {workspace.has_runnr_addon ? (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-xs font-medium">
+                  <Check className="h-3.5 w-3.5" /> Included in Subscription
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => handleUpgrade('runnr_addon')}
+                  disabled={processingTier !== null}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs transition cursor-pointer shadow-md shadow-indigo-500/20"
+                >
+                  <span>Add Runnr Hosting Bundle</span>
+                </button>
               )}
             </div>
-            <p className="text-xs text-slate-300 max-w-2xl">
-              Unlocks automated post-deploy SEO smoke testing with GitHub badges, access log bot &amp; AI crawler telemetry, and automated 301 remediation on any project.
-            </p>
           </div>
-
-          <div>
-            {workspace.has_runnr_addon ? (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-xs font-medium">
-                <Check className="h-3.5 w-3.5" /> Included in Subscription
-              </span>
-            ) : (
-              <button
-                type="button"
-                onClick={() => handleUpgrade('runnr_addon')}
-                disabled={processingTier !== null}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-medium text-xs transition cursor-pointer shadow-md shadow-indigo-500/20"
-              >
-                <span>Add Runnr Hosting Bundle</span>
-              </button>
-            )}
-          </div>
-        </div>
+        )}
 
         {/* Invoices History */}
         <div className="space-y-3">
