@@ -496,8 +496,8 @@ class TrafficAttributionService
                 // Referrer counts are unique visitors per referrer, so cap
                 // them at the page's total.
                 $organic = min($organicByPath[$path] ?? 0, $total);
-                $aiBreakdown = $aiByPath[$path] ?? [];
-                $ai = min(array_sum($aiBreakdown), $total - $organic);
+                $ai = min(array_sum($aiByPath[$path] ?? []), $total - $organic);
+                $aiBreakdown = $this->capBreakdown($aiByPath[$path] ?? [], $ai);
 
                 $records[] = [
                     'project_id' => $project->id,
@@ -519,6 +519,46 @@ class TrafficAttributionService
         }
 
         return $this->storeDailySnapshots($integration, $project, TrafficProvider::Umami, $startDate, $endDate, $records, $now);
+    }
+
+    /**
+     * Scale per-assistant counts down to a capped AI total, so the breakdown
+     * never adds up to more than the page's AI visits. Leftover visits go to
+     * the largest remainders.
+     *
+     * @param  array<string, int>  $breakdown
+     * @return array<string, int>
+     */
+    private function capBreakdown(array $breakdown, int $cap): array
+    {
+        $sum = array_sum($breakdown);
+        if ($sum <= $cap) {
+            return $breakdown;
+        }
+
+        if ($cap <= 0) {
+            return [];
+        }
+
+        $scaled = [];
+        $remainders = [];
+        foreach ($breakdown as $assistant => $count) {
+            $exact = $count * $cap / $sum;
+            $scaled[$assistant] = (int) floor($exact);
+            $remainders[$assistant] = $exact - $scaled[$assistant];
+        }
+
+        arsort($remainders);
+        $left = $cap - array_sum($scaled);
+        foreach (array_keys($remainders) as $assistant) {
+            if ($left <= 0) {
+                break;
+            }
+            $scaled[$assistant]++;
+            $left--;
+        }
+
+        return array_filter($scaled, fn (int $count): bool => $count > 0);
     }
 
     /**

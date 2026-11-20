@@ -11,7 +11,9 @@ use Carbon\CarbonInterface;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Pool;
 use Illuminate\Http\Client\Response;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 use RuntimeException;
 use Throwable;
 
@@ -22,9 +24,25 @@ use Throwable;
  * each day is fetched separately. Umami can't filter by channel, but it can
  * filter pages by referrer, which is how search and AI visits are counted
  * per page.
+ *
+ * Self-hosted instances serve the API under /api. Umami Cloud serves it at
+ * api.umami.is/v1 and limits each key to 50 calls every 15 seconds, so Cloud
+ * requests are paced.
  */
 class UmamiAnalyticsClient
 {
+    private const string CLOUD_HOST = 'api.umami.is';
+
+    private const int CLOUD_WINDOW_MS = 15_000;
+
+    /** A margin under Umami Cloud's 50 calls per window. */
+    private const int CLOUD_CALLS_PER_WINDOW = 45;
+
+    private const int REFERRERS_PER_BATCH = 20;
+
+    /** @var list<int> when recent Cloud requests were sent, in ms */
+    private array $cloudSentAt = [];
+
     public function __construct(
         private readonly PublicUrlGuard $guard,
     ) {}
@@ -38,7 +56,8 @@ class UmamiAnalyticsClient
     {
         $target = $this->guard->check($baseUrl);
 
-        $response = $this->request($target, $apiKey)->get($target['base'].'/api/websites', ['pageSize' => 200]);
+        $this->throttle($target, 1);
+        $response = $this->request($target, $apiKey)->get($this->apiRoot($target).'/websites', ['pageSize' => 200]);
 
         $body = $this->decode(null, $response, 'website list');
         $rows = is_array($body['data'] ?? null) ? $body['data'] : [];
@@ -72,7 +91,7 @@ class UmamiAnalyticsClient
         int $daysPerBatch = 7,
     ): array {
         [$target, $apiKey, $websiteId] = $this->connection($integration);
-        $endpoint = "{$target['base']}/api/websites/{$websiteId}";
+        $endpoint = "{$this->apiRoot($target)}/websites/{$websiteId}";
 
         $dates = [];
         $last = CarbonImmutable::parse($endDate->format('Y-m-d'), 'UTC');
@@ -82,6 +101,7 @@ class UmamiAnalyticsClient
 
         $daily = [];
         foreach (array_chunk($dates, max(1, $daysPerBatch)) as $batch) {
+            $this->throttle($target, count($batch) * 2);
             $responses = Http::pool(function (Pool $pool) use ($batch, $endpoint, $target, $apiKey): array {
                 $requests = [];
                 foreach ($batch as $date) {
@@ -118,21 +138,25 @@ class UmamiAnalyticsClient
         }
 
         [$target, $apiKey, $websiteId] = $this->connection($integration);
-        $endpoint = "{$target['base']}/api/websites/{$websiteId}/metrics";
-
-        $responses = Http::pool(function (Pool $pool) use ($referrers, $endpoint, $date, $target, $apiKey): array {
-            $requests = [];
-            foreach ($referrers as $i => $referrer) {
-                $requests[] = $this->pooled($pool->as("ref:{$i}"), $target, $apiKey)
-                    ->get($endpoint, $this->query($date, ['type' => 'path', 'limit' => 1000, 'referrer' => $referrer]));
-            }
-
-            return $requests;
-        });
+        $endpoint = "{$this->apiRoot($target)}/websites/{$websiteId}/metrics";
 
         $pages = [];
-        foreach ($referrers as $i => $referrer) {
-            $pages[$referrer] = $this->parseCounts($this->decode($integration, $responses["ref:{$i}"] ?? null, 'referrer page'));
+        foreach (array_chunk($referrers, self::REFERRERS_PER_BATCH) as $batch) {
+            $this->throttle($target, count($batch));
+
+            $responses = Http::pool(function (Pool $pool) use ($batch, $endpoint, $date, $target, $apiKey): array {
+                $requests = [];
+                foreach ($batch as $i => $referrer) {
+                    $requests[] = $this->pooled($pool->as("ref:{$i}"), $target, $apiKey)
+                        ->get($endpoint, $this->query($date, ['type' => 'path', 'limit' => 1000, 'referrer' => $referrer]));
+                }
+
+                return $requests;
+            });
+
+            foreach ($batch as $i => $referrer) {
+                $pages[$referrer] = $this->parseCounts($this->decode($integration, $responses["ref:{$i}"] ?? null, 'referrer page'));
+            }
         }
 
         /** @var array<string, list<array{page: string, visitors: int}>> $pages */
@@ -156,6 +180,52 @@ class UmamiAnalyticsClient
         // Checked on every sync, not just on connect, in case the host's DNS
         // has since been pointed somewhere internal.
         return [$this->guard->check($baseUrl), $apiKey, rawurlencode($websiteId)];
+    }
+
+    /**
+     * The API root: /api on a self-hosted instance, /v1 (or a regional
+     * /v1/us, /v1/eu) on Umami Cloud. A root already in the URL is kept.
+     *
+     * @param  array{base: string, host: string, port: int, ip: string}  $target
+     */
+    private function apiRoot(array $target): string
+    {
+        $path = (string) parse_url($target['base'], PHP_URL_PATH);
+
+        if ($target['host'] === self::CLOUD_HOST) {
+            return preg_match('#^/v1(/|$)#', $path) === 1 ? $target['base'] : $target['base'].'/v1';
+        }
+
+        return str_ends_with($path, '/api') ? $target['base'] : $target['base'].'/api';
+    }
+
+    /**
+     * Wait, if needed, so the next $calls Cloud requests stay under the
+     * per-key limit.
+     *
+     * @param  array{base: string, host: string, port: int, ip: string}  $target
+     */
+    private function throttle(array $target, int $calls): void
+    {
+        if ($target['host'] !== self::CLOUD_HOST) {
+            return;
+        }
+
+        while (true) {
+            $now = Carbon::now()->getTimestampMs();
+            $this->cloudSentAt = array_values(array_filter(
+                $this->cloudSentAt,
+                fn (int $sentAt): bool => $sentAt > $now - self::CLOUD_WINDOW_MS,
+            ));
+
+            if ($this->cloudSentAt === [] || count($this->cloudSentAt) + $calls <= self::CLOUD_CALLS_PER_WINDOW) {
+                break;
+            }
+
+            Sleep::for(min($this->cloudSentAt) + self::CLOUD_WINDOW_MS - $now + 1)->milliseconds();
+        }
+
+        array_push($this->cloudSentAt, ...array_fill(0, max(1, $calls), Carbon::now()->getTimestampMs()));
     }
 
     /**
@@ -210,6 +280,10 @@ class UmamiAnalyticsClient
             $integration?->markNeedsReconnect('Umami API key unauthorized.');
 
             throw new SearchConsoleAuthException('Umami rejected the API key, or it can\'t read this website.');
+        }
+
+        if ($response->status() === 429) {
+            throw new RuntimeException("Umami rate-limited the {$kind} request. The sync will retry.");
         }
 
         if ($response->redirect()) {

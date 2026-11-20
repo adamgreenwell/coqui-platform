@@ -19,6 +19,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Sleep;
 use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Tests\TestCase;
@@ -45,6 +46,7 @@ class UmamiIntegrationTest extends TestCase
             'umami.example' => ['93.184.216.34'],
             'internal.example' => ['10.0.0.5'],
             'mixed.example' => ['93.184.216.34', '169.254.169.254'],
+            'api.umami.is' => ['93.184.216.40'],
         ]));
 
         $this->owner = User::factory()->create();
@@ -161,6 +163,55 @@ class UmamiIntegrationTest extends TestCase
         });
     }
 
+    /**
+     * @return array<string, array{string, string}>
+     */
+    public static function apiRoots(): array
+    {
+        return [
+            'self-hosted' => [self::BASE, self::BASE.'/api/websites'],
+            'self-hosted with /api' => [self::BASE.'/api', self::BASE.'/api/websites'],
+            'cloud' => ['https://api.umami.is', 'https://api.umami.is/v1/websites'],
+            'cloud with /v1' => ['https://api.umami.is/v1', 'https://api.umami.is/v1/websites'],
+            'cloud region' => ['https://api.umami.is/v1/eu', 'https://api.umami.is/v1/eu/websites'],
+        ];
+    }
+
+    #[DataProvider('apiRoots')]
+    public function test_client_uses_the_right_api_root(string $baseUrl, string $expected): void
+    {
+        Http::fake(['*' => Http::response(['data' => []])]);
+
+        app(UmamiAnalyticsClient::class)->listWebsites($baseUrl, 'umami_test');
+
+        Http::assertSent(fn (Request $request): bool => strtok($request->url(), '?') === $expected);
+    }
+
+    public function test_cloud_requests_are_paced_under_the_rate_limit(): void
+    {
+        Carbon::setTestNow('2026-11-20 12:00:00');
+        Sleep::fake(syncWithCarbon: true);
+        Http::fake(['*' => Http::response([])]);
+        $integration = $this->umamiIntegration();
+        $integration->update(['credentials_encrypted' => ['base_url' => 'https://api.umami.is', 'api_key' => 'umami_test']]);
+
+        // 31 days at two calls a day is more than one window allows.
+        app(UmamiAnalyticsClient::class)->fetchDailyMetrics($integration->fresh() ?? $integration, Carbon::parse('2026-10-20'), Carbon::parse('2026-11-19'));
+
+        Sleep::assertSleptTimes(1);
+        Http::assertSentCount(62);
+    }
+
+    public function test_self_hosted_requests_are_not_paced(): void
+    {
+        Sleep::fake();
+        Http::fake(['*' => Http::response([])]);
+
+        app(UmamiAnalyticsClient::class)->fetchDailyMetrics($this->umamiIntegration(), Carbon::parse('2026-10-20'), Carbon::parse('2026-11-19'));
+
+        Sleep::assertNeverSlept();
+    }
+
     // Sync
 
     public function test_sync_counts_search_and_ai_visits_per_page_from_referrers(): void
@@ -172,7 +223,7 @@ class UmamiIntegrationTest extends TestCase
         $count = app(TrafficAttributionService::class)->syncIntegration($integration, 0);
 
         // "/features" and "/features/" merge into one page.
-        $this->assertSame(3, $count);
+        $this->assertSame(4, $count);
 
         $features = $this->snapshot('/features');
         $this->assertSame(7, $features->total_sessions);
@@ -190,6 +241,12 @@ class UmamiIntegrationTest extends TestCase
         // Referrer counts larger than the page's total are capped.
         $tiny = $this->snapshot('/tiny');
         $this->assertSame([1, 1, 0, 0], [$tiny->total_sessions, $tiny->organic_sessions, $tiny->ai_referral_sessions, $tiny->direct_sessions]);
+        $this->assertSame([], $this->breakdown($tiny));
+
+        // A capped AI total scales the per-assistant counts down with it.
+        $split = $this->snapshot('/split');
+        $this->assertSame([3, 1, 2, 0], [$split->total_sessions, $split->organic_sessions, $split->ai_referral_sessions, $split->direct_sessions]);
+        $this->assertSame(['ChatGPT' => 1, 'Perplexity' => 1], $this->breakdown($split));
 
         // Only search and AI referrers get a per-page lookup.
         Http::assertNotSent(fn (Request $request): bool => str_contains(urldecode($request->url()), 'referrer=news.ycombinator.com'));
@@ -215,7 +272,7 @@ class UmamiIntegrationTest extends TestCase
         $this->assertCount(5, $expanded); // 16th through 20th
 
         $paths = PageTrafficSnapshot::query()->where('provider', 'umami')->pluck('path')->unique()->sort()->values()->all();
-        $this->assertSame(['/', '/features', '/kept', '/tiny'], $paths);
+        $this->assertSame(['/', '/features', '/kept', '/split', '/tiny'], $paths);
     }
 
     public function test_a_rejected_key_marks_the_integration_for_reconnect_without_retrying(): void
@@ -381,10 +438,10 @@ class UmamiIntegrationTest extends TestCase
     private function fakeUmami(): void
     {
         $byReferrer = [
-            'google.com' => [['x' => '/features', 'y' => 3], ['x' => '/', 'y' => 1], ['x' => '/tiny', 'y' => 2]],
+            'google.com' => [['x' => '/features', 'y' => 3], ['x' => '/', 'y' => 1], ['x' => '/tiny', 'y' => 2], ['x' => '/split', 'y' => 1]],
             'bing.com' => [['x' => '/features/', 'y' => 1]],
-            'chatgpt.com' => [['x' => '/features', 'y' => 2], ['x' => '/', 'y' => 1], ['x' => '/tiny', 'y' => 1]],
-            'perplexity.ai' => [['x' => '/', 'y' => 1]],
+            'chatgpt.com' => [['x' => '/features', 'y' => 2], ['x' => '/', 'y' => 1], ['x' => '/tiny', 'y' => 1], ['x' => '/split', 'y' => 2]],
+            'perplexity.ai' => [['x' => '/', 'y' => 1], ['x' => '/split', 'y' => 2]],
         ];
 
         Http::fake(function (Request $request) use ($byReferrer) {
@@ -397,6 +454,7 @@ class UmamiIntegrationTest extends TestCase
                     ['name' => '/features/', 'visitors' => 2, 'visits' => 2, 'pageviews' => '2', 'bounces' => 1, 'totaltime' => 30],
                     ['name' => '/', 'visitors' => 10, 'visits' => 10, 'pageviews' => '14', 'bounces' => 0, 'totaltime' => 0],
                     ['name' => '/tiny', 'visitors' => 1, 'visits' => 1, 'pageviews' => '1', 'bounces' => 1, 'totaltime' => 0],
+                    ['name' => '/split', 'visitors' => 3, 'visits' => 3, 'pageviews' => '3', 'bounces' => 0, 'totaltime' => 0],
                 ]);
             }
 

@@ -1694,7 +1694,7 @@ export default function ProjectShow({
                     placeholder="https://analytics.example.com"
                   />
                   <p className="mt-1 text-[11px] text-slate-500">
-                    The public https address of your Umami instance, or https://api.umami.is for Umami Cloud.
+                    The public https address of your Umami instance. For Umami Cloud, use https://api.umami.is.
                   </p>
                   {umamiForm.errors.base_url && <p className="mt-1 text-[11px] text-red-400">{umamiForm.errors.base_url}</p>}
                 </div>
