@@ -11,13 +11,22 @@ use App\Domains\Integrations\Models\ProjectIntegration;
 use App\Domains\Integrations\Models\SearchPerformancePage;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class TrafficAttributionService
 {
+    /**
+     * Providers in order of preference when a project has more than one.
+     * GA4 reports sources per page; Plausible's are estimated from daily
+     * site-wide shares.
+     */
+    public const TRAFFIC_PROVIDER_PRIORITY = ['ga4', 'plausible'];
+
     public function __construct(
         private readonly Ga4AnalyticsClient $ga4Client,
         private readonly PlausibleAnalyticsClient $plausibleClient,
@@ -333,94 +342,114 @@ class TrafficAttributionService
             return 0;
         }
 
-        $endDate = Carbon::now();
-        $startDate = Carbon::now()->subDays($days);
+        $endDate = Carbon::today();
+        $startDate = Carbon::today()->subDays($days);
 
-        $pageRows = $this->plausibleClient->fetchPageMetrics($integration, $startDate, $endDate);
-        $sourceRows = $this->plausibleClient->fetchSourceMetrics($integration, $startDate, $endDate);
-
-        // Calculate global traffic attribution proportions from Plausible sources
-        $totalSourceVisitors = 0;
-        $organicSourceVisitors = 0;
-        $aiSourceVisitors = 0;
-        /** @var array<string, int> $aiSourceBreakdown */
-        $aiSourceBreakdown = [];
-
-        foreach ($sourceRows as $src) {
-            $visitors = $src['visitors'];
-            $totalSourceVisitors += $visitors;
-
-            $aiBrand = $this->classifyAiAssistant($src['source']);
-            if ($aiBrand !== null) {
-                $aiSourceVisitors += $visitors;
-                $aiSourceBreakdown[$aiBrand] = ($aiSourceBreakdown[$aiBrand] ?? 0) + $visitors;
-            } elseif ($this->isOrganicSearch('', $src['source'])) {
-                $organicSourceVisitors += $visitors;
+        // After the first sync only recent days are fetched again. The last
+        // two are included because Plausible can still add late events.
+        $lastSynced = $integration->last_synced_at;
+        if ($lastSynced instanceof CarbonInterface) {
+            $resumeFrom = Carbon::parse($lastSynced->format('Y-m-d'))->subDays(2);
+            if ($resumeFrom->gt($startDate)) {
+                $startDate = $resumeFrom;
             }
         }
 
-        $organicRatio = $totalSourceVisitors > 0 ? ($organicSourceVisitors / $totalSourceVisitors) : 0.65;
-        $aiRatio = $totalSourceVisitors > 0 ? ($aiSourceVisitors / $totalSourceVisitors) : 0.10;
+        $daily = $this->plausibleClient->fetchDailyMetrics($integration, $startDate, $endDate);
 
         $now = Carbon::now();
-        $todayStr = $endDate->format('Y-m-d');
         $recordsToUpsert = [];
 
-        foreach ($pageRows as $row) {
-            $path = $this->normalizePath($row['page']);
-            $pathHash = hash('sha256', $path);
-            $totalVisitors = $row['visitors'];
+        foreach ($daily as $date => $metrics) {
+            // Plausible's v1 API can't split a page's visitors by source, so
+            // each page gets that day's site-wide organic and AI shares.
+            $totalSourceVisitors = 0;
+            $organicSourceVisitors = 0;
+            $aiSourceVisitors = 0;
+            /** @var array<string, int> $aiSourceBreakdown */
+            $aiSourceBreakdown = [];
 
-            $organicSessions = (int) round($totalVisitors * $organicRatio);
-            $aiSessions = (int) round($totalVisitors * $aiRatio);
+            foreach ($metrics['sources'] as $src) {
+                $visitors = $src['visitors'];
+                $totalSourceVisitors += $visitors;
 
-            // Compute page-level proportional AI breakdown
-            $pageAiBreakdown = [];
-            if ($aiSourceVisitors > 0 && $aiSessions > 0) {
-                foreach ($aiSourceBreakdown as $brand => $brandHits) {
-                    $brandShare = $brandHits / $aiSourceVisitors;
-                    $pageBrandHits = (int) round($aiSessions * $brandShare);
-                    if ($pageBrandHits > 0) {
-                        $pageAiBreakdown[$brand] = $pageBrandHits;
-                    }
+                $aiBrand = $this->classifyAiAssistant($src['source']);
+                if ($aiBrand !== null) {
+                    $aiSourceVisitors += $visitors;
+                    $aiSourceBreakdown[$aiBrand] = ($aiSourceBreakdown[$aiBrand] ?? 0) + $visitors;
+                } elseif ($this->isOrganicSearch('', $src['source'])) {
+                    $organicSourceVisitors += $visitors;
                 }
             }
 
-            $recordsToUpsert[] = [
-                'project_id' => $project->id,
-                'provider' => 'plausible',
-                'path' => $path,
-                'path_hash' => $pathHash,
-                'date' => $todayStr,
-                'organic_sessions' => $organicSessions,
-                'ai_referral_sessions' => $aiSessions,
-                'direct_sessions' => max(0, $totalVisitors - ($organicSessions + $aiSessions)),
-                'total_sessions' => $totalVisitors,
-                'bounce_rate' => $row['bounce_rate'],
-                'avg_engagement_time_sec' => $row['visit_duration'],
-                'ai_referrals_breakdown' => (string) json_encode($pageAiBreakdown),
-                'created_at' => $now,
-                'updated_at' => $now,
-            ];
+            $organicRatio = $totalSourceVisitors > 0 ? $organicSourceVisitors / $totalSourceVisitors : 0.0;
+            $aiRatio = $totalSourceVisitors > 0 ? $aiSourceVisitors / $totalSourceVisitors : 0.0;
+
+            foreach ($metrics['pages'] as $row) {
+                $path = $this->normalizePath($row['page']);
+                $totalVisitors = $row['visitors'];
+
+                $organicSessions = (int) round($totalVisitors * $organicRatio);
+                $aiSessions = (int) round($totalVisitors * $aiRatio);
+
+                $pageAiBreakdown = [];
+                if ($aiSourceVisitors > 0 && $aiSessions > 0) {
+                    foreach ($aiSourceBreakdown as $brand => $brandHits) {
+                        $pageBrandHits = (int) round($aiSessions * ($brandHits / $aiSourceVisitors));
+                        if ($pageBrandHits > 0) {
+                            $pageAiBreakdown[$brand] = $pageBrandHits;
+                        }
+                    }
+                }
+
+                $recordsToUpsert[] = [
+                    'project_id' => $project->id,
+                    'provider' => 'plausible',
+                    'path' => $path,
+                    'path_hash' => hash('sha256', $path),
+                    'date' => $date,
+                    'organic_sessions' => $organicSessions,
+                    'ai_referral_sessions' => $aiSessions,
+                    'direct_sessions' => max(0, $totalVisitors - ($organicSessions + $aiSessions)),
+                    'total_sessions' => $totalVisitors,
+                    'bounce_rate' => $row['bounce_rate'],
+                    'avg_engagement_time_sec' => $row['visit_duration'],
+                    'ai_referrals_breakdown' => (string) json_encode($pageAiBreakdown),
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            }
         }
 
-        foreach (array_chunk($recordsToUpsert, 500) as $chunk) {
-            PageTrafficSnapshot::query()->upsert(
-                $chunk,
-                ['project_id', 'provider', 'path_hash', 'date'],
-                [
-                    'path',
-                    'organic_sessions',
-                    'ai_referral_sessions',
-                    'direct_sessions',
-                    'total_sessions',
-                    'bounce_rate',
-                    'avg_engagement_time_sec',
-                    'ai_referrals_breakdown',
-                    'updated_at',
-                ]
-            );
-        }
+        // Each fetched day replaces what was stored for it, so a page with no
+        // visits that day doesn't keep an older value.
+        DB::transaction(function () use ($project, $startDate, $endDate, $recordsToUpsert): void {
+            PageTrafficSnapshot::query()
+                ->where('project_id', $project->id)
+                ->where('provider', 'plausible')
+                ->where('date', '>=', $startDate->format('Y-m-d'))
+                // A bound on the next day also matches dates stored with a time.
+                ->where('date', '<', $endDate->copy()->addDay()->format('Y-m-d'))
+                ->delete();
+
+            foreach (array_chunk($recordsToUpsert, 500) as $chunk) {
+                PageTrafficSnapshot::query()->upsert(
+                    $chunk,
+                    ['project_id', 'provider', 'path_hash', 'date'],
+                    [
+                        'path',
+                        'organic_sessions',
+                        'ai_referral_sessions',
+                        'direct_sessions',
+                        'total_sessions',
+                        'bounce_rate',
+                        'avg_engagement_time_sec',
+                        'ai_referrals_breakdown',
+                        'updated_at',
+                    ]
+                );
+            }
+        });
 
         $count = count($recordsToUpsert);
 
@@ -458,7 +487,8 @@ class TrafficAttributionService
      *         pages_with_traffic: int,
      *         at_risk_pages_count: int,
      *         top_ai_assistant: string|null,
-     *         ai_brand_totals: array<string, int>
+     *         ai_brand_totals: array<string, int>,
+     *         traffic_provider: string|null
      *     },
      *     pages: list<array{
      *         path: string,
@@ -549,11 +579,18 @@ class TrafficAttributionService
             $gscMap[$path]['impressions'] += $gp->impressions;
         }
 
-        // 3. Fetch Page Traffic Snapshots (GA4 & Plausible)
+        // 3. Fetch Page Traffic Snapshots from one analytics provider. GA4 and
+        // Plausible measure the same visits, so adding both would count every
+        // session twice.
+        $trafficProvider = $this->trafficProviderFor($project, $since);
+
         /** @var Collection<int, PageTrafficSnapshot> $trafficSnapshots */
-        $trafficSnapshots = $project->pageTrafficSnapshots()
-            ->where('date', '>=', $since->format('Y-m-d'))
-            ->get();
+        $trafficSnapshots = $trafficProvider === null
+            ? new Collection
+            : $project->pageTrafficSnapshots()
+                ->where('provider', $trafficProvider)
+                ->where('date', '>=', $since->format('Y-m-d'))
+                ->get();
 
         /** @var array<string, array{
          *     organic_sessions: int,
@@ -712,8 +749,39 @@ class TrafficAttributionService
                 'at_risk_pages_count' => $atRiskCount,
                 'top_ai_assistant' => $topAiAssistant,
                 'ai_brand_totals' => $aiBrandTotals,
+                'traffic_provider' => $trafficProvider,
             ],
             'pages' => $rows,
         ];
+    }
+
+    /**
+     * The analytics provider whose snapshots the report uses: the preferred
+     * one that has data in the window. Providers still connected to the
+     * project come first, because removing an integration keeps its old
+     * snapshots; those are only used when no connected provider has data.
+     */
+    public function trafficProviderFor(Project $project, CarbonInterface $since): ?string
+    {
+        $available = $project->pageTrafficSnapshots()
+            ->where('date', '>=', $since->format('Y-m-d'))
+            ->distinct()
+            ->pluck('provider')
+            ->all();
+
+        $connected = $project->integrations()
+            ->whereIn('provider', self::TRAFFIC_PROVIDER_PRIORITY)
+            ->pluck('provider')
+            ->all();
+
+        foreach ([$connected, self::TRAFFIC_PROVIDER_PRIORITY] as $candidates) {
+            foreach (self::TRAFFIC_PROVIDER_PRIORITY as $provider) {
+                if (in_array($provider, $candidates, true) && in_array($provider, $available, true)) {
+                    return $provider;
+                }
+            }
+        }
+
+        return null;
     }
 }

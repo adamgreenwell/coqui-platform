@@ -31,7 +31,7 @@ class Ga4AnalyticsClient
         int $limit = 10000,
     ): array {
         $propertyId = $this->resolvePropertyId($integration);
-        $baseUrl = (string) config('services.google.analytics_data_base_url', 'https://analyticsdata.googleapis.com');
+        $baseUrl = (string) config('services.google.ga4_base_url', 'https://analyticsdata.googleapis.com');
         $endpoint = rtrim($baseUrl, '/').'/v1beta/'.$propertyId.':runReport';
 
         $headers = [];
