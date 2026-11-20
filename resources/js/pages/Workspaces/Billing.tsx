@@ -57,6 +57,7 @@ interface WorkspaceBillingProps {
     created_at: string;
   }>;
   canEdit: boolean;
+  billingMode: 'stripe' | 'mock' | 'unconfigured';
 }
 
 export default function WorkspaceBilling({
@@ -65,6 +66,7 @@ export default function WorkspaceBilling({
   plans,
   invoices,
   canEdit,
+  billingMode,
 }: WorkspaceBillingProps) {
   const [processingTier, setProcessingTier] = useState<string | null>(null);
 
@@ -136,6 +138,23 @@ export default function WorkspaceBilling({
             </div>
           )}
         </div>
+
+        {billingMode === 'unconfigured' && (
+          <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+            <AlertCircle className="h-4 w-4 shrink-0 text-amber-400" />
+            <span>
+              Online payments are not set up yet, so plan upgrades and the billing portal are unavailable.
+            </span>
+          </div>
+        )}
+        {billingMode === 'mock' && (
+          <div className="flex items-start gap-2 rounded-lg border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-xs text-sky-200">
+            <AlertCircle className="h-4 w-4 shrink-0 text-sky-400" />
+            <span>
+              Stripe is not connected (no STRIPE_SECRET). Checkout and the portal return simulated sessions for local development.
+            </span>
+          </div>
+        )}
 
         {/* Usage & Metering KPI Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

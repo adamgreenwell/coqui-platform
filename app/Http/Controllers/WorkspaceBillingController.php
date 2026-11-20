@@ -4,15 +4,16 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Domains\Billing\Exceptions\BillingUnavailableException;
 use App\Domains\Billing\Models\BillingInvoice;
 use App\Domains\Billing\Services\StripeBillingService;
 use App\Domains\Projects\Models\Workspace;
 use Carbon\CarbonInterface;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 
 class WorkspaceBillingController extends Controller
 {
@@ -68,10 +69,11 @@ class WorkspaceBillingController extends Controller
             'plans' => $plans,
             'invoices' => $invoices,
             'canEdit' => $request->user()?->can('update', $workspace) ?? false,
+            'billingMode' => $this->billingService->mode(),
         ]);
     }
 
-    public function checkout(Request $request, Workspace $workspace): RedirectResponse
+    public function checkout(Request $request, Workspace $workspace): SymfonyResponse
     {
         Gate::authorize('update', $workspace);
 
@@ -80,26 +82,31 @@ class WorkspaceBillingController extends Controller
         ]);
 
         $tier = (string) $validated['plan_tier'];
-        $successUrl = route('workspaces.billing.index', $workspace);
-        $cancelUrl = route('workspaces.billing.index', $workspace);
+        $billingUrl = route('workspaces.billing.index', $workspace);
 
-        $checkoutUrl = $this->billingService->createCheckoutSession(
-            $workspace,
-            $tier,
-            $successUrl,
-            $cancelUrl,
-        );
+        try {
+            $checkoutUrl = $this->billingService->createCheckoutSession($workspace, $tier, $billingUrl, $billingUrl);
+        } catch (BillingUnavailableException $e) {
+            return redirect($billingUrl)->with('error', $e->getMessage());
+        }
 
-        return redirect()->away($checkoutUrl);
+        // Inertia::location makes the browser do a full visit, which an
+        // external Stripe URL needs (an XHR redirect would be blocked by CORS).
+        return Inertia::location($checkoutUrl);
     }
 
-    public function portal(Request $request, Workspace $workspace): RedirectResponse
+    public function portal(Request $request, Workspace $workspace): SymfonyResponse
     {
         Gate::authorize('update', $workspace);
 
-        $returnUrl = route('workspaces.billing.index', $workspace);
-        $portalUrl = $this->billingService->createCustomerPortalSession($workspace, $returnUrl);
+        $billingUrl = route('workspaces.billing.index', $workspace);
 
-        return redirect()->away($portalUrl);
+        try {
+            $portalUrl = $this->billingService->createCustomerPortalSession($workspace, $billingUrl);
+        } catch (BillingUnavailableException $e) {
+            return redirect($billingUrl)->with('error', $e->getMessage());
+        }
+
+        return Inertia::location($portalUrl);
     }
 }
