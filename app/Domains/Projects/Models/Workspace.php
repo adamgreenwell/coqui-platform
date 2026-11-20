@@ -128,14 +128,15 @@ class Workspace extends Model
 
     /**
      * Check if workspace has Runnr hosting bundle entitlement.
+     *
+     * Only billing state counts: the paid Runnr add-on or the Agency plan.
+     * Linking a project to a Runnr site does not, because the site ID is typed
+     * in by the user and Runnr never confirms who owns it, so anyone could
+     * enter one and unlock smoke tests and bot telemetry for free.
      */
     public function hasRunnrEntitlement(): bool
     {
-        if ($this->has_runnr_addon || $this->plan_tier === 'agency') {
-            return true;
-        }
-
-        return $this->projects()->whereNotNull('runnr_site_id')->exists();
+        return $this->has_runnr_addon || $this->plan_tier === 'agency';
     }
 
     /**

@@ -17,4 +17,4 @@ Connecting Coqui SEO directly to the Runnr hosting platform creates capabilities
 ## Traffic Attribution & Billing Tiers (`H-03`, `H-04`)
 
 - **GA4 & Plausible Attribution:** Overlays organic sessions and AI-assistant referrals onto crawled URLs by normalized path.
-- **Metered Tiers:** Laravel Pennant and Cashier align workspace quotas (`tracked_keyword_limit`, `cloud_crawl_url_limit`, `monthly_dfs_budget_usd`) with DataForSEO COGS, while Runnr-hosted sites automatically unlock native deploy hooks and bot telemetry.
+- **Metered Tiers:** Laravel Pennant and Cashier align workspace quotas (`tracked_keyword_limit`, `cloud_crawl_url_limit`, `monthly_dfs_budget_usd`) with DataForSEO COGS, while the Runnr add-on or the Agency plan unlocks native deploy hooks and bot telemetry. Linking a project to a Runnr site does not unlock them on its own, because Coqui can't yet verify who owns a Runnr site ID.

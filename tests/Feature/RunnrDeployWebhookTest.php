@@ -33,6 +33,7 @@ class RunnrDeployWebhookTest extends TestCase
         $this->workspace = Workspace::query()->create([
             'name' => 'Runnr Workspace',
             'slug' => 'runnr-workspace',
+            'has_runnr_addon' => true,
             'owner_id' => $this->user->id,
         ]);
         $this->project = Project::query()->create([

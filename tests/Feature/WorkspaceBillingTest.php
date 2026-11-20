@@ -177,12 +177,14 @@ class WorkspaceBillingTest extends TestCase
         $this->assertTrue($this->workspace->hasRunnrEntitlement());
         $this->assertTrue($this->project->refresh()->hasRunnrEntitlement());
 
-        // Reset workspace to free, test project-level runnr_site_id
+        // Reset workspace to free: a linked Runnr site ID is unverified, so it
+        // must not unlock anything on its own.
         $this->workspace->update(['plan_tier' => 'free']);
         $this->assertFalse($this->workspace->hasRunnrEntitlement());
 
         $this->project->update(['runnr_site_id' => 'runnr_site_xyz789']);
-        $this->assertTrue($this->project->refresh()->hasRunnrEntitlement());
+        $this->assertFalse($this->project->refresh()->hasRunnrEntitlement());
+        $this->assertFalse($this->workspace->refresh()->hasRunnrEntitlement());
     }
 
     public function test_dataforseo_spend_allowance_limit_enforcement(): void

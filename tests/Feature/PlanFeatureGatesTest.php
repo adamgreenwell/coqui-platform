@@ -55,7 +55,6 @@ class PlanFeatureGatesTest extends TestCase
         ]);
         $this->workspace->members()->attach($this->owner, ['role' => 'owner']);
 
-        // No runnr_site_id: a Runnr-linked project grants the Runnr entitlement.
         $this->project = Project::query()->create([
             'workspace_id' => $this->workspace->id,
             'name' => 'Gated Site',
@@ -238,9 +237,6 @@ class PlanFeatureGatesTest extends TestCase
 
     public function test_runnr_telemetry_is_stored_even_when_the_plan_lacks_bot_telemetry(): void
     {
-        // A Runnr-linked project always entitles its workspace today, so force
-        // the feature off to exercise the accept-and-hide path.
-        Feature::define('bot-telemetry', fn (Workspace $workspace): bool => false);
         config()->set('services.runnr.telemetry_token', 'runnr-platform-token');
         $this->project->update(['runnr_site_id' => 'site_gated_1']);
         $payload = [
@@ -315,9 +311,6 @@ class PlanFeatureGatesTest extends TestCase
 
     public function test_deploy_webhook_skips_smoke_crawls_for_workspaces_without_the_feature(): void
     {
-        // A Runnr-linked project always entitles its workspace today, so force
-        // the feature off to exercise the gate.
-        Feature::define('runnr-smoke-tests', fn (Workspace $workspace): bool => false);
         Http::fake();
         config()->set('services.runnr.webhook_secret', 'webhook-secret');
         $this->project->update(['runnr_site_id' => 'site_gated_1']);
@@ -333,6 +326,55 @@ class PlanFeatureGatesTest extends TestCase
 
         $this->assertSame(0, CrawlRun::query()->count());
         Http::assertNothingSent();
+    }
+
+    public function test_linking_a_runnr_site_does_not_unlock_runnr_features(): void
+    {
+        $this->actingAs($this->owner)
+            ->post($this->projectUrl('/integrations/runnr/connect'), ['runnr_site_id' => 'site_typed_in'])
+            ->assertRedirect()
+            ->assertSessionHasNoErrors();
+
+        $this->assertSame('site_typed_in', $this->project->refresh()->runnr_site_id);
+        $this->assertFalse($this->workspace->hasFeature(PlanFeature::RunnrSmokeTests));
+        $this->assertFalse($this->workspace->hasFeature(PlanFeature::BotTelemetry));
+        $this->assertSentToBilling($this->actingAs($this->owner)->get($this->projectUrl('/bot-logs')), 'Bot crawler telemetry');
+
+        // Only billing state unlocks them.
+        $this->workspace->update(['has_runnr_addon' => true]);
+        $this->assertTrue($this->workspace->hasFeature(PlanFeature::RunnrSmokeTests));
+        $this->assertTrue($this->workspace->hasFeature(PlanFeature::BotTelemetry));
+    }
+
+    public function test_a_runnr_site_linked_to_another_project_cannot_be_claimed(): void
+    {
+        $victim = User::factory()->create();
+        $victimWorkspace = Workspace::query()->create([
+            'name' => 'Victim Workspace',
+            'slug' => 'victim-workspace',
+            'owner_id' => $victim->id,
+            'has_runnr_addon' => true,
+        ]);
+        Project::query()->create([
+            'workspace_id' => $victimWorkspace->id,
+            'name' => 'Victim Site',
+            'domain' => 'victim-site.com',
+            'canonical_url' => 'https://victim-site.com/',
+            'runnr_site_id' => 'site_victim',
+        ]);
+
+        $this->actingAs($this->owner)
+            ->from($this->projectUrl(''))
+            ->post($this->projectUrl('/integrations/runnr/connect'), ['runnr_site_id' => 'site_victim'])
+            ->assertSessionHasErrors('runnr_site_id');
+
+        $this->assertNull($this->project->refresh()->runnr_site_id);
+
+        // Re-saving a project's own link is still fine.
+        $this->project->update(['runnr_site_id' => 'site_mine']);
+        $this->actingAs($this->owner)
+            ->post($this->projectUrl('/integrations/runnr/connect'), ['runnr_site_id' => 'site_mine'])
+            ->assertSessionHasNoErrors();
     }
 
     public function test_priority_queue_routes_crawls_by_plan(): void

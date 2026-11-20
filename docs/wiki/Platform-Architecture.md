@@ -22,7 +22,7 @@ Coqui SEO Platform is structured as a modular Laravel 13 monolith running PHP 8.
 ## Plan Feature Gates
 
 - **Source of truth:** Pennant definitions in `AppServiceProvider` decide which plans include each feature, scoped to a `Workspace`. `App\Domains\Billing\PlanFeature` only names and labels them.
-- **Store:** `config/pennant.php` uses the `array` store, so values are resolved fresh per request and job; `Workspace` and `Project` flush Pennant when the plan tier, Runnr add-on or a project's Runnr link changes.
+- **Store:** `config/pennant.php` uses the `array` store, so values are resolved fresh per request and job; `Workspace` flushes Pennant when the plan tier or Runnr add-on changes.
 - **Routes:** add `->middleware('feature:<name>')`. It resolves the workspace from the route's project (or workspace), sends Inertia/browser requests to the billing page with an upgrade message, and returns a 403 JSON body with `feature` and `upgrade_url` to API callers.
 - **Elsewhere:** call `$workspace->ensureFeature(PlanFeature::X)` (throws the same upgrade response) or `hasFeature()` in jobs, commands and webhooks.
 - **UI:** pages receive a shared `plan` prop (`tier`, `features`, `billingUrl`); use `FeatureLink`, `UpgradeNotice` and `usePlan()` from `resources/js/components/PlanGate.tsx` to lock gated links and actions.
