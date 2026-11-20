@@ -293,6 +293,31 @@ class RankFallbackTest extends TestCase
         $this->assertSame(0, RankFallbackCheck::query()->count());
     }
 
+    public function test_tasks_rejected_inside_a_successful_response_get_fallback_checks(): void
+    {
+        config()->set('coqui.dataforseo.scheduled_spend', true);
+        $accepted = $this->keyword('accepted keyword');
+        $rejected = $this->keyword('rejected keyword');
+
+        Http::fake(['sandbox.dataforseo.com/*' => Http::response([
+            'status_code' => 20000,
+            'cost' => 0.0006,
+            'tasks' => [
+                ['id' => (string) Str::uuid(), 'status_code' => 20100, 'cost' => 0.0006, 'data' => ['tag' => "kw:{$accepted->id}"]],
+                ['id' => (string) Str::uuid(), 'status_code' => 40501, 'status_message' => 'Invalid Field', 'cost' => 0, 'data' => ['tag' => "kw:{$rejected->id}"]],
+            ],
+        ])]);
+
+        $this->artisan('dataforseo:run-rank-batches')->assertSuccessful();
+
+        $this->assertSame(1, DB::table('dataforseo_tasks')->count());
+        $this->assertStringContainsString((string) $accepted->id, (string) DB::table('dataforseo_tasks')->value('request_context'));
+
+        $check = RankFallbackCheck::query()->sole();
+        $this->assertSame($rejected->id, $check->tracked_keyword_id);
+        $this->assertSame(RankFallbackCheck::REASON_SUBMIT_ERROR, $check->reason);
+    }
+
     public function test_running_checks_hold_their_worst_case_cost_against_the_allowance(): void
     {
         Http::fake();

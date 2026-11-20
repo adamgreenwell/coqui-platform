@@ -155,15 +155,29 @@ class RunRankBatchesCommand extends Command
                     continue;
                 }
 
-                $returnedTasks = $response['tasks'] ?? [];
+                $returnedTasks = is_array($response['tasks'] ?? null) ? $response['tasks'] : [];
+                $byId = [];
+                foreach ($chunk as $kw) {
+                    $byId[$kw->id] = $kw;
+                }
+                $accepted = [];
 
                 foreach ($returnedTasks as $index => $taskData) {
-                    $externalTaskId = (string) ($taskData['id'] ?? '');
-                    $kw = $chunk[$index] ?? null;
-
-                    if ($externalTaskId === '' || $kw === null) {
+                    if (! is_array($taskData)) {
                         continue;
                     }
+
+                    $externalTaskId = (string) ($taskData['id'] ?? '');
+                    // Match by our tag when it's echoed back, else by position.
+                    $tag = (string) ($taskData['data']['tag'] ?? '');
+                    $kw = str_starts_with($tag, 'kw:') ? ($byId[(int) substr($tag, 3)] ?? null) : ($chunk[$index] ?? null);
+
+                    // DataForSEO reports per-task errors inside a 200 response.
+                    if ($externalTaskId === '' || $kw === null || (int) ($taskData['status_code'] ?? 20100) >= 40000) {
+                        continue;
+                    }
+
+                    $accepted[$kw->id] = true;
 
                     $token = $tokenMap[$kw->id] ?? Str::random(32);
 
@@ -188,6 +202,14 @@ class RunRankBatchesCommand extends Command
                     ]);
 
                     $submittedCount++;
+                }
+
+                // Keywords with no accepted task (a rejected batch or task
+                // inside a 200 response) get a fallback check instead.
+                $rejected = array_values(array_filter($chunk, fn (TrackedKeyword $kw): bool => ! isset($accepted[$kw->id])));
+                if ($rejected !== []) {
+                    $this->error(count($rejected)." SERP task(s) for project {$project->id} weren't accepted (status ".($response['status_code'] ?? 'unknown').').');
+                    $this->queueFallback($rejected, $project->workspace_id);
                 }
             }
         }
