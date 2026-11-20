@@ -116,14 +116,18 @@ class RankFallbackSpendGuard
      */
     public static function spendSince(DateTimeInterface $since, ?int $workspaceId = null): float
     {
-        $paid = DB::table('rank_fallback_spend')->where('recorded_at', '>=', $since);
-        $held = DB::table('rank_fallback_checks')->where('reserved_usd', '>', 0);
+        $paid = DB::table('rank_fallback_spend')->selectRaw('COALESCE(SUM(cost_usd), 0)')->where('recorded_at', '>=', $since);
+        $held = DB::table('rank_fallback_checks')->selectRaw('COALESCE(SUM(reserved_usd), 0)')->where('reserved_usd', '>', 0);
 
         if ($workspaceId !== null) {
             $paid->where('workspace_id', $workspaceId);
             $held->where('workspace_id', $workspaceId);
         }
 
-        return (float) $paid->sum('cost_usd') + (float) $held->sum('reserved_usd');
+        // One statement reads both from the same snapshot, so a charge that
+        // moves from the hold into the ledger is never missed by both sums.
+        $totals = DB::query()->selectSub($paid, 'paid')->selectSub($held, 'held')->first();
+
+        return (float) ($totals->paid ?? 0) + (float) ($totals->held ?? 0);
     }
 }
