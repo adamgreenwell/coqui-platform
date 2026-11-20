@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
 use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\DataProvider;
+use RuntimeException;
 use Tests\TestCase;
 
 class UmamiIntegrationTest extends TestCase
@@ -290,7 +291,7 @@ class UmamiIntegrationTest extends TestCase
         try {
             app(TrafficAttributionService::class)->syncIntegration($integration);
             $this->fail('Expected the third week to fail.');
-        } catch (\RuntimeException) {
+        } catch (RuntimeException) {
         }
 
         $integration->refresh();
@@ -354,6 +355,26 @@ class UmamiIntegrationTest extends TestCase
 
         $this->assertCount(1001, $pages['google.com']);
         $this->assertSame(['page' => '/last', 'visitors' => 2], $pages['google.com'][1000]);
+    }
+
+    public function test_a_day_with_more_pages_than_the_guard_allows_fails_instead_of_storing_part_of_it(): void
+    {
+        Http::fake(function (Request $request) {
+            parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+            $offset = (int) ($query['offset'] ?? 0);
+
+            // Every page is full and different, so paging never ends.
+            return Http::response(array_map(fn (int $i): array => ['x' => '/p'.($offset + $i), 'y' => 1], range(1, 1000)));
+        });
+
+        try {
+            app(UmamiAnalyticsClient::class)->fetchPagesByReferrer($this->umamiIntegration(), '2026-11-20', ['google.com']);
+            $this->fail('Expected the page guard to stop the sync.');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('not storing a partial day', $e->getMessage());
+        }
+
+        Http::assertSentCount(25);
     }
 
     public function test_an_instance_that_ignores_offset_is_not_paged_forever(): void

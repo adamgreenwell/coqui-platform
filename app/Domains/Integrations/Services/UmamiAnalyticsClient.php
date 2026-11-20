@@ -226,7 +226,12 @@ class UmamiAnalyticsClient
         $rows = $firstPage;
         $previous = $firstPage;
 
-        for ($page = 1; count($previous) >= $limit && $page < self::MAX_PAGES; $page++) {
+        for ($page = 1; count($previous) >= $limit; $page++) {
+            // Storing a day replaces it, so a cut-off day would lose rows.
+            if ($page >= self::MAX_PAGES) {
+                throw new RuntimeException("Umami returned more than {$page} pages of {$kind} metrics for one day; not storing a partial day.");
+            }
+
             $this->throttle($target, 1);
             $next = $this->decode(
                 $integration,
@@ -234,7 +239,8 @@ class UmamiAnalyticsClient
                 $kind,
             );
 
-            // An instance that ignores offset sends the first page again.
+            // An instance without offset support sends the same page again;
+            // its first page is all it can return.
             if ($next === [] || $next === $previous) {
                 break;
             }
