@@ -35,6 +35,8 @@ Route::get('/', function () {
 Route::middleware(['auth'])->group(function (): void {
     Route::get('/dashboard', DashboardController::class)->name('dashboard');
 
+    Route::get('/settings/profile', fn () => Inertia::render('Settings/Profile'))->name('profile.edit');
+
     Route::resource('workspaces', WorkspaceController::class);
 
     Route::get('/workspaces/{workspace}/members', [WorkspaceMemberController::class, 'index'])->name('workspaces.members.index');
