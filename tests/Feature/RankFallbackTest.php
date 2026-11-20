@@ -14,6 +14,7 @@ use App\Domains\Serp\RankFallback\FetchFallbackRankJob;
 use App\Domains\Serp\RankFallback\RankFallbackSpendGuard;
 use App\Domains\Serp\RankFallback\SerphouseResultAdapter;
 use App\Models\User;
+use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
@@ -199,6 +200,25 @@ class RankFallbackTest extends TestCase
         $this->assertSame('completed', $check->status);
         $this->assertSame(2, $check->pages_fetched);
         $this->assertEqualsWithDelta(0.0015, (float) $check->cost_usd, 0.000001);
+    }
+
+    public function test_a_retry_after_midnight_records_under_the_checks_own_day(): void
+    {
+        $keyword = $this->keyword('voice generator');
+        $check = $this->check($keyword, null, now()->subDay());
+        $check->update([
+            'checked_on' => today()->subDay()->toDateString(),
+            'pages' => [$this->page(['www.coqui.io', 'competitor-a.com', 'competitor-b.org'])],
+            'pages_fetched' => 1,
+        ]);
+        Http::fake();
+
+        FetchFallbackRankJob::dispatchSync($check->id);
+
+        Http::assertNothingSent();
+        $dates = KeywordRankSnapshot::query()->where('tracked_keyword_id', $keyword->id)->get()
+            ->map(fn (KeywordRankSnapshot $snapshot): string => Carbon::parse($snapshot->checked_on)->toDateString())->unique()->values()->all();
+        $this->assertSame([today()->subDay()->toDateString()], $dates);
     }
 
     public function test_job_does_not_record_over_a_primary_task_collected_while_it_ran(): void

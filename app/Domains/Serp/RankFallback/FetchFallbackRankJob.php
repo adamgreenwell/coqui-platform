@@ -148,7 +148,10 @@ class FetchFallbackRankJob implements ShouldQueue
                 return;
             }
 
-            $recorder->handle($fresh, $items);
+            // Record under the day this check is for, even when a retry or
+            // saved pages carry it past midnight, so it fills that day's gap
+            // and never stands in for the next day's result.
+            $recorder->handle($fresh, $items, $check->checked_on);
 
             if ($check->dataforseo_task_id !== null) {
                 // A late primary result must not overwrite this check.
