@@ -553,6 +553,59 @@ class StripeBillingService
     }
 
     /**
+     * Which workspace an invoice belongs to.
+     *
+     * The first invoice of a new subscription usually arrives before
+     * checkout.session.completed has stored the Stripe customer on the
+     * workspace, so the customer ID alone misses it. The subscription
+     * metadata written at checkout carries the workspace ID.
+     *
+     * @param  array<string, mixed>  $invoice
+     */
+    private function workspaceForInvoice(array $invoice): ?Workspace
+    {
+        // Newer API versions nest the subscription under parent.subscription_details.
+        $subId = data_get($invoice, 'parent.subscription_details.subscription') ?? data_get($invoice, 'subscription');
+        $subId = is_string($subId) ? $subId : '';
+
+        $workspace = $this->localSubscription($subId)?->workspace;
+        if ($workspace !== null) {
+            return $workspace;
+        }
+
+        if ($subId !== '') {
+            $workspace = Workspace::query()->where('stripe_subscription_id', $subId)->first();
+            if ($workspace !== null) {
+                return $workspace;
+            }
+        }
+
+        $customerId = (string) ($invoice['customer'] ?? '');
+        if ($customerId !== '') {
+            $workspace = Workspace::query()->where('stripe_id', $customerId)->first();
+            if ($workspace !== null) {
+                return $workspace;
+            }
+        }
+
+        $metaWorkspaceId = data_get($invoice, 'parent.subscription_details.metadata.workspace_id')
+            ?? data_get($invoice, 'subscription_details.metadata.workspace_id');
+        if (! is_numeric($metaWorkspaceId)) {
+            return null;
+        }
+
+        /** @var Workspace|null $workspace */
+        $workspace = Workspace::query()->find((int) $metaWorkspaceId);
+
+        // A workspace already tied to a different Stripe customer is not this one.
+        if ($workspace === null || ($workspace->stripe_id !== null && $workspace->stripe_id !== '' && $workspace->stripe_id !== $customerId)) {
+            return null;
+        }
+
+        return $workspace;
+    }
+
+    /**
      * Which plan a Stripe subscription is for. The configured price IDs win,
      * because a portal plan switch changes the price but not the metadata.
      *
@@ -623,9 +676,10 @@ class StripeBillingService
             : 0.0;
         $currency = (string) ($invoice['currency'] ?? 'usd');
         $pdfUrl = isset($invoice['invoice_pdf']) ? (string) $invoice['invoice_pdf'] : null;
+        // Stripe's own payment time, so a resent or late event keeps the right date.
+        $paidAt = data_get($invoice, 'status_transitions.paid_at');
 
-        /** @var Workspace|null $workspace */
-        $workspace = Workspace::query()->where('stripe_id', $customerId)->first();
+        $workspace = $this->workspaceForInvoice($invoice);
         if ($workspace !== null) {
             BillingInvoice::query()->updateOrCreate(
                 ['stripe_invoice_id' => $invoiceId],
@@ -635,9 +689,11 @@ class StripeBillingService
                     'currency' => $currency,
                     'status' => 'paid',
                     'invoice_pdf_url' => $pdfUrl,
-                    'paid_at' => Carbon::now(),
+                    'paid_at' => is_numeric($paidAt) ? Carbon::createFromTimestamp((int) $paidAt) : Carbon::now(),
                 ]
             );
+        } else {
+            Log::warning("Paid Stripe invoice {$invoiceId} did not match any workspace.", ['customer' => $customerId]);
         }
 
         return [
@@ -653,9 +709,7 @@ class StripeBillingService
      */
     private function handleInvoicePaymentFailed(array $invoice): array
     {
-        $customerId = (string) ($invoice['customer'] ?? '');
-        /** @var Workspace|null $workspace */
-        $workspace = Workspace::query()->where('stripe_id', $customerId)->first();
+        $workspace = $this->workspaceForInvoice($invoice);
 
         if ($workspace !== null) {
             $workspace->update([
