@@ -37,7 +37,9 @@ return [
     'defaults' => [
         'supervisor-1' => [
             'connection' => 'redis',
-            'queue' => ['default', 'serp', 'crawls', 'backlinks', 'telemetry'],
+            // crawls-priority is listed here too so priority crawls still drain
+            // in any environment that doesn't start supervisor-priority.
+            'queue' => ['crawls-priority', 'default', 'serp', 'crawls', 'backlinks', 'telemetry'],
             'balance' => 'auto',
             'autoScalingStrategy' => 'time',
             'maxProcesses' => 3,
@@ -78,6 +80,9 @@ return [
         'local' => [
             'supervisor-1' => [
                 'maxProcesses' => 3,
+            ],
+            'supervisor-priority' => [
+                'maxProcesses' => 1,
             ],
         ],
     ],
