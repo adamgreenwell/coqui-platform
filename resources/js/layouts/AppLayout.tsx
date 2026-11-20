@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   LogOut,
   Plus,
+  UserCog,
   Users,
 } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
@@ -201,6 +202,14 @@ export default function AppLayout({
                         >
                           <Building2 className="h-3.5 w-3.5 text-slate-400" />
                           <span>All Workspaces</span>
+                        </Link>
+                        <Link
+                          href="/settings/profile"
+                          onClick={() => setUserMenuOpen(false)}
+                          className="flex items-center gap-2 px-2.5 py-1.5 rounded text-xs text-slate-300 hover:bg-slate-800 hover:text-white transition"
+                        >
+                          <UserCog className="h-3.5 w-3.5 text-slate-400" />
+                          <span>Profile &amp; Password</span>
                         </Link>
                         <button
                           type="button"

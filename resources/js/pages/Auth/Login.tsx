@@ -127,6 +127,12 @@ export default function Login({ status }: LoginProps) {
                     Remember me
                   </label>
                 </div>
+                <Link
+                  href="/forgot-password"
+                  className="text-xs font-medium text-emerald-400 hover:text-emerald-300 underline underline-offset-4"
+                >
+                  Forgot password?
+                </Link>
               </div>
 
               <div>
