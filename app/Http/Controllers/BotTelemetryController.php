@@ -8,6 +8,7 @@ use App\Domains\Integrations\Services\BotTelemetryService;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\Workspace;
+use App\Features\RunnrIntegration;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -43,7 +44,7 @@ class BotTelemetryController extends Controller
                 'name' => $project->name,
                 'domain' => $project->domain,
                 'canonical_url' => $project->canonical_url,
-                'runnr_site_id' => $project->runnr_site_id,
+                ...(RunnrIntegration::enabled() ? ['runnr_site_id' => $project->runnr_site_id] : []),
             ],
             'days' => $days,
             'kpis' => $dashboard['kpis'],

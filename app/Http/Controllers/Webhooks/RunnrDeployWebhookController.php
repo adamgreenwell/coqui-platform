@@ -7,11 +7,26 @@ namespace App\Http\Controllers\Webhooks;
 use App\Domains\Integrations\Services\RunnrDeployWebhookHandler;
 use App\Domains\Projects\Models\Project;
 use App\Http\Controllers\Controller;
+use App\Http\Middleware\EnsureRunnrIntegrationEnabled;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 
-class RunnrDeployWebhookController extends Controller
+class RunnrDeployWebhookController extends Controller implements HasMiddleware
 {
+    /**
+     * Runnr endpoints stay hidden (404) until the runnr-integration feature is on.
+     *
+     * @return array<int, Middleware>
+     */
+    public static function middleware(): array
+    {
+        return [
+            new Middleware(EnsureRunnrIntegrationEnabled::class),
+        ];
+    }
+
     public function __construct(
         private readonly RunnrDeployWebhookHandler $handler,
     ) {}

@@ -13,9 +13,13 @@ use App\Domains\Integrations\Services\TrafficAttributionService;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\Workspace;
+use App\Features\RunnrIntegration;
+use App\Http\Middleware\EnsureRunnrIntegrationEnabled;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Controllers\HasMiddleware;
+use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
@@ -23,8 +27,20 @@ use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Throwable;
 
-class ProjectIntegrationController extends Controller
+class ProjectIntegrationController extends Controller implements HasMiddleware
 {
+    /**
+     * Runnr actions stay hidden (404) until the runnr-integration feature is on.
+     *
+     * @return array<int, Middleware>
+     */
+    public static function middleware(): array
+    {
+        return [
+            new Middleware(EnsureRunnrIntegrationEnabled::class, only: ['connectRunnr', 'disconnectRunnr']),
+        ];
+    }
+
     private const GOOGLE_OAUTH_SESSION_PREFIX = 'google_oauth.';
 
     private const GOOGLE_OAUTH_STATE_TTL_SECONDS = 900;
@@ -46,6 +62,7 @@ class ProjectIntegrationController extends Controller
 
         $integrations = $project->integrations()
             ->select(['id', 'project_id', 'provider', 'site_url', 'external_identifier', 'status', 'last_synced_at', 'created_at'])
+            ->when(! RunnrIntegration::enabled(), fn ($query) => $query->where('provider', '!=', 'runnr'))
             ->get();
 
         return response()->json([

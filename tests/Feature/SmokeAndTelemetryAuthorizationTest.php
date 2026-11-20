@@ -8,6 +8,7 @@ use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Integrations\Models\BotCrawlLog;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
+use App\Features\RunnrIntegration;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Sanctum\Sanctum;
@@ -26,6 +27,9 @@ class SmokeAndTelemetryAuthorizationTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        // These tests exercise the Runnr surface, which is hidden unless the flag is on.
+        RunnrIntegration::activate();
 
         $this->owner = User::factory()->create();
         $workspace = Workspace::query()->create([

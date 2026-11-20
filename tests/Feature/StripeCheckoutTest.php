@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use App\Domains\Billing\Models\WorkspaceSubscription;
 use App\Domains\Projects\Models\Workspace;
+use App\Features\RunnrIntegration;
 use App\Models\User;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -136,6 +137,7 @@ class StripeCheckoutTest extends TestCase
 
     public function test_checkout_reuses_the_existing_stripe_customer(): void
     {
+        RunnrIntegration::activate();
         $this->useRealStripe();
         $this->workspace->update(['stripe_id' => 'cus_existing']);
         Http::fake([
