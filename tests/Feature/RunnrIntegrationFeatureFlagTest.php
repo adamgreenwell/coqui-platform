@@ -12,6 +12,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
+use Laravel\Pennant\Feature;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -238,6 +239,25 @@ class RunnrIntegrationFeatureFlagTest extends TestCase
         // No webhook secret configured: the controller answers, not the flag.
         $this->postJson('/api/webhooks/runnr/deploy', ['site_id' => 'site_new'])->assertStatus(503);
         $this->get('/api/v1/deploy-smoke/badge/'.$this->project->deployBadgeToken())->assertOk();
+    }
+
+    public function test_activation_persists_even_when_the_default_store_keeps_nothing(): void
+    {
+        // Plan features run on the in-memory array store, so the Runnr switch
+        // must not rely on the default store to remember an activation.
+        config()->set('pennant.default', 'array');
+
+        RunnrIntegration::activate();
+
+        $this->assertDatabaseHas('features', ['name' => RunnrIntegration::NAME, 'value' => 'true']);
+
+        // A new request or job starts with an empty in-memory cache.
+        Feature::flushCache();
+        $this->assertTrue(RunnrIntegration::enabled());
+
+        // It isn't one of the default store's (plan) features.
+        $this->assertNotContains(RunnrIntegration::class, Feature::defined());
+        $this->assertNotContains(RunnrIntegration::NAME, Feature::defined());
     }
 
     public function test_the_flag_can_be_turned_back_off(): void

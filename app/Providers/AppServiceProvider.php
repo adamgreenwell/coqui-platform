@@ -39,6 +39,8 @@ class AppServiceProvider extends ServiceProvider
         Feature::define('bot-telemetry', fn (Workspace $workspace): bool => $workspace->hasRunnrEntitlement() || in_array($workspace->plan_tier, ['pro', 'agency'], true));
 
         // Global launch switch for the Runnr integration; off until activated.
-        Feature::define(RunnrIntegration::class);
+        // Defined on its own persistent store so it survives requests even
+        // when the default store doesn't keep values (see RunnrIntegration).
+        Feature::store(RunnrIntegration::STORE)->define(RunnrIntegration::class);
     }
 }
