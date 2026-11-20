@@ -218,13 +218,12 @@ class Project extends Model
 
     /**
      * Check if the project has Runnr hosting bundle entitlement.
+     *
+     * Comes from the workspace's billing alone; a linked Runnr site ID is
+     * unverified and grants nothing (see Workspace::hasRunnrEntitlement()).
      */
     public function hasRunnrEntitlement(): bool
     {
-        if ($this->runnr_site_id !== null && $this->runnr_site_id !== '') {
-            return true;
-        }
-
         return $this->workspace?->hasRunnrEntitlement() ?? false;
     }
 

@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
 import { getEcho } from '../../echo';
+import { FeatureLink, UpgradeNotice, usePlan } from '../../components/PlanGate';
 import AppLayout, { type WorkspaceSummary } from '../../layouts/AppLayout';
 
 interface ProjectDetails {
@@ -169,6 +170,7 @@ export default function KeywordsIndex({
   gscIntegration,
   bingIntegration,
 }: KeywordsIndexProps) {
+  const hasTrafficAttribution = usePlan().has('traffic-attribution');
   const [deviceFilter, setDeviceFilter] = useState<string>(filters.device || 'all');
   const [searchQuery, setSearchQuery] = useState<string>(filters.search || '');
   const [overlayProvider, setOverlayProvider] = useState<'off' | 'gsc' | 'bing'>(
@@ -319,13 +321,14 @@ export default function KeywordsIndex({
               <span>Keyword Gap</span>
             </Link>
 
-            <Link
+            <FeatureLink
+              feature="content-briefs"
               href={`/workspaces/${workspace.id}/projects/${project.id}/keywords/brief`}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-300 text-xs font-medium transition cursor-pointer"
             >
               <FileText className="h-3.5 w-3.5 text-teal-400" />
               <span>Content Brief</span>
-            </Link>
+            </FeatureLink>
 
             {canEdit && (
               <button
@@ -404,8 +407,17 @@ export default function KeywordsIndex({
           </div>
         </div>
 
+        {/* The GSC/Bing overlay is part of traffic attribution. */}
+        {!hasTrafficAttribution && (
+          <UpgradeNotice
+            compact
+            title="Google Search Console & Bing overlay"
+            description="Blend real clicks, impressions, CTR and average position from Search Console and Bing into every tracked keyword. Upgrade this workspace to connect them."
+          />
+        )}
+
         {/* Actionable Reconnect Banner for Google Search Console */}
-        {gscIntegration?.status === 'needs_reconnect' && (
+        {hasTrafficAttribution && gscIntegration?.status === 'needs_reconnect' && (
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-start gap-3">
               <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
@@ -834,13 +846,15 @@ export default function KeywordsIndex({
                         {/* Actions */}
                         <td className="py-3 px-4 text-right">
                           <div className="flex items-center justify-end gap-1">
-                            <Link
+                            <FeatureLink
+                              feature="content-briefs"
+                              pill={false}
                               href={`/workspaces/${workspace.id}/projects/${project.id}/keywords/brief?keyword=${encodeURIComponent(kw.keyword)}`}
                               title="Generate SERP Content Brief"
                               className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-teal-400 transition cursor-pointer"
                             >
                               <FileText className="h-3.5 w-3.5" />
-                            </Link>
+                            </FeatureLink>
                             <button
                               type="button"
                               onClick={() => openHistory(kw)}

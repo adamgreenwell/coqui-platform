@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domains\Integrations\Services;
 
+use App\Domains\Billing\PlanFeature;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Crawls\Services\CoquiWorkerClient;
 use App\Domains\Projects\Models\Project;
@@ -29,8 +30,13 @@ class RunnrDeployWebhookHandler
         ?string $deployUrl = null,
         array $deployMetadata = [],
     ): ?CrawlRun {
-        $project = Project::query()->where('runnr_site_id', $runnrSiteId)->first();
+        $project = Project::query()->with('workspace')->where('runnr_site_id', $runnrSiteId)->first();
         if ($project === null) {
+            return null;
+        }
+
+        // Smoke crawls cost worker time, so they only run for entitled workspaces.
+        if ($project->workspace?->hasFeature(PlanFeature::RunnrSmokeTests) !== true) {
             return null;
         }
 

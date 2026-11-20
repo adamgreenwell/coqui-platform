@@ -68,10 +68,11 @@ class CloudCrawlController extends Controller
             'opportunity_count' => 0,
         ]);
 
+        // The job picks the regular or priority crawl queue from the plan.
         DispatchCloudCrawlJob::dispatch($project, $crawlId, [
             'maxUrls' => $urlLimit,
             'seed' => $project->canonical_url,
-        ])->onQueue('crawls');
+        ]);
 
         ProjectActivity::log(
             project: $project,

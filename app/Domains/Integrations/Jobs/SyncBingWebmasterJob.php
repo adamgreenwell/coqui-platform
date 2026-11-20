@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domains\Integrations\Jobs;
 
+use App\Domains\Billing\PlanFeature;
 use App\Domains\Integrations\Models\ProjectIntegration;
 use App\Domains\Integrations\Services\SearchPerformanceSyncService;
 use Illuminate\Bus\Queueable;
@@ -26,6 +27,12 @@ class SyncBingWebmasterJob implements ShouldQueue
 
     public function handle(SearchPerformanceSyncService $syncService): void
     {
+        // Queued before a downgrade, run after it: skip instead of syncing.
+        $workspace = $this->integration->project?->workspace;
+        if ($workspace === null || ! $workspace->hasFeature(PlanFeature::TrafficAttribution)) {
+            return;
+        }
+
         $result = $syncService->syncBingWebmaster($this->integration);
 
         if (! $result['success'] && ($result['error'] ?? null) !== null && $this->integration->fresh()?->status !== 'needs_reconnect') {

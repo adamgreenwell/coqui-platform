@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace App\Domains\Projects\Models;
 
+use App\Domains\Billing\Exceptions\FeatureNotAvailableException;
 use App\Domains\Billing\Models\BillingInvoice;
 use App\Domains\Billing\Models\WorkspaceSubscription;
+use App\Domains\Billing\PlanFeature;
 use App\Models\Concerns\HasPublicUuid;
 use App\Models\User;
 use Carbon\CarbonInterface;
@@ -15,6 +17,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Laravel\Pennant\Feature;
 
 /**
  * @property int $id
@@ -51,6 +54,17 @@ class Workspace extends Model
      * attribution, bot telemetry). Personal has them with smaller limits.
      */
     public const PRO_FEATURE_TIERS = ['personal', 'pro', 'agency'];
+
+    protected static function booted(): void
+    {
+        // Plan features are resolved from billing state, so drop any values
+        // already resolved in this request or job once that state changes.
+        static::saved(function (Workspace $workspace): void {
+            if ($workspace->wasChanged(['plan_tier', 'has_runnr_addon'])) {
+                Feature::flushCache();
+            }
+        });
+    }
 
     /** @var list<string> */
     protected $fillable = [
@@ -126,14 +140,35 @@ class Workspace extends Model
 
     /**
      * Check if workspace has Runnr hosting bundle entitlement.
+     *
+     * Only billing state counts: the paid Runnr add-on or the Agency plan.
+     * Linking a project to a Runnr site does not, because the site ID is typed
+     * in by the user and Runnr never confirms who owns it, so anyone could
+     * enter one and unlock smoke tests and bot telemetry for free.
      */
     public function hasRunnrEntitlement(): bool
     {
-        if ($this->has_runnr_addon || $this->plan_tier === 'agency') {
-            return true;
-        }
+        return $this->has_runnr_addon || $this->plan_tier === 'agency';
+    }
 
-        return $this->projects()->whereNotNull('runnr_site_id')->exists();
+    /**
+     * Whether this workspace's plan includes the feature (see the Pennant definitions).
+     */
+    public function hasFeature(PlanFeature $feature): bool
+    {
+        return $feature->activeFor($this);
+    }
+
+    /**
+     * Stop the request with an upgrade prompt unless the plan includes the feature.
+     *
+     * @throws FeatureNotAvailableException
+     */
+    public function ensureFeature(PlanFeature $feature): void
+    {
+        if (! $this->hasFeature($feature)) {
+            throw new FeatureNotAvailableException($this, $feature);
+        }
     }
 
     /**

@@ -257,8 +257,8 @@ export default function WorkspaceBilling({
             </div>
             <p className="text-[11px] text-slate-500">
               {usage.runnr_entitled
-                ? 'Unlocked via connected Runnr project or Agency plan.'
-                : 'Connect a Runnr-hosted project or get the add-on.'}
+                ? 'Unlocked via the Runnr add-on or Agency plan.'
+                : 'Get the Runnr add-on or upgrade to Agency.'}
             </p>
           </div>
         </div>

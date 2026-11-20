@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Domains\Billing\PlanFeature;
 use App\Domains\Integrations\Jobs\SyncBingWebmasterJob;
 use App\Domains\Integrations\Jobs\SyncGoogleSearchConsoleJob;
 use App\Domains\Integrations\Models\ProjectIntegration;
@@ -19,6 +20,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Throwable;
 
 class ProjectIntegrationController extends Controller
@@ -94,6 +96,9 @@ class ProjectIntegrationController extends Controller
         $project = Project::query()->findOrFail((int) ($pending['project_id'] ?? 0));
         abort_if($project->workspace_id !== $workspace->id, 404);
         Gate::authorize('update', $project);
+        // The callback has no workspace in its URL, so the route middleware can't
+        // see it; check here so a plan change mid-OAuth can't connect anyway.
+        $workspace->ensureFeature(PlanFeature::TrafficAttribution);
 
         $code = $request->query('code');
         if (! is_string($code) || $code === '') {
@@ -392,7 +397,16 @@ class ProjectIntegrationController extends Controller
         Gate::authorize('update', $project);
 
         $validated = $request->validate([
-            'runnr_site_id' => ['required', 'string', 'max:120'],
+            'runnr_site_id' => [
+                'required',
+                'string',
+                'max:120',
+                // Telemetry and deploy webhooks are routed by site ID, so a site
+                // already linked to another project can't be claimed again.
+                Rule::unique('projects', 'runnr_site_id')->ignore($project->id)->whereNull('deleted_at'),
+            ],
+        ], [
+            'runnr_site_id.unique' => 'This Runnr site is already linked to another project.',
         ]);
 
         $siteId = (string) $validated['runnr_site_id'];

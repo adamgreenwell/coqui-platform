@@ -15,6 +15,7 @@ import {
   Laptop,
   LineChart,
   Link2,
+  Lock,
   Plus,
   Radio,
   RefreshCw,
@@ -28,6 +29,7 @@ import {
 } from 'lucide-react';
 import { type FormEvent, useEffect, useState } from 'react';
 import { getEcho } from '../../echo';
+import { FeatureLink, usePlan } from '../../components/PlanGate';
 import AppLayout, { type WorkspaceSummary } from '../../layouts/AppLayout';
 
 interface ProjectDetails {
@@ -217,6 +219,34 @@ export default function ProjectShow({
   const ga4Integration = integrations.find((i) => i.provider === 'ga4');
   const plausibleIntegration = integrations.find((i) => i.provider === 'plausible');
 
+  const { has, billingUrl } = usePlan();
+  const hasTrafficAttribution = has('traffic-attribution');
+
+  // Search and analytics integrations are part of traffic attribution. Without
+  // it the card offers an upgrade instead, and existing connections can still
+  // be removed.
+  const lockedIntegrationActions = (integration?: IntegrationItem) => (
+    <>
+      <Link
+        href={billingUrl}
+        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg border border-amber-500/40 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 font-medium text-xs transition cursor-pointer"
+      >
+        <Lock className="h-3.5 w-3.5" />
+        <span>Upgrade to connect</span>
+      </Link>
+      {integration && (
+        <button
+          type="button"
+          onClick={() => router.delete(`/workspaces/${workspace.id}/projects/${project.id}/integrations/${integration.id}`)}
+          className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 text-xs font-medium transition cursor-pointer ml-auto"
+        >
+          <Trash2 className="h-3 w-3" />
+          <span>Disconnect</span>
+        </button>
+      )}
+    </>
+  );
+
   const { data, setData, post, processing, errors, reset } = useForm({
     domain: '',
     label: '',
@@ -333,9 +363,9 @@ export default function ProjectShow({
         </div>
 
         {/* Project Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-800 pb-6">
+        <div className="flex flex-col gap-4 border-b border-slate-800 pb-6">
           <div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
               <h1 className="text-2xl font-bold tracking-tight text-white">{project.name}</h1>
               <a
                 href={project.canonical_url}
@@ -355,10 +385,10 @@ export default function ProjectShow({
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Link
               href={`/workspaces/${workspace.id}/projects/${project.id}/keywords`}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-medium transition cursor-pointer"
+              className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-medium transition cursor-pointer"
             >
               <Search className="h-3.5 w-3.5 text-emerald-400" />
               <span>Rank Tracker</span>
@@ -366,7 +396,7 @@ export default function ProjectShow({
 
             <Link
               href={`/workspaces/${workspace.id}/projects/${project.id}/keyword-explorer`}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-300 text-xs font-medium transition cursor-pointer"
+              className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-300 text-xs font-medium transition cursor-pointer"
             >
               <Sparkles className="h-3.5 w-3.5 text-sky-400" />
               <span>Keyword Explorer</span>
@@ -374,35 +404,38 @@ export default function ProjectShow({
 
             <Link
               href={`/workspaces/${workspace.id}/projects/${project.id}/keyword-gap`}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-medium transition cursor-pointer"
+              className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-medium transition cursor-pointer"
             >
               <Users className="h-3.5 w-3.5 text-indigo-400" />
               <span>Keyword Gap</span>
             </Link>
 
-            <Link
+            <FeatureLink
+              feature="backlink-intelligence"
               href={`/workspaces/${workspace.id}/projects/${project.id}/backlinks`}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 text-xs font-medium transition cursor-pointer"
+              className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 text-xs font-medium transition cursor-pointer"
             >
               <Link2 className="h-3.5 w-3.5 text-purple-400" />
               <span>Backlinks</span>
-            </Link>
+            </FeatureLink>
 
-            <Link
+            <FeatureLink
+              feature="bot-telemetry"
               href={`/workspaces/${workspace.id}/projects/${project.id}/bot-logs`}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-medium transition cursor-pointer"
+              className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-medium transition cursor-pointer"
             >
               <Server className="h-3.5 w-3.5 text-indigo-400" />
               <span>Bot Telemetry</span>
-            </Link>
+            </FeatureLink>
 
-            <Link
+            <FeatureLink
+              feature="traffic-attribution"
               href={`/workspaces/${workspace.id}/projects/${project.id}/analytics/performance`}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-300 text-xs font-medium transition cursor-pointer"
+              className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-300 text-xs font-medium transition cursor-pointer"
             >
               <LineChart className="h-3.5 w-3.5 text-teal-400" />
               <span>Traffic &amp; Performance</span>
-            </Link>
+            </FeatureLink>
 
             {canEdit && (
               <button
@@ -413,7 +446,7 @@ export default function ProjectShow({
                   }
                 }}
                 disabled={liveCrawl?.status === 'running' || liveCrawl?.status === 'pending'}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-300 text-xs font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-300 text-xs font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Activity className={`h-3.5 w-3.5 text-teal-400 ${liveCrawl?.status === 'running' ? 'animate-spin' : ''}`} />
                 <span>{liveCrawl?.status === 'running' ? 'Crawling...' : 'Run Cloud Audit'}</span>
@@ -423,7 +456,7 @@ export default function ProjectShow({
             {canEdit && (
               <Link
                 href={`/workspaces/${workspace.id}/projects/${project.id}/settings`}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium transition cursor-pointer"
+                className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium transition cursor-pointer"
               >
                 <Settings className="h-3.5 w-3.5 text-slate-400" />
                 <span>Settings</span>
@@ -664,7 +697,8 @@ export default function ProjectShow({
               )}
 
               <div className="flex items-center gap-2 pt-2 border-t border-slate-800/80">
-                {canEdit && (
+                {canEdit && !hasTrafficAttribution && lockedIntegrationActions(gscIntegration)}
+                {canEdit && hasTrafficAttribution && (
                   gscIntegration?.status === 'connected' ? (
                     <>
                       <button
@@ -736,7 +770,8 @@ export default function ProjectShow({
               )}
 
               <div className="flex items-center gap-2 pt-2 border-t border-slate-800/80">
-                {canEdit && (
+                {canEdit && !hasTrafficAttribution && lockedIntegrationActions(bingIntegration)}
+                {canEdit && hasTrafficAttribution && (
                   bingIntegration?.status === 'connected' ? (
                     <>
                       <button
@@ -930,7 +965,8 @@ export default function ProjectShow({
               )}
 
               <div className="flex items-center gap-2 pt-2 border-t border-slate-800/80">
-                {canEdit && (
+                {canEdit && !hasTrafficAttribution && lockedIntegrationActions(ga4Integration)}
+                {canEdit && hasTrafficAttribution && (
                   ga4Integration?.status === 'connected' ? (
                     <>
                       <button
@@ -1003,7 +1039,8 @@ export default function ProjectShow({
               )}
 
               <div className="flex items-center gap-2 pt-2 border-t border-slate-800/80">
-                {canEdit && (
+                {canEdit && !hasTrafficAttribution && lockedIntegrationActions(plausibleIntegration)}
+                {canEdit && hasTrafficAttribution && (
                   plausibleIntegration?.status === 'connected' ? (
                     <>
                       <button

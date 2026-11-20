@@ -15,6 +15,7 @@ use App\Domains\Projects\Models\Workspace;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -37,6 +38,7 @@ class TrafficAttributionTest extends TestCase
 
         $this->user = User::factory()->create();
         $this->workspace = Workspace::query()->create([
+            'plan_tier' => 'pro',
             'name' => 'Analytics Workspace',
             'slug' => 'analytics-workspace',
             'owner_id' => $this->user->id,
@@ -191,7 +193,7 @@ class TrafficAttributionTest extends TestCase
         ], $docsSnapshot->ai_referrals_breakdown);
     }
 
-    public function test_sync_plausible_queries_breakdown_and_persists_snapshots(): void
+    private function plausibleIntegration(): ProjectIntegration
     {
         /** @var ProjectIntegration $integration */
         $integration = ProjectIntegration::query()->create([
@@ -205,42 +207,230 @@ class TrafficAttributionTest extends TestCase
             ],
         ]);
 
-        Http::fake([
-            'https://plausible.io/api/v1/stats/breakdown*property=event%3Apage*' => Http::response([
-                'results' => [
-                    [
-                        'page' => '/',
-                        'visitors' => 500,
-                        'pageviews' => 900,
-                        'bounce_rate' => 40.0,
-                        'visit_duration' => 60,
-                    ],
-                    [
-                        'page' => '/features',
-                        'visitors' => 200,
-                        'pageviews' => 300,
-                        'bounce_rate' => 50.0,
-                        'visit_duration' => 45,
-                    ],
+        return $integration;
+    }
+
+    /**
+     * Fakes Plausible's v1 breakdown API from per-day data; days not listed
+     * have no traffic.
+     *
+     * @param  array<string, array{pages: list<array<string, mixed>>, sources: list<array<string, mixed>>}>  $days
+     */
+    private function fakePlausibleDays(array $days): void
+    {
+        Http::fake(function (HttpRequest $request) use ($days) {
+            parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+            $day = $days[(string) ($query['date'] ?? '')] ?? ['pages' => [], 'sources' => []];
+
+            return Http::response([
+                'results' => ($query['property'] ?? '') === 'event:page' ? $day['pages'] : $day['sources'],
+            ], 200);
+        });
+    }
+
+    public function test_sync_plausible_stores_one_row_per_page_per_day(): void
+    {
+        $integration = $this->plausibleIntegration();
+        $yesterday = Carbon::today()->subDay()->format('Y-m-d');
+        $today = Carbon::today()->format('Y-m-d');
+
+        $this->fakePlausibleDays([
+            $yesterday => [
+                'pages' => [['page' => '/', 'visitors' => 100, 'pageviews' => 150, 'bounce_rate' => 40.0, 'visit_duration' => 60]],
+                'sources' => [
+                    ['source' => 'Google', 'visitors' => 50],
+                    ['source' => 'ChatGPT', 'visitors' => 10],
+                    ['source' => 'Direct / None', 'visitors' => 40],
                 ],
-            ], 200),
-            'https://plausible.io/api/v1/stats/breakdown*property=visit%3Asource*' => Http::response([
-                'results' => [
-                    ['source' => 'Google', 'visitors' => 400],
-                    ['source' => 'ChatGPT', 'visitors' => 100],
-                    ['source' => 'Direct / None', 'visitors' => 200],
+            ],
+            $today => [
+                'pages' => [
+                    ['page' => '/', 'visitors' => 200, 'pageviews' => 300, 'bounce_rate' => 50.0, 'visit_duration' => 45],
+                    ['page' => '/features', 'visitors' => 20, 'pageviews' => 25, 'bounce_rate' => 30.0, 'visit_duration' => 90],
                 ],
-            ], 200),
+                'sources' => [['source' => 'Google', 'visitors' => 220]],
+            ],
         ]);
 
-        $count = $this->trafficService->syncPlausible($integration, 30);
-        $this->assertEquals(2, $count);
+        $this->assertSame(3, $this->trafficService->syncPlausible($integration, 30));
 
-        $this->assertDatabaseHas('page_traffic_snapshots', [
+        $home = PageTrafficSnapshot::query()->where('provider', 'plausible')->where('path', '/')->orderBy('date')->get();
+        $this->assertCount(2, $home);
+        $this->assertSame($yesterday, $home[0]->date->format('Y-m-d'));
+        $this->assertSame(100, $home[0]->total_sessions);
+        $this->assertSame(50, $home[0]->organic_sessions);
+        $this->assertSame(10, $home[0]->ai_referral_sessions);
+        $this->assertSame(['ChatGPT' => 10], $home[0]->ai_referrals_breakdown);
+        $this->assertSame(200, $home[1]->total_sessions);
+        $this->assertSame(200, $home[1]->organic_sessions);
+        $this->assertSame(0, $home[1]->ai_referral_sessions);
+    }
+
+    public function test_repeated_plausible_syncs_do_not_inflate_the_report(): void
+    {
+        $integration = $this->plausibleIntegration();
+        $today = Carbon::today()->format('Y-m-d');
+
+        $this->fakePlausibleDays([
+            $today => [
+                'pages' => [['page' => '/', 'visitors' => 200, 'pageviews' => 300, 'bounce_rate' => 50.0, 'visit_duration' => 45]],
+                'sources' => [['source' => 'Google', 'visitors' => 200]],
+            ],
+        ]);
+
+        $this->trafficService->syncPlausible($integration, 30);
+        $this->trafficService->syncPlausible($integration->refresh(), 30);
+        $this->trafficService->syncPlausible($integration->refresh(), 30);
+
+        $report = $this->trafficService->getPagePerformanceReport($this->project, 30);
+        $this->assertSame(200, $report['kpis']['total_organic_sessions']);
+        $this->assertSame(200, collect($report['pages'])->firstWhere('path', '/')['total_sessions']);
+    }
+
+    public function test_later_plausible_syncs_only_fetch_recent_days(): void
+    {
+        $integration = $this->plausibleIntegration();
+        $this->fakePlausibleDays([]);
+
+        $this->trafficService->syncPlausible($integration, 30);
+        // 31 days (today and the 30 before it), one page and one source call each.
+        Http::assertSentCount(62);
+
+        $this->fakePlausibleDays([]);
+        $this->trafficService->syncPlausible($integration->refresh(), 30);
+        // Only the last sync day and the two before it are fetched again.
+        Http::assertSentCount(6);
+    }
+
+    public function test_a_resynced_day_drops_pages_that_no_longer_have_visits(): void
+    {
+        $integration = $this->plausibleIntegration();
+        $today = Carbon::today()->format('Y-m-d');
+
+        PageTrafficSnapshot::query()->create([
             'project_id' => $this->project->id,
             'provider' => 'plausible',
-            'path' => '/features',
+            'path' => '/old',
+            'path_hash' => hash('sha256', '/old'),
+            'date' => $today,
+            'organic_sessions' => 900,
+            'ai_referral_sessions' => 0,
+            'direct_sessions' => 0,
+            'total_sessions' => 900,
+            'bounce_rate' => 0,
+            'avg_engagement_time_sec' => 0,
+            'ai_referrals_breakdown' => [],
         ]);
+
+        $this->fakePlausibleDays([
+            $today => [
+                'pages' => [['page' => '/', 'visitors' => 10, 'pageviews' => 10, 'bounce_rate' => 0.0, 'visit_duration' => 0]],
+                'sources' => [['source' => 'Google', 'visitors' => 10]],
+            ],
+        ]);
+
+        $this->trafficService->syncPlausible($integration, 30);
+
+        $this->assertDatabaseMissing('page_traffic_snapshots', ['provider' => 'plausible', 'path' => '/old']);
+    }
+
+    public function test_the_report_uses_one_provider_when_ga4_and_plausible_both_have_data(): void
+    {
+        foreach (['ga4' => 120, 'plausible' => 100] as $provider => $sessions) {
+            PageTrafficSnapshot::query()->create([
+                'project_id' => $this->project->id,
+                'provider' => $provider,
+                'path' => '/pricing',
+                'path_hash' => hash('sha256', '/pricing'),
+                'date' => Carbon::today()->subDay()->format('Y-m-d'),
+                'organic_sessions' => $sessions,
+                'ai_referral_sessions' => 5,
+                'direct_sessions' => 0,
+                'total_sessions' => $sessions,
+                'bounce_rate' => 40.0,
+                'avg_engagement_time_sec' => 30,
+                'ai_referrals_breakdown' => ['ChatGPT' => 5],
+            ]);
+        }
+
+        $report = $this->trafficService->getPagePerformanceReport($this->project, 30);
+
+        $this->assertSame('ga4', $report['kpis']['traffic_provider']);
+        $this->assertSame(120, $report['kpis']['total_organic_sessions']);
+        $this->assertSame(5, $report['kpis']['total_ai_referral_sessions']);
+        $this->assertSame(120, collect($report['pages'])->firstWhere('path', '/pricing')['total_sessions']);
+    }
+
+    public function test_the_report_falls_back_to_plausible_when_ga4_has_no_data_in_the_window(): void
+    {
+        PageTrafficSnapshot::query()->create([
+            'project_id' => $this->project->id,
+            'provider' => 'plausible',
+            'path' => '/',
+            'path_hash' => hash('sha256', '/'),
+            'date' => Carbon::today()->format('Y-m-d'),
+            'organic_sessions' => 40,
+            'ai_referral_sessions' => 0,
+            'direct_sessions' => 0,
+            'total_sessions' => 40,
+            'bounce_rate' => 0,
+            'avg_engagement_time_sec' => 0,
+            'ai_referrals_breakdown' => [],
+        ]);
+
+        $report = $this->trafficService->getPagePerformanceReport($this->project, 30);
+
+        $this->assertSame('plausible', $report['kpis']['traffic_provider']);
+        $this->assertSame(40, $report['kpis']['total_organic_sessions']);
+    }
+
+    public function test_the_report_ignores_snapshots_from_a_removed_ga4_integration(): void
+    {
+        $this->plausibleIntegration();
+
+        foreach (['ga4' => 120, 'plausible' => 100] as $provider => $sessions) {
+            PageTrafficSnapshot::query()->create([
+                'project_id' => $this->project->id,
+                'provider' => $provider,
+                'path' => '/pricing',
+                'path_hash' => hash('sha256', '/pricing'),
+                'date' => Carbon::today()->subDay()->format('Y-m-d'),
+                'organic_sessions' => $sessions,
+                'ai_referral_sessions' => 0,
+                'direct_sessions' => 0,
+                'total_sessions' => $sessions,
+                'bounce_rate' => 0,
+                'avg_engagement_time_sec' => 0,
+                'ai_referrals_breakdown' => [],
+            ]);
+        }
+
+        // GA4's integration was removed, but its snapshots are still stored.
+        $report = $this->trafficService->getPagePerformanceReport($this->project, 30);
+
+        $this->assertSame('plausible', $report['kpis']['traffic_provider']);
+        $this->assertSame(100, $report['kpis']['total_organic_sessions']);
+    }
+
+    public function test_ga4_uses_the_configured_api_base_url(): void
+    {
+        config()->set('services.google.ga4_base_url', 'https://ga4-proxy.test');
+
+        /** @var ProjectIntegration $integration */
+        $integration = ProjectIntegration::query()->create([
+            'project_id' => $this->project->id,
+            'provider' => 'ga4',
+            'site_url' => 'properties/123456789',
+            'external_identifier' => 'properties/123456789',
+            'status' => 'connected',
+            'credentials_encrypted' => ['api_key' => 'test-api-key'],
+        ]);
+
+        Http::fake(['https://ga4-proxy.test/*' => Http::response(['rows' => []], 200)]);
+
+        $this->trafficService->syncGa4($integration, 30);
+
+        Http::assertSent(fn (HttpRequest $request): bool => str_starts_with($request->url(), 'https://ga4-proxy.test/v1beta/properties/123456789:runReport'));
     }
 
     public function test_page_performance_report_joins_crawl_urls_gsc_and_analytics_traffic(): void

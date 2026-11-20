@@ -321,6 +321,8 @@ class PublicUuidRouteKeysTest extends TestCase
 
     public function test_crawl_compare_ignores_sequential_run_ids(): void
     {
+        // Creating share links needs the white-label reports feature.
+        $this->workspace->update(['plan_tier' => 'agency']);
         $runs = collect([1, 2])->map(fn (int $i): CrawlRun => CrawlRun::query()->create([
             'project_id' => $this->project->id,
             'external_crawl_id' => (string) Str::uuid(),
