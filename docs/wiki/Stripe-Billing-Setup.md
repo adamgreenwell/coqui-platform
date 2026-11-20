@@ -47,7 +47,7 @@ Test-mode keys must be paired with test-mode prices, and live keys with live pri
 Do this once in test mode, then again in live mode before launch.
 
 1. **Products → Add product**: create *Pro Cloud*, *Agency & Enterprise* and *Runnr Hosting Add-on*, each with a recurring monthly USD price. Copy each `price_…` ID into the matching `STRIPE_PRICE_*` variable.
-2. **Settings → Billing → Customer portal**: activate the portal and allow cancelling and switching between the Pro and Agency prices.
+2. **Settings → Billing → Customer portal**: activate the portal and allow cancelling and switching between the Pro and Agency prices. Under subscription updates, set proration to **invoice the prorated amount immediately** (`always_invoice`), so an upgrade charges the difference when the customer switches instead of at the next renewal.
 3. **Developers → Webhooks → Add endpoint**:
    - URL: `https://<app domain>/api/webhooks/stripe`
    - Events: `checkout.session.completed`, `customer.subscription.updated`, `customer.subscription.deleted`, `invoice.payment_succeeded`, `invoice.payment_failed`
