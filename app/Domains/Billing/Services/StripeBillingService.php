@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace App\Domains\Billing\Services;
 
+use App\Domains\Billing\Exceptions\BillingUnavailableException;
 use App\Domains\Billing\Models\BillingInvoice;
 use App\Domains\Billing\Models\WorkspaceSubscription;
 use App\Domains\Projects\Models\Workspace;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
-use RuntimeException;
 
 class StripeBillingService
 {
@@ -94,8 +95,34 @@ class StripeBillingService
         ];
     }
 
+    public const MODE_STRIPE = 'stripe';
+
+    public const MODE_MOCK = 'mock';
+
+    public const MODE_UNCONFIGURED = 'unconfigured';
+
+    /**
+     * How billing actions are served:
+     * - stripe: a real secret key is set, so Checkout and the portal hit Stripe.
+     * - mock: no key (or a mock_ key) in local/testing, so actions return fake
+     *   session URLs for UI development.
+     * - unconfigured: no key anywhere else, so actions refuse with a clear error.
+     */
+    public function mode(): string
+    {
+        $secret = (string) config('services.stripe.secret');
+
+        if ($secret !== '' && ! str_starts_with($secret, 'mock_')) {
+            return self::MODE_STRIPE;
+        }
+
+        return app()->environment('local', 'testing') ? self::MODE_MOCK : self::MODE_UNCONFIGURED;
+    }
+
     /**
      * Create Stripe Checkout session for plan upgrade.
+     *
+     * @throws BillingUnavailableException
      */
     public function createCheckoutSession(
         Workspace $workspace,
@@ -103,15 +130,34 @@ class StripeBillingService
         string $successUrl,
         string $cancelUrl,
     ): string {
-        $secret = (string) config('services.stripe.secret');
-        $baseUrl = (string) config('services.stripe.base_url', 'https://api.stripe.com');
+        $mode = $this->mode();
 
-        $isMock = $secret === '' || str_starts_with($secret, 'mock_') || app()->environment('testing');
-        if ($isMock) {
+        if ($mode === self::MODE_MOCK) {
             return $successUrl.'?session_id=cs_mock_'.bin2hex(random_bytes(8)).'&plan='.$planTier;
         }
 
-        $priceId = (string) config("services.stripe.plans.{$planTier}.price_id", "price_{$planTier}_monthly");
+        if ($mode === self::MODE_UNCONFIGURED) {
+            Log::error('Stripe checkout requested but STRIPE_SECRET is not set.', ['workspace_id' => $workspace->id]);
+
+            throw new BillingUnavailableException('Online payments are not set up yet, so plans cannot be purchased right now. Please contact support.');
+        }
+
+        if ($planTier !== 'runnr_addon' && $this->hasActiveBaseSubscription($workspace)) {
+            throw new BillingUnavailableException('This workspace already has a paid plan. Switch plans from the Stripe customer portal so you are not billed twice.');
+        }
+
+        $priceId = (string) config("services.stripe.prices.{$planTier}");
+        if (! str_starts_with($priceId, 'price_')) {
+            Log::error("Stripe checkout requested for {$planTier} but its price ID is missing or invalid.", [
+                'workspace_id' => $workspace->id,
+                'env' => 'STRIPE_PRICE_'.strtoupper($planTier),
+            ]);
+
+            throw new BillingUnavailableException('This plan is not available for purchase yet. Please contact support.');
+        }
+
+        $secret = (string) config('services.stripe.secret');
+        $baseUrl = (string) config('services.stripe.base_url', 'https://api.stripe.com');
 
         $params = [
             'mode' => 'subscription',
@@ -139,53 +185,82 @@ class StripeBillingService
             }
         }
 
-        $response = Http::asForm()
-            ->withToken($secret)
-            ->post(rtrim($baseUrl, '/').'/v1/checkout/sessions', $params);
-
-        if (! $response->successful()) {
-            throw new RuntimeException('Stripe checkout session creation failed: '.$response->body());
-        }
-
-        $data = $response->json();
-        $url = $data['url'] ?? null;
-
-        if (! is_string($url) || $url === '') {
-            throw new RuntimeException('Stripe did not return a valid checkout URL.');
-        }
-
-        return $url;
+        return $this->postForSessionUrl('/v1/checkout/sessions', $params, 'checkout', $workspace);
     }
 
     /**
      * Create Stripe Customer Billing Portal session for subscription self-management.
+     *
+     * @throws BillingUnavailableException
      */
     public function createCustomerPortalSession(Workspace $workspace, string $returnUrl): string
+    {
+        $mode = $this->mode();
+
+        if ($mode === self::MODE_MOCK) {
+            return $returnUrl.'?portal_mock=1';
+        }
+
+        if ($mode === self::MODE_UNCONFIGURED) {
+            Log::error('Stripe portal requested but STRIPE_SECRET is not set.', ['workspace_id' => $workspace->id]);
+
+            throw new BillingUnavailableException('Online payments are not set up yet, so the billing portal is unavailable. Please contact support.');
+        }
+
+        if ($workspace->stripe_id === null || $workspace->stripe_id === '') {
+            throw new BillingUnavailableException('This workspace has no Stripe billing account yet. Choose a paid plan first.');
+        }
+
+        return $this->postForSessionUrl('/v1/billing_portal/sessions', [
+            'customer' => $workspace->stripe_id,
+            'return_url' => $returnUrl,
+        ], 'portal', $workspace);
+    }
+
+    private function hasActiveBaseSubscription(Workspace $workspace): bool
+    {
+        return WorkspaceSubscription::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('type', 'default')
+            ->whereIn('stripe_status', ['active', 'trialing', 'past_due'])
+            ->exists();
+    }
+
+    /**
+     * @param  array<string, mixed>  $params
+     *
+     * @throws BillingUnavailableException
+     */
+    private function postForSessionUrl(string $path, array $params, string $kind, Workspace $workspace): string
     {
         $secret = (string) config('services.stripe.secret');
         $baseUrl = (string) config('services.stripe.base_url', 'https://api.stripe.com');
 
-        $isMock = $secret === '' || str_starts_with($secret, 'mock_') || app()->environment('testing');
-        if ($isMock || $workspace->stripe_id === null || $workspace->stripe_id === '') {
-            return $returnUrl.'?portal_mock=1';
-        }
-
-        $response = Http::asForm()
-            ->withToken($secret)
-            ->post(rtrim($baseUrl, '/').'/v1/billing_portal/sessions', [
-                'customer' => $workspace->stripe_id,
-                'return_url' => $returnUrl,
+        try {
+            $response = Http::asForm()
+                ->withToken($secret)
+                ->timeout(20)
+                ->post(rtrim($baseUrl, '/').$path, $params);
+        } catch (ConnectionException $e) {
+            Log::error("Stripe {$kind} session request could not connect.", [
+                'workspace_id' => $workspace->id,
+                'error' => $e->getMessage(),
             ]);
 
-        if (! $response->successful()) {
-            throw new RuntimeException('Stripe customer portal session creation failed: '.$response->body());
+            throw new BillingUnavailableException('Stripe could not be reached. Please try again in a moment.', previous: $e);
         }
 
-        $data = $response->json();
-        $url = $data['url'] ?? null;
+        $url = $response->json('url');
 
-        if (! is_string($url) || $url === '') {
-            throw new RuntimeException('Stripe did not return a valid portal URL.');
+        if (! $response->successful() || ! is_string($url) || $url === '') {
+            Log::error("Stripe {$kind} session creation failed.", [
+                'workspace_id' => $workspace->id,
+                'status' => $response->status(),
+                'stripe_error' => $response->json('error.message'),
+                'stripe_error_code' => $response->json('error.code'),
+            ]);
+
+            throw new BillingUnavailableException('Stripe could not start a billing session. Please try again, or contact support if this keeps happening.');
         }
 
         return $url;

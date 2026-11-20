@@ -23,6 +23,7 @@
 - [Backlink Intelligence and Link Rot](Backlink-Intelligence-And-Link-Rot.md)
 - [Runnr Hosting and Analytics Moat](Runnr-Hosting-And-Analytics-Moat.md)
 - [Coolify Deployment and Operations](Coolify-Deployment-And-Operations.md)
+- [Stripe Billing Setup](Stripe-Billing-Setup.md)
 - [Development Roadmap](Development-Roadmap.md)
 
 ## Platform Guardrails

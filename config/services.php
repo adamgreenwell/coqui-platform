@@ -27,6 +27,13 @@ return [
         'webhook_secret' => env('STRIPE_WEBHOOK_SECRET'),
         'webhook_tolerance' => (int) env('STRIPE_WEBHOOK_TOLERANCE', 300),
         'base_url' => env('STRIPE_API_BASE_URL', 'https://api.stripe.com'),
+        // Recurring Price IDs (price_...) from the Stripe dashboard. Use the
+        // test-mode prices with sk_test_ keys and live prices with sk_live_ keys.
+        'prices' => [
+            'pro' => env('STRIPE_PRICE_PRO'),
+            'agency' => env('STRIPE_PRICE_AGENCY'),
+            'runnr_addon' => env('STRIPE_PRICE_RUNNR_ADDON'),
+        ],
     ],
 
     'runnr' => [
