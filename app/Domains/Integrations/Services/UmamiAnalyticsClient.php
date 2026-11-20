@@ -47,6 +47,11 @@ class UmamiAnalyticsClient
     /** Stop after this many pages of one metric (1,000 rows each). */
     private const int MAX_PAGES = 25;
 
+    private const int WEBSITES_PER_PAGE = 200;
+
+    /** Stop listing websites after this many pages (10,000 sites). */
+    private const int MAX_WEBSITE_PAGES = 50;
+
     /** @var list<int> when recent Cloud requests were sent, in ms */
     private array $cloudSentAt = [];
 
@@ -63,24 +68,39 @@ class UmamiAnalyticsClient
     {
         $target = $this->guard->check($baseUrl);
 
-        $this->throttle($target, 1);
-        $response = $this->request($target, $apiKey)->get($this->apiRoot($target).'/websites', ['pageSize' => 200, 'includeTeams' => 'true']);
-
-        $body = $this->decode(null, $response, 'website list');
-        $rows = is_array($body['data'] ?? null) ? $body['data'] : [];
-
         $websites = [];
-        foreach ($rows as $row) {
-            if (is_array($row) && isset($row['id']) && is_string($row['id'])) {
-                $websites[] = [
-                    'id' => $row['id'],
-                    'name' => (string) ($row['name'] ?? ''),
-                    'domain' => (string) ($row['domain'] ?? ''),
-                ];
+        for ($page = 1; $page <= self::MAX_WEBSITE_PAGES; $page++) {
+            $this->throttle($target, 1);
+            $response = $this->request($target, $apiKey)->get($this->apiRoot($target).'/websites', [
+                'page' => $page,
+                'pageSize' => self::WEBSITES_PER_PAGE,
+                'includeTeams' => 'true',
+            ]);
+
+            $body = $this->decode(null, $response, 'website list');
+            $rows = is_array($body['data'] ?? null) ? $body['data'] : [];
+
+            $added = 0;
+            foreach ($rows as $row) {
+                if (is_array($row) && isset($row['id']) && is_string($row['id']) && ! isset($websites[$row['id']])) {
+                    $websites[$row['id']] = [
+                        'id' => $row['id'],
+                        'name' => (string) ($row['name'] ?? ''),
+                        'domain' => (string) ($row['domain'] ?? ''),
+                    ];
+                    $added++;
+                }
+            }
+
+            // A short page, the reported total, or a page with nothing new
+            // (an instance that ignores `page`) ends the list.
+            $total = (int) ($body['count'] ?? 0);
+            if (count($rows) < self::WEBSITES_PER_PAGE || $added === 0 || ($total > 0 && count($websites) >= $total)) {
+                break;
             }
         }
 
-        return $websites;
+        return array_values($websites);
     }
 
     /**

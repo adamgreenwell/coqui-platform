@@ -461,6 +461,30 @@ class UmamiIntegrationTest extends TestCase
         Queue::assertPushed(SyncTrafficAnalyticsJob::class, fn (SyncTrafficAnalyticsJob $job): bool => $job->integration->is($integration));
     }
 
+    public function test_connect_finds_a_website_beyond_the_first_page(): void
+    {
+        Queue::fake();
+        $firstPage = array_map(fn (int $i): array => [
+            'id' => sprintf('00000000-0000-4000-8000-%012d', $i),
+            'name' => "Site {$i}",
+            'domain' => "site{$i}.example",
+        ], range(1, 200));
+        Http::fake(function (Request $request) use ($firstPage) {
+            parse_str((string) parse_url($request->url(), PHP_URL_QUERY), $query);
+
+            return Http::response(match ((int) $query['page']) {
+                1 => ['data' => $firstPage, 'count' => 201],
+                2 => ['data' => [['id' => self::WEBSITE_ID, 'name' => 'Guard Dog', 'domain' => 'guarddog.cc']], 'count' => 201],
+                default => ['data' => [], 'count' => 201],
+            });
+        });
+
+        $this->connect(['base_url' => self::BASE, 'api_key' => 'umami_test'])->assertSessionHasNoErrors();
+
+        $this->assertSame(self::WEBSITE_ID, ProjectIntegration::query()->where('provider', 'umami')->value('external_identifier'));
+        Http::assertSentCount(2);
+    }
+
     public function test_connect_uses_the_website_id_when_given(): void
     {
         Queue::fake();
