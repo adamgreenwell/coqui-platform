@@ -171,7 +171,7 @@ class CrawlCompareTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)->get(
-            "/workspaces/{$this->workspace->id}/projects/{$this->project->id}/crawls/compare?baseline={$this->baselineRun->id}&target={$this->targetRun->id}"
+            "/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/crawls/compare?baseline={$this->baselineRun->external_crawl_id}&target={$this->targetRun->external_crawl_id}"
         );
 
         $response->assertOk();
@@ -252,7 +252,7 @@ class CrawlCompareTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)->get(
-            "/workspaces/{$this->workspace->id}/projects/{$this->project->id}/crawls/compare?baseline={$this->baselineRun->id}&target={$this->targetRun->id}"
+            "/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/crawls/compare?baseline={$this->baselineRun->external_crawl_id}&target={$this->targetRun->external_crawl_id}"
         );
 
         $response->assertOk();
@@ -317,7 +317,7 @@ class CrawlCompareTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)->get(
-            "/workspaces/{$this->workspace->id}/projects/{$this->project->id}/crawls/compare?baseline={$this->baselineRun->id}&target={$this->targetRun->id}"
+            "/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/crawls/compare?baseline={$this->baselineRun->external_crawl_id}&target={$this->targetRun->external_crawl_id}"
         );
 
         $response->assertOk();
@@ -334,10 +334,10 @@ class CrawlCompareTest extends TestCase
     public function test_user_can_create_shareable_diff_report(): void
     {
         $response = $this->actingAs($this->user)->postJson(
-            "/workspaces/{$this->workspace->id}/projects/{$this->project->id}/crawls/compare/share",
+            "/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/crawls/compare/share",
             [
-                'baseline_id' => $this->baselineRun->id,
-                'target_id' => $this->targetRun->id,
+                'baseline_id' => $this->baselineRun->external_crawl_id,
+                'target_id' => $this->targetRun->external_crawl_id,
                 'title' => 'Client Q3 Technical SEO Audit',
                 'expires_in_days' => 30,
             ]
@@ -408,7 +408,7 @@ class CrawlCompareTest extends TestCase
         Sanctum::actingAs($this->user, ['crawls:sync']);
 
         $response = $this->getJson(
-            "/api/v1/projects/{$this->project->id}/crawls/compare?baseline={$this->baselineRun->id}&target={$this->targetRun->id}"
+            "/api/v1/projects/{$this->project->uuid}/crawls/compare?baseline={$this->baselineRun->external_crawl_id}&target={$this->targetRun->external_crawl_id}"
         );
 
         $response->assertOk();
@@ -441,7 +441,7 @@ class CrawlCompareTest extends TestCase
         $otherUser = User::factory()->create();
 
         $response = $this->actingAs($otherUser)->get(
-            "/workspaces/{$this->workspace->id}/projects/{$this->project->id}/crawls/compare?baseline={$this->baselineRun->id}&target={$this->targetRun->id}"
+            "/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/crawls/compare?baseline={$this->baselineRun->external_crawl_id}&target={$this->targetRun->external_crawl_id}"
         );
 
         $response->assertForbidden();

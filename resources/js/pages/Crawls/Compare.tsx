@@ -28,7 +28,7 @@ import { useState } from 'react';
 import AppLayout, { type WorkspaceSummary } from '../../layouts/AppLayout';
 
 interface CrawlRunOption {
-  id: number;
+  id: string;
   externalCrawlId: string;
   source: string;
   status: string;
@@ -41,7 +41,7 @@ interface CrawlRunOption {
 }
 
 interface RunSummary {
-  id: number;
+  id: string;
   externalCrawlId: string;
   seed: string;
   source: string;
@@ -127,18 +127,18 @@ interface DiffData {
 
 interface CompareProps {
   workspace: {
-    id?: number;
+    id?: string;
     name: string;
     slug?: string;
   };
   project: {
-    id: number;
+    id?: string;
     name: string;
     domain: string;
   };
   availableRuns: CrawlRunOption[];
-  selectedBaselineId?: number | null;
-  selectedTargetId?: number | null;
+  selectedBaselineId?: string | null;
+  selectedTargetId?: string | null;
   diff?: DiffData | null;
   isReadOnly?: boolean;
   reportTitle?: string | null;
@@ -156,8 +156,8 @@ export default function Compare({
   reportTitle,
   expiresAt,
 }: CompareProps) {
-  const [baselineId, setBaselineId] = useState<number | string>(selectedBaselineId || '');
-  const [targetId, setTargetId] = useState<number | string>(selectedTargetId || '');
+  const [baselineId, setBaselineId] = useState<string>(selectedBaselineId || '');
+  const [targetId, setTargetId] = useState<string>(selectedTargetId || '');
   const [activeTab, setActiveTab] = useState<'broken' | 'issues' | 'transitions' | 'urls'>(
     diff && diff.newlyBroken.length > 0 ? 'broken' : 'issues'
   );

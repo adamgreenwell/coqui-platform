@@ -30,14 +30,14 @@ class PublicCrawlDiffController extends Controller
             'workspace' => [
                 'name' => $report->project->workspace->name,
             ],
+            // Public page: no project identifier at all, only what the report shows.
             'project' => [
-                'id' => $report->project->id,
                 'name' => $report->project->name,
                 'domain' => $report->project->domain,
             ],
             'availableRuns' => [],
-            'selectedBaselineId' => $report->baseline_run_id,
-            'selectedTargetId' => $report->target_run_id,
+            'selectedBaselineId' => $report->baselineRun->external_crawl_id,
+            'selectedTargetId' => $report->targetRun->external_crawl_id,
             'diff' => $diff,
             'isReadOnly' => true,
             'reportTitle' => $report->title,

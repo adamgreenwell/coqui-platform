@@ -75,7 +75,7 @@ class KeywordExplorerTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-explorer");
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keyword-explorer");
 
         $response->assertOk();
         $response->assertInertia(fn ($page) => $page
@@ -124,7 +124,7 @@ class KeywordExplorerTest extends TestCase
         }
 
         $response = $this->actingAs($this->user)
-            ->postJson("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-explorer/overview", [
+            ->postJson("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keyword-explorer/overview", [
                 'keywords' => $keywords,
                 'location_code' => 2840,
                 'language_code' => 'en',
@@ -213,7 +213,7 @@ class KeywordExplorerTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->postJson("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-explorer/overview", [
+            ->postJson("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keyword-explorer/overview", [
                 'keywords' => $allKeywords,
                 'location_code' => 2840,
                 'language_code' => 'en',
@@ -288,7 +288,7 @@ class KeywordExplorerTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->postJson("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-explorer/overview", [
+            ->postJson("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keyword-explorer/overview", [
                 'keywords' => 'serp intelligence software',
             ]);
 
@@ -308,7 +308,7 @@ class KeywordExplorerTest extends TestCase
         $this->workspace->update(['monthly_dfs_budget_usd' => 0.00]);
 
         $response = $this->actingAs($this->user)
-            ->postJson("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-explorer/overview", [
+            ->postJson("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keyword-explorer/overview", [
                 'keywords' => ['uncached keyword'],
             ]);
 
@@ -383,7 +383,7 @@ class KeywordExplorerTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->postJson("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-explorer/related", [
+            ->postJson("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keyword-explorer/related", [
                 'keyword' => 'seo audit',
                 'limit' => 50,
             ]);
@@ -407,7 +407,7 @@ class KeywordExplorerTest extends TestCase
     public function test_one_click_add_to_rank_tracker_persists_keyword_with_pre_filled_metrics(): void
     {
         $response = $this->actingAs($this->user)
-            ->postJson("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-explorer/track", [
+            ->postJson("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keyword-explorer/track", [
                 'keywords' => [
                     [
                         'keyword' => 'local seo audit software',
@@ -461,7 +461,7 @@ class KeywordExplorerTest extends TestCase
         );
 
         $response = $this->actingAs($this->user)
-            ->postJson("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-explorer/track", [
+            ->postJson("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keyword-explorer/track", [
                 'keywords' => [
                     'cached keyword auto',
                     [
@@ -509,7 +509,7 @@ class KeywordExplorerTest extends TestCase
         }
 
         $response = $this->actingAs($this->user)
-            ->postJson("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-explorer/track", [
+            ->postJson("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keyword-explorer/track", [
                 'keywords' => $items,
                 'device' => 'desktop',
                 'cadence' => 'weekly',
@@ -544,7 +544,7 @@ class KeywordExplorerTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->postJson("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-explorer/track", [
+            ->postJson("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keyword-explorer/track", [
                 'keywords' => [
                     [
                         'keyword' => 'existing tracked term',
@@ -576,17 +576,17 @@ class KeywordExplorerTest extends TestCase
         $otherUser = User::factory()->create();
 
         $this->actingAs($otherUser)
-            ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-explorer")
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keyword-explorer")
             ->assertForbidden();
 
         $this->actingAs($otherUser)
-            ->postJson("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-explorer/overview", [
+            ->postJson("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keyword-explorer/overview", [
                 'keywords' => ['forbidden test'],
             ])
             ->assertForbidden();
 
         $this->actingAs($otherUser)
-            ->postJson("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-explorer/track", [
+            ->postJson("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keyword-explorer/track", [
                 'keywords' => ['forbidden test'],
             ])
             ->assertForbidden();

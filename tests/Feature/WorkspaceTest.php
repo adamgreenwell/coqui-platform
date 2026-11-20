@@ -61,7 +61,7 @@ class WorkspaceTest extends TestCase
 
         // Dashboard redirects to active workspace
         $dashboardResponse = $this->get('/dashboard');
-        $dashboardResponse->assertRedirect("/workspaces/{$workspace->id}");
+        $dashboardResponse->assertRedirect("/workspaces/{$workspace->uuid}");
     }
 
     public function test_multi_tenant_isolation_prevents_unauthorized_workspace_access(): void
@@ -78,21 +78,21 @@ class WorkspaceTest extends TestCase
 
         // User B cannot view User A's workspace
         $this->actingAs($userB)
-            ->get("/workspaces/{$workspaceA->id}")
+            ->get("/workspaces/{$workspaceA->uuid}")
             ->assertForbidden();
 
         // User B cannot update User A's workspace
         $this->actingAs($userB)
-            ->put("/workspaces/{$workspaceA->id}", ['name' => 'Hacked Workspace'])
+            ->put("/workspaces/{$workspaceA->uuid}", ['name' => 'Hacked Workspace'])
             ->assertForbidden();
 
         // User B cannot view or invite members in Workspace A
         $this->actingAs($userB)
-            ->get("/workspaces/{$workspaceA->id}/members")
+            ->get("/workspaces/{$workspaceA->uuid}/members")
             ->assertForbidden();
 
         $this->actingAs($userB)
-            ->post("/workspaces/{$workspaceA->id}/members", [
+            ->post("/workspaces/{$workspaceA->uuid}/members", [
                 'email' => 'newuser@example.com',
                 'role' => 'editor',
             ])
@@ -119,7 +119,7 @@ class WorkspaceTest extends TestCase
 
         // Admin invites outsider as editor
         $this->actingAs($admin)
-            ->post("/workspaces/{$workspace->id}/members", [
+            ->post("/workspaces/{$workspace->uuid}/members", [
                 'email' => $outsider->email,
                 'role' => 'editor',
             ])
@@ -130,7 +130,7 @@ class WorkspaceTest extends TestCase
         // Editor cannot invite or update members
         $newUser = User::factory()->create();
         $this->actingAs($editor)
-            ->post("/workspaces/{$workspace->id}/members", [
+            ->post("/workspaces/{$workspace->uuid}/members", [
                 'email' => $newUser->email,
                 'role' => 'viewer',
             ])
@@ -138,7 +138,7 @@ class WorkspaceTest extends TestCase
 
         // Viewer cannot invite or update members
         $this->actingAs($viewer)
-            ->post("/workspaces/{$workspace->id}/members", [
+            ->post("/workspaces/{$workspace->uuid}/members", [
                 'email' => $newUser->email,
                 'role' => 'viewer',
             ])
@@ -146,7 +146,7 @@ class WorkspaceTest extends TestCase
 
         // Owner can promote editor to admin
         $this->actingAs($owner)
-            ->put("/workspaces/{$workspace->id}/members/{$editor->id}", [
+            ->put("/workspaces/{$workspace->uuid}/members/{$editor->uuid}", [
                 'role' => 'admin',
             ])
             ->assertRedirect();
@@ -155,12 +155,12 @@ class WorkspaceTest extends TestCase
 
         // Owner cannot be removed
         $this->actingAs($admin)
-            ->delete("/workspaces/{$workspace->id}/members/{$owner->id}")
+            ->delete("/workspaces/{$workspace->uuid}/members/{$owner->uuid}")
             ->assertSessionHasErrors(['member']);
 
         // Admin can remove outsider
         $this->actingAs($admin)
-            ->delete("/workspaces/{$workspace->id}/members/{$outsider->id}")
+            ->delete("/workspaces/{$workspace->uuid}/members/{$outsider->uuid}")
             ->assertRedirect();
 
         $this->assertFalse($workspace->members()->where('users.id', $outsider->id)->exists());
@@ -178,7 +178,7 @@ class WorkspaceTest extends TestCase
 
         // Reject empty abilities array
         $this->actingAs($user)
-            ->post("/workspaces/{$workspace->id}/tokens", [
+            ->post("/workspaces/{$workspace->uuid}/tokens", [
                 'name' => 'Empty Abilities Token',
                 'abilities' => [],
             ])
@@ -186,7 +186,7 @@ class WorkspaceTest extends TestCase
 
         // Generate token
         $response = $this->actingAs($user)
-            ->post("/workspaces/{$workspace->id}/tokens", [
+            ->post("/workspaces/{$workspace->uuid}/tokens", [
                 'name' => 'MacBook Pro Desktop',
                 'abilities' => ['crawls:sync', 'projects:read'],
             ]);
@@ -199,7 +199,7 @@ class WorkspaceTest extends TestCase
 
         // Revoke token
         $this->actingAs($user)
-            ->delete("/workspaces/{$workspace->id}/tokens/{$tokenModel->id}")
+            ->delete("/workspaces/{$workspace->uuid}/tokens/{$tokenModel->uuid}")
             ->assertRedirect();
 
         $this->assertDatabaseMissing('personal_access_tokens', [
@@ -231,7 +231,7 @@ class WorkspaceTest extends TestCase
 
         // Authentic request using Bearer token
         $this->withHeader('Authorization', "Bearer {$plainToken}")
-            ->postJson("/api/v1/projects/{$project->id}/crawls/sync", [
+            ->postJson("/api/v1/projects/{$project->uuid}/crawls/sync", [
                 'id' => $crawlId,
                 'seed' => 'https://syncsite.com/',
                 'seedKind' => 'url',
@@ -251,7 +251,7 @@ class WorkspaceTest extends TestCase
 
         // Subsequent request fails with 401 Unauthorized
         $this->withHeader('Authorization', "Bearer {$plainToken}")
-            ->postJson("/api/v1/projects/{$project->id}/crawls/sync", [
+            ->postJson("/api/v1/projects/{$project->uuid}/crawls/sync", [
                 'id' => (string) Str::uuid(),
                 'seed' => 'https://syncsite.com/',
                 'seedKind' => 'url',
@@ -285,7 +285,7 @@ class WorkspaceTest extends TestCase
 
         // Viewer token cannot sync crawls (requires update permission on project)
         Sanctum::actingAs($viewer, ['crawls:sync']);
-        $this->postJson("/api/v1/projects/{$project->id}/crawls/sync", [
+        $this->postJson("/api/v1/projects/{$project->uuid}/crawls/sync", [
             'id' => (string) Str::uuid(),
             'seed' => 'https://policy.com/',
             'seedKind' => 'url',
@@ -296,7 +296,7 @@ class WorkspaceTest extends TestCase
 
         // Outsider cannot sync crawls
         Sanctum::actingAs($outsider, ['crawls:sync']);
-        $this->postJson("/api/v1/projects/{$project->id}/crawls/sync", [
+        $this->postJson("/api/v1/projects/{$project->uuid}/crawls/sync", [
             'id' => (string) Str::uuid(),
             'seed' => 'https://policy.com/',
             'seedKind' => 'url',
@@ -307,7 +307,7 @@ class WorkspaceTest extends TestCase
 
         // Owner can sync crawls
         Sanctum::actingAs($owner, ['crawls:sync']);
-        $this->postJson("/api/v1/projects/{$project->id}/crawls/sync", [
+        $this->postJson("/api/v1/projects/{$project->uuid}/crawls/sync", [
             'id' => (string) Str::uuid(),
             'seed' => 'https://policy.com/',
             'seedKind' => 'url',

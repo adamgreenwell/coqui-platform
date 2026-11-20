@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domains\Integrations\Models;
 
 use App\Domains\Projects\Models\Project;
+use App\Models\Concerns\HasPublicUuid;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -13,6 +14,7 @@ use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
+ * @property string $uuid
  * @property int $project_id
  * @property string $provider
  * @property string|null $site_url
@@ -26,6 +28,8 @@ use Illuminate\Support\Carbon;
  */
 class ProjectIntegration extends Model
 {
+    use HasPublicUuid;
+
     /** @var list<string> */
     protected $fillable = [
         'project_id',

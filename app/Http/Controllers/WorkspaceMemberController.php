@@ -29,7 +29,7 @@ class WorkspaceMemberController extends Controller
                 : (is_string($pivotCreatedAt) ? $pivotCreatedAt : null);
 
             return [
-                'id' => $member->id,
+                'id' => $member->uuid,
                 'name' => $member->name,
                 'email' => $member->email,
                 'role' => is_string($pivotRole) ? $pivotRole : ($member->id === $workspace->owner_id ? 'owner' : 'viewer'),
@@ -40,7 +40,7 @@ class WorkspaceMemberController extends Controller
 
         return Inertia::render('Workspaces/Members', [
             'workspace' => [
-                'id' => $workspace->id,
+                'id' => $workspace->uuid,
                 'name' => $workspace->name,
                 'slug' => $workspace->slug,
             ],

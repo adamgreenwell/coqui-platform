@@ -16,7 +16,7 @@ import { type FormEvent, useState } from 'react';
 import AppLayout, { type WorkspaceSummary } from '../../layouts/AppLayout';
 
 interface ProjectSummary {
-  id: number;
+  id: string;
   name: string;
   domain: string;
   canonical_url: string;
@@ -24,7 +24,7 @@ interface ProjectSummary {
 }
 
 interface WorkspaceDetail {
-  id: number;
+  id: string;
   name: string;
   slug: string;
   planTier: string;

@@ -109,7 +109,7 @@ class BacklinkIntersectTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/backlinks/intersect");
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks/intersect");
 
         $response->assertOk();
         $response->assertInertia(fn ($page) => $page
@@ -162,7 +162,7 @@ class BacklinkIntersectTest extends TestCase
 
         // First request calls DataForSEO
         $response = $this->actingAs($this->user)
-            ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/backlinks/intersect");
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks/intersect");
 
         $response->assertOk();
 
@@ -177,7 +177,7 @@ class BacklinkIntersectTest extends TestCase
         ]);
 
         $cachedResponse = $this->actingAs($this->user)
-            ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/backlinks/intersect");
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks/intersect");
 
         $cachedResponse->assertOk();
         $cachedResponse->assertInertia(fn ($page) => $page
@@ -234,7 +234,7 @@ class BacklinkIntersectTest extends TestCase
 
         // Request with min_intersections = 2, max_spam = 30
         $response = $this->actingAs($this->user)
-            ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/backlinks/intersect?min_intersections=2&max_spam=30");
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks/intersect?min_intersections=2&max_spam=30");
 
         $response->assertOk();
         $response->assertInertia(fn ($page) => $page
@@ -273,7 +273,7 @@ class BacklinkIntersectTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->post("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/backlinks/intersect/refresh", [
+            ->post("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks/intersect/refresh", [
                 'competitors' => ['competitor-a.com', 'competitor-b.com'],
             ]);
 

@@ -86,7 +86,7 @@ class KeywordGapTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-gap");
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keyword-gap");
 
         $response->assertOk();
         $response->assertInertia(fn ($page) => $page
@@ -215,7 +215,7 @@ class KeywordGapTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->postJson("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-gap/search", [
+            ->postJson("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keyword-gap/search", [
                 'competitors' => ['ahrefs.com'],
                 'location_code' => 2840,
                 'language_code' => 'en',
@@ -285,7 +285,7 @@ class KeywordGapTest extends TestCase
 
         // First call: misses cache, executes API request
         $response1 = $this->actingAs($this->user)
-            ->postJson("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-gap/search", [
+            ->postJson("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keyword-gap/search", [
                 'competitors' => ['ahrefs.com'],
                 'gap_mode' => 'missing',
             ]);
@@ -301,7 +301,7 @@ class KeywordGapTest extends TestCase
         // Second call: serves from cache, 0 new API calls sent
         Http::fake(); // Reset fake to ensure nothing is sent
         $response2 = $this->actingAs($this->user)
-            ->postJson("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-gap/search", [
+            ->postJson("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keyword-gap/search", [
                 'competitors' => ['ahrefs.com'],
                 'gap_mode' => 'missing',
             ]);
@@ -327,7 +327,7 @@ class KeywordGapTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->postJson("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-gap/search", [
+            ->postJson("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keyword-gap/search", [
                 'competitors' => ['ahrefs.com'],
                 'gap_mode' => 'missing',
             ]);
@@ -384,7 +384,7 @@ class KeywordGapTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->postJson("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-gap/search", [
+            ->postJson("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keyword-gap/search", [
                 'competitors' => ['ahrefs.com', 'semrush.com'],
                 'gap_mode' => 'missing',
             ]);
@@ -403,14 +403,14 @@ class KeywordGapTest extends TestCase
 
         // Validation rejects more than 3 competitors
         $this->actingAs($this->user)
-            ->postJson("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-gap/search", [
+            ->postJson("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keyword-gap/search", [
                 'competitors' => ['c1.com', 'c2.com', 'c3.com', 'c4.com'],
             ])
             ->assertUnprocessable();
 
         // Validation rejects 0 competitors
         $this->actingAs($this->user)
-            ->postJson("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-gap/search", [
+            ->postJson("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keyword-gap/search", [
                 'competitors' => [],
             ])
             ->assertUnprocessable();
@@ -422,7 +422,7 @@ class KeywordGapTest extends TestCase
         $this->workspace->update(['monthly_dfs_budget_usd' => 0.00]);
 
         $response = $this->actingAs($this->user)
-            ->postJson("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-gap/search", [
+            ->postJson("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keyword-gap/search", [
                 'competitors' => ['ahrefs.com'],
             ]);
 
@@ -446,7 +446,7 @@ class KeywordGapTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->postJson("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-gap/track", [
+            ->postJson("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keyword-gap/track", [
                 'keywords' => [
                     [
                         'keyword' => 'existing gap kw',
@@ -502,17 +502,17 @@ class KeywordGapTest extends TestCase
         $otherUser = User::factory()->create();
 
         $this->actingAs($otherUser)
-            ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-gap")
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keyword-gap")
             ->assertForbidden();
 
         $this->actingAs($otherUser)
-            ->postJson("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-gap/search", [
+            ->postJson("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keyword-gap/search", [
                 'competitors' => ['ahrefs.com'],
             ])
             ->assertForbidden();
 
         $this->actingAs($otherUser)
-            ->postJson("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keyword-gap/track", [
+            ->postJson("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keyword-gap/track", [
                 'keywords' => ['forbidden test'],
                 'device' => 'desktop',
                 'cadence' => 'weekly',

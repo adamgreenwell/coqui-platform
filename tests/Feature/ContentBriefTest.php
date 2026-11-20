@@ -53,7 +53,7 @@ class ContentBriefTest extends TestCase
     public function test_content_brief_page_renders_with_inertia(): void
     {
         $response = $this->actingAs($this->user)
-            ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keywords/brief");
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keywords/brief");
 
         $response->assertOk();
         $response->assertInertia(fn ($page) => $page
@@ -69,12 +69,12 @@ class ContentBriefTest extends TestCase
         $otherUser = User::factory()->create();
 
         $response = $this->actingAs($otherUser)
-            ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keywords/brief");
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keywords/brief");
 
         $response->assertForbidden();
 
         $postResponse = $this->actingAs($otherUser)
-            ->post("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keywords/brief", [
+            ->post("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keywords/brief", [
                 'keyword' => 'technical seo audit',
             ]);
 
@@ -186,7 +186,7 @@ HTML;
         ]);
 
         $response = $this->actingAs($this->user)
-            ->post("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keywords/brief", [
+            ->post("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keywords/brief", [
                 'keyword' => 'technical seo guide',
             ]);
 
@@ -286,7 +286,7 @@ HTML;
         ]);
 
         $response = $this->actingAs($this->user)
-            ->post("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keywords/brief", [
+            ->post("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keywords/brief", [
                 'keyword' => 'resilience test keyword',
             ]);
 
@@ -351,7 +351,7 @@ HTML;
         ]);
 
         $response = $this->actingAs($this->user)
-            ->post("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keywords/brief", [
+            ->post("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keywords/brief", [
                 'keyword' => 'ssrf security test',
             ]);
 
@@ -393,7 +393,7 @@ HTML;
         ]);
 
         $response = $this->actingAs($this->user)
-            ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/keywords/brief/download?keyword=".urlencode('coqui rank tracker'));
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keywords/brief/download?keyword=".urlencode('coqui rank tracker'));
 
         $response->assertOk();
         $response->assertHeader('Content-Type', 'text/markdown; charset=UTF-8');

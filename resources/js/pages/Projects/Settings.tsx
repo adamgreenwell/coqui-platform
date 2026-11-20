@@ -14,7 +14,7 @@ import { type FormEvent } from 'react';
 import AppLayout, { type WorkspaceSummary } from '../../layouts/AppLayout';
 
 interface CompetitorItem {
-  id: number;
+  id: string;
   domain: string;
   label?: string | null;
   sort_order: number;
@@ -23,7 +23,7 @@ interface CompetitorItem {
 interface ProjectSettingsProps {
   workspace: WorkspaceSummary;
   project: {
-    id: number;
+    id: string;
     name: string;
     domain: string;
     canonical_url: string;

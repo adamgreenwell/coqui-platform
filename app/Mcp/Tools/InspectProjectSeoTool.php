@@ -44,7 +44,7 @@ class InspectProjectSeoTool extends Tool
 
         return Response::json([
             'project' => [
-                'id' => $project->id,
+                'id' => $project->uuid,
                 'name' => $project->name,
                 'domain' => $project->domain,
                 'canonicalUrl' => $project->canonical_url,

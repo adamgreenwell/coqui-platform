@@ -66,19 +66,19 @@ class SmokeAndTelemetryAuthorizationTest extends TestCase
     {
         Sanctum::actingAs($this->outsider, ['projects:read', 'crawls:read']);
 
-        $this->getJson("/api/v1/projects/{$this->project->id}/deploy-smoke/latest")->assertForbidden();
+        $this->getJson("/api/v1/projects/{$this->project->uuid}/deploy-smoke/latest")->assertForbidden();
     }
 
     public function test_latest_smoke_details_remain_readable_by_members(): void
     {
         Sanctum::actingAs($this->owner, ['projects:read', 'crawls:read']);
 
-        $this->getJson("/api/v1/projects/{$this->project->id}/deploy-smoke/latest")->assertOk();
+        $this->getJson("/api/v1/projects/{$this->project->uuid}/deploy-smoke/latest")->assertOk();
     }
 
     public function test_badge_is_served_by_token_not_project_id(): void
     {
-        $this->get("/api/v1/projects/{$this->project->id}/deploy-smoke/badge")->assertNotFound();
+        $this->get("/api/v1/projects/{$this->project->uuid}/deploy-smoke/badge")->assertNotFound();
         $this->get('/api/v1/deploy-smoke/badge/'.str_repeat('x', 40))->assertNotFound();
 
         $token = $this->project->deployBadgeToken();

@@ -26,7 +26,7 @@ class ProjectRegistryTest extends TestCase
         $workspace->members()->attach($user->id, ['role' => 'owner']);
 
         $response = $this->actingAs($user)
-            ->post("/workspaces/{$workspace->id}/projects", [
+            ->post("/workspaces/{$workspace->uuid}/projects", [
                 'name' => 'E-Commerce UK Store',
                 'url' => 'https://www.my-shop.co.uk/store/collections?page=2#top',
                 'location_code' => 2826,
@@ -39,7 +39,7 @@ class ProjectRegistryTest extends TestCase
             ]);
 
         $project = Project::query()->where('workspace_id', $workspace->id)->firstOrFail();
-        $response->assertRedirect("/workspaces/{$workspace->id}/projects/{$project->id}");
+        $response->assertRedirect("/workspaces/{$workspace->uuid}/projects/{$project->uuid}");
 
         $this->assertSame('E-Commerce UK Store', $project->name);
         $this->assertSame('my-shop.co.uk', $project->domain);
@@ -55,14 +55,14 @@ class ProjectRegistryTest extends TestCase
 
         // Malformed inputs are rejected
         $this->actingAs($user)
-            ->post("/workspaces/{$workspace->id}/projects", [
+            ->post("/workspaces/{$workspace->uuid}/projects", [
                 'name' => 'Malformed URL',
                 'url' => 'https://',
             ])
             ->assertSessionHasErrors(['url']);
 
         $this->actingAs($user)
-            ->post("/workspaces/{$workspace->id}/projects", [
+            ->post("/workspaces/{$workspace->uuid}/projects", [
                 'name' => 'Space in domain',
                 'url' => 'not a domain at all',
             ])
@@ -89,7 +89,7 @@ class ProjectRegistryTest extends TestCase
 
         // User A creates project with example.com
         $this->actingAs($userA)
-            ->post("/workspaces/{$workspaceA->id}/projects", [
+            ->post("/workspaces/{$workspaceA->uuid}/projects", [
                 'name' => 'Project A',
                 'url' => 'https://example.com',
             ])
@@ -97,7 +97,7 @@ class ProjectRegistryTest extends TestCase
 
         // User A attempts to create another project in Workspace A with http://www.example.com/blog
         $this->actingAs($userA)
-            ->post("/workspaces/{$workspaceA->id}/projects", [
+            ->post("/workspaces/{$workspaceA->uuid}/projects", [
                 'name' => 'Duplicate Project A',
                 'url' => 'http://www.example.com/blog',
             ])
@@ -105,7 +105,7 @@ class ProjectRegistryTest extends TestCase
 
         // User B in Workspace B CAN create project with same domain (multi-tenant isolation)
         $this->actingAs($userB)
-            ->post("/workspaces/{$workspaceB->id}/projects", [
+            ->post("/workspaces/{$workspaceB->uuid}/projects", [
                 'name' => 'Project B',
                 'url' => 'https://www.example.com/',
             ])
@@ -134,7 +134,7 @@ class ProjectRegistryTest extends TestCase
 
         // Add Competitor 1
         $this->actingAs($user)
-            ->post("/workspaces/{$workspace->id}/projects/{$project->id}/competitors", [
+            ->post("/workspaces/{$workspace->uuid}/projects/{$project->uuid}/competitors", [
                 'domain' => 'https://www.comp1.com/pricing',
                 'label' => 'Competitor One',
             ])
@@ -146,14 +146,14 @@ class ProjectRegistryTest extends TestCase
 
         // Cannot add project's own domain as competitor
         $this->actingAs($user)
-            ->post("/workspaces/{$workspace->id}/projects/{$project->id}/competitors", [
+            ->post("/workspaces/{$workspace->uuid}/projects/{$project->uuid}/competitors", [
                 'domain' => 'https://www.brand.com/',
             ])
             ->assertSessionHasErrors(['domain']);
 
         // Cannot add duplicate competitor
         $this->actingAs($user)
-            ->post("/workspaces/{$workspace->id}/projects/{$project->id}/competitors", [
+            ->post("/workspaces/{$workspace->uuid}/projects/{$project->uuid}/competitors", [
                 'domain' => 'http://comp1.com',
             ])
             ->assertSessionHasErrors(['domain']);
@@ -161,7 +161,7 @@ class ProjectRegistryTest extends TestCase
         // Add 4 more competitors to reach maximum limit of 5
         for ($i = 2; $i <= 5; $i++) {
             $this->actingAs($user)
-                ->post("/workspaces/{$workspace->id}/projects/{$project->id}/competitors", [
+                ->post("/workspaces/{$workspace->uuid}/projects/{$project->uuid}/competitors", [
                     'domain' => "comp{$i}.com",
                 ])
                 ->assertRedirect();
@@ -171,27 +171,27 @@ class ProjectRegistryTest extends TestCase
 
         // Attempting to add a 6th competitor is rejected
         $this->actingAs($user)
-            ->post("/workspaces/{$workspace->id}/projects/{$project->id}/competitors", [
+            ->post("/workspaces/{$workspace->uuid}/projects/{$project->uuid}/competitors", [
                 'domain' => 'comp6.com',
             ])
             ->assertSessionHasErrors(['domain']);
 
         // Reorder competitors
-        $competitorIds = $project->competitors()->pluck('id')->all();
+        $competitorIds = $project->competitors()->pluck('uuid')->all();
         $reversedIds = array_reverse($competitorIds);
 
         $this->actingAs($user)
-            ->post("/workspaces/{$workspace->id}/projects/{$project->id}/competitors/reorder", [
+            ->post("/workspaces/{$workspace->uuid}/projects/{$project->uuid}/competitors/reorder", [
                 'order' => $reversedIds,
             ])
             ->assertRedirect();
 
         $firstOrdered = $project->competitors()->orderBy('sort_order')->firstOrFail();
-        $this->assertSame($reversedIds[0], $firstOrdered->id);
+        $this->assertSame($reversedIds[0], $firstOrdered->uuid);
 
         // Delete competitor
         $this->actingAs($user)
-            ->delete("/workspaces/{$workspace->id}/projects/{$project->id}/competitors/{$comp1->id}")
+            ->delete("/workspaces/{$workspace->uuid}/projects/{$project->uuid}/competitors/{$comp1->uuid}")
             ->assertRedirect();
 
         $this->assertDatabaseMissing('project_competitors', ['id' => $comp1->id]);
@@ -230,24 +230,24 @@ class ProjectRegistryTest extends TestCase
 
         // Soft delete project
         $this->actingAs($user)
-            ->delete("/workspaces/{$workspace->id}/projects/{$project->id}")
-            ->assertRedirect("/workspaces/{$workspace->id}");
+            ->delete("/workspaces/{$workspace->uuid}/projects/{$project->uuid}")
+            ->assertRedirect("/workspaces/{$workspace->uuid}");
 
         $this->assertSoftDeleted('projects', ['id' => $project->id]);
 
         // Subsequent show request returns 404
         $this->actingAs($user)
-            ->get("/workspaces/{$workspace->id}/projects/{$project->id}")
+            ->get("/workspaces/{$workspace->uuid}/projects/{$project->uuid}")
             ->assertNotFound();
 
         // Re-creating project with same domain restores it cleanly without unique constraint failure
         $this->actingAs($user)
-            ->post("/workspaces/{$workspace->id}/projects", [
+            ->post("/workspaces/{$workspace->uuid}/projects", [
                 'name' => 'Restored Project',
                 'url' => 'https://delete-me.com',
                 'competitors' => ['https://new-competitor.com'],
             ])
-            ->assertRedirect("/workspaces/{$workspace->id}/projects/{$project->id}");
+            ->assertRedirect("/workspaces/{$workspace->uuid}/projects/{$project->uuid}");
 
         $restored = Project::query()->findOrFail($project->id);
         $this->assertFalse($restored->trashed());
@@ -256,8 +256,8 @@ class ProjectRegistryTest extends TestCase
 
         // Delete again before testing force delete cascade
         $this->actingAs($user)
-            ->delete("/workspaces/{$workspace->id}/projects/{$project->id}")
-            ->assertRedirect("/workspaces/{$workspace->id}");
+            ->delete("/workspaces/{$workspace->uuid}/projects/{$project->uuid}")
+            ->assertRedirect("/workspaces/{$workspace->uuid}");
 
         // Force delete cleanly cascades and leaves no orphaned competitor or crawl records
         $project->forceDelete();
@@ -291,12 +291,12 @@ class ProjectRegistryTest extends TestCase
 
         // Viewer can view project overview
         $this->actingAs($viewer)
-            ->get("/workspaces/{$workspace->id}/projects/{$project->id}")
+            ->get("/workspaces/{$workspace->uuid}/projects/{$project->uuid}")
             ->assertOk();
 
         // Viewer cannot create project
         $this->actingAs($viewer)
-            ->post("/workspaces/{$workspace->id}/projects", [
+            ->post("/workspaces/{$workspace->uuid}/projects", [
                 'name' => 'Viewer Project',
                 'url' => 'https://viewer.com',
             ])
@@ -304,7 +304,7 @@ class ProjectRegistryTest extends TestCase
 
         // Viewer cannot update project settings
         $this->actingAs($viewer)
-            ->put("/workspaces/{$workspace->id}/projects/{$project->id}", [
+            ->put("/workspaces/{$workspace->uuid}/projects/{$project->uuid}", [
                 'name' => 'Hacked Project',
                 'location_code' => 2840,
                 'language_code' => 'en',
@@ -314,24 +314,24 @@ class ProjectRegistryTest extends TestCase
 
         // Viewer cannot add competitors
         $this->actingAs($viewer)
-            ->post("/workspaces/{$workspace->id}/projects/{$project->id}/competitors", [
+            ->post("/workspaces/{$workspace->uuid}/projects/{$project->uuid}/competitors", [
                 'domain' => 'hacked-rival.com',
             ])
             ->assertForbidden();
 
         // Viewer cannot delete project
         $this->actingAs($viewer)
-            ->delete("/workspaces/{$workspace->id}/projects/{$project->id}")
+            ->delete("/workspaces/{$workspace->uuid}/projects/{$project->uuid}")
             ->assertForbidden();
 
         // Editor cannot delete project (only owner & admin can delete)
         $this->actingAs($editor)
-            ->delete("/workspaces/{$workspace->id}/projects/{$project->id}")
+            ->delete("/workspaces/{$workspace->uuid}/projects/{$project->uuid}")
             ->assertForbidden();
 
         // Editor CAN update project settings
         $this->actingAs($editor)
-            ->put("/workspaces/{$workspace->id}/projects/{$project->id}", [
+            ->put("/workspaces/{$workspace->uuid}/projects/{$project->uuid}", [
                 'name' => 'Editor Updated Name',
                 'location_code' => 2840,
                 'language_code' => 'en',
@@ -343,12 +343,12 @@ class ProjectRegistryTest extends TestCase
 
         // Outsider cannot access project (404/403)
         $this->actingAs($outsider)
-            ->get("/workspaces/{$workspace->id}/projects/{$project->id}")
+            ->get("/workspaces/{$workspace->uuid}/projects/{$project->uuid}")
             ->assertForbidden();
 
         // Owner can delete project
         $this->actingAs($owner)
-            ->delete("/workspaces/{$workspace->id}/projects/{$project->id}")
-            ->assertRedirect("/workspaces/{$workspace->id}");
+            ->delete("/workspaces/{$workspace->uuid}/projects/{$project->uuid}")
+            ->assertRedirect("/workspaces/{$workspace->uuid}");
     }
 }

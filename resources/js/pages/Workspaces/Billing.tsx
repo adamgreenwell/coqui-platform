@@ -29,7 +29,7 @@ interface PlanDetail {
 
 interface WorkspaceBillingProps {
   workspace: {
-    id: number;
+    id: string;
     name: string;
     slug: string;
     plan_tier: string;

@@ -24,7 +24,7 @@ import { useMemo, useState } from 'react';
 import AppLayout, { type WorkspaceSummary } from '../../layouts/AppLayout';
 
 interface ProjectDetails {
-  id: number;
+  id: string;
   name: string;
   domain: string;
   canonical_url: string;
@@ -33,7 +33,7 @@ interface ProjectDetails {
 }
 
 interface ProjectCompetitor {
-  id: number;
+  id: string;
   domain: string;
   label: string | null;
   sort_order: number;

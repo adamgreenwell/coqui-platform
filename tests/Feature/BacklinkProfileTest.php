@@ -160,7 +160,7 @@ class BacklinkProfileTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/backlinks");
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks");
 
         $response->assertOk();
         $response->assertInertia(fn ($page) => $page
@@ -183,12 +183,12 @@ class BacklinkProfileTest extends TestCase
         $otherUser = User::factory()->create();
 
         $response = $this->actingAs($otherUser)
-            ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/backlinks");
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks");
 
         $response->assertForbidden();
 
         $postResponse = $this->actingAs($otherUser)
-            ->post("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/backlinks/refresh");
+            ->post("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks/refresh");
 
         $postResponse->assertForbidden();
     }
@@ -253,7 +253,7 @@ class BacklinkProfileTest extends TestCase
 
         // First request: calls DataForSEO
         $response = $this->actingAs($this->user)
-            ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/backlinks");
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks");
 
         $response->assertOk();
         $this->assertDatabaseHas('dataforseo_cache', [
@@ -266,7 +266,7 @@ class BacklinkProfileTest extends TestCase
         ]);
 
         $cachedResponse = $this->actingAs($this->user)
-            ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/backlinks");
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks");
 
         $cachedResponse->assertOk();
         $cachedResponse->assertInertia(fn ($page) => $page
@@ -359,7 +359,7 @@ class BacklinkProfileTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/backlinks");
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks");
 
         $response->assertOk();
         $response->assertInertia(fn ($page) => $page
@@ -426,7 +426,7 @@ class BacklinkProfileTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->post("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/backlinks/refresh");
+            ->post("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks/refresh");
 
         $response->assertRedirect(route('workspaces.projects.backlinks.index', [$this->workspace, $this->project]));
 

@@ -47,12 +47,12 @@ class TrackedKeywordController extends Controller
 
         $trackedKeywords = $query->get();
 
-        /** @var list<array{id: int, domain: string, label: string|null, sort_order: int}> $competitors */
+        /** @var list<array{id: string, domain: string, label: string|null, sort_order: int}> $competitors */
         $competitors = $project->competitors()
             ->orderBy('sort_order')
-            ->get(['id', 'domain', 'label', 'sort_order'])
+            ->get(['id', 'uuid', 'domain', 'label', 'sort_order'])
             ->map(fn (ProjectCompetitor $c): array => [
-                'id' => $c->id,
+                'id' => $c->uuid,
                 'domain' => $c->domain,
                 'label' => $c->label,
                 'sort_order' => $c->sort_order,
@@ -161,7 +161,7 @@ class TrackedKeywordController extends Controller
             $bingPosition = ($bing !== null && isset($bing->avg_position)) ? round((float) $bing->avg_position, 1) : null;
 
             return [
-                'id' => $kw->id,
+                'id' => $kw->uuid,
                 'keyword' => $kw->keyword,
                 'device' => $kw->device,
                 'location_code' => $kw->location_code,
@@ -251,12 +251,12 @@ class TrackedKeywordController extends Controller
 
         return Inertia::render('Keywords/Index', [
             'workspace' => [
-                'id' => $workspace->id,
+                'id' => $workspace->uuid,
                 'name' => $workspace->name,
                 'slug' => $workspace->slug,
             ],
             'project' => [
-                'id' => $project->id,
+                'id' => $project->uuid,
                 'name' => $project->name,
                 'domain' => $project->domain,
                 'canonical_url' => $project->canonical_url,
@@ -452,7 +452,7 @@ class TrackedKeywordController extends Controller
 
         return response()->json([
             'keyword' => [
-                'id' => $keyword->id,
+                'id' => $keyword->uuid,
                 'keyword' => $keyword->keyword,
                 'device' => $keyword->device,
                 'location_code' => $keyword->location_code,

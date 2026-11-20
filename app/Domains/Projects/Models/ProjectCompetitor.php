@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Domains\Projects\Models;
 
+use App\Models\Concerns\HasPublicUuid;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * @property int $id
+ * @property string $uuid
  * @property int $project_id
  * @property string $domain
  * @property string|null $label
@@ -19,6 +21,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class ProjectCompetitor extends Model
 {
+    use HasPublicUuid;
+
     /** @var list<string> */
     protected $fillable = [
         'project_id',

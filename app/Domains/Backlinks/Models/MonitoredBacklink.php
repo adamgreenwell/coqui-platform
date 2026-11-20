@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Domains\Backlinks\Models;
 
 use App\Domains\Projects\Models\Project;
+use App\Models\Concerns\HasPublicUuid;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
  * @property int $id
+ * @property string $uuid
  * @property int $project_id
  * @property string $source_url
  * @property string $source_url_hash
@@ -28,6 +30,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  */
 class MonitoredBacklink extends Model
 {
+    use HasPublicUuid;
+
     /** @var list<string> */
     protected $fillable = [
         'project_id',

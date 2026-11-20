@@ -31,7 +31,7 @@ import { getEcho } from '../../echo';
 import AppLayout, { type WorkspaceSummary } from '../../layouts/AppLayout';
 
 interface ProjectDetails {
-  id: number;
+  id: string;
   name: string;
   domain: string;
   canonical_url: string;
@@ -44,7 +44,7 @@ interface ProjectDetails {
 }
 
 interface LatestCrawlSummary {
-  id: number;
+  id: string;
   externalCrawlId: string;
   status: string;
   source: string;
@@ -57,7 +57,7 @@ interface LatestCrawlSummary {
 }
 
 interface CompetitorItem {
-  id: number;
+  id: string;
   domain: string;
   label?: string | null;
   sort_order: number;
@@ -74,7 +74,7 @@ interface ActivityItem {
 }
 
 interface IntegrationItem {
-  id: number;
+  id: string;
   provider: string;
   site_url?: string | null;
   status: string;
@@ -89,7 +89,7 @@ interface DeploySmokeRegression {
 }
 
 interface DeploySmokeSummary {
-  id: number;
+  id: string;
   externalCrawlId: string;
   status: string;
   passed: boolean;
@@ -269,7 +269,7 @@ export default function ProjectShow({
       updated_at: string;
     }) => {
       setLiveCrawl((prev) => ({
-        id: prev?.id || 0,
+        id: prev?.id || e.external_crawl_id,
         externalCrawlId: e.external_crawl_id,
         status: e.status,
         source: prev?.source || 'desktop',

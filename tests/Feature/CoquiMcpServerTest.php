@@ -199,7 +199,7 @@ class CoquiMcpServerTest extends TestCase
         CoquiSeoServer::actingAs($owner)
             ->tool(InspectProjectSeoTool::class, ['domain' => 'shared-domain.com'])
             ->assertOk()
-            ->assertSee('"id":'.$mine->id);
+            ->assertSee('"id":"'.$mine->uuid.'"');
     }
 
     public function test_live_keyword_lookup_requires_a_user_and_a_billable_project(): void
