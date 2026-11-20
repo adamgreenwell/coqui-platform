@@ -10,6 +10,7 @@ use App\Domains\Integrations\Jobs\SyncGoogleSearchConsoleJob;
 use App\Domains\Integrations\Models\ProjectIntegration;
 use App\Domains\Integrations\Services\GoogleSearchConsoleClient;
 use App\Domains\Integrations\Services\TrafficAttributionService;
+use App\Domains\Integrations\TrafficProvider;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\Workspace;
@@ -366,10 +367,16 @@ class ProjectIntegrationController extends Controller implements HasMiddleware
             SyncGoogleSearchConsoleJob::dispatch($integration);
         } elseif ($integration->provider === 'bing') {
             SyncBingWebmasterJob::dispatch($integration);
-        } elseif ($integration->provider === 'ga4') {
-            $trafficService->syncGa4($integration);
-        } elseif ($integration->provider === 'plausible') {
-            $trafficService->syncPlausible($integration);
+        } elseif (TrafficProvider::tryFrom($integration->provider) !== null) {
+            try {
+                $trafficService->syncIntegration($integration);
+            } catch (Throwable $e) {
+                Log::warning("Manual {$integration->provider} sync failed for project {$project->id}: {$e->getMessage()}");
+
+                return redirect()
+                    ->back()
+                    ->with('error', TrafficProvider::from($integration->provider)->label().' sync failed: '.$e->getMessage());
+            }
         }
 
         return redirect()
@@ -387,9 +394,7 @@ class ProjectIntegrationController extends Controller implements HasMiddleware
             'gsc' => 'Google Search Console',
             'bing' => 'Bing Webmaster Tools',
             'runnr' => 'Runnr Hosting',
-            'ga4' => 'Google Analytics 4',
-            'plausible' => 'Plausible Analytics',
-            default => ucfirst($integration->provider),
+            default => TrafficProvider::tryFrom($integration->provider)?->label() ?? ucfirst($integration->provider),
         };
         $integration->delete();
 

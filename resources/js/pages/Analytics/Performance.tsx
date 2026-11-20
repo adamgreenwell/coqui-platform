@@ -39,7 +39,7 @@ interface PagePerformanceKpis {
   at_risk_pages_count: number;
   top_ai_assistant: string | null;
   ai_brand_totals: Record<string, number>;
-  traffic_provider: 'ga4' | 'plausible' | null;
+  traffic_provider: string | null;
 }
 
 interface PagePerformanceItem {
@@ -58,13 +58,20 @@ interface PagePerformanceItem {
   is_at_risk: boolean;
 }
 
-interface IntegrationStatus {
+interface AnalyticsIntegration {
   id: string;
+  provider: string;
+  label: string;
   status: string;
-  propertyId?: string;
-  siteId?: string;
+  externalId: string | null;
   lastSyncedAt: string | null;
 }
+
+// Badge colours per analytics provider; unknown providers fall back to slate.
+const PROVIDER_BADGE: Record<string, string> = {
+  ga4: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
+  plausible: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30',
+};
 
 interface PerformanceProps {
   workspace: WorkspaceSummary;
@@ -72,10 +79,8 @@ interface PerformanceProps {
   days: number;
   kpis: PagePerformanceKpis;
   pages: PagePerformanceItem[];
-  integrations: {
-    ga4: IntegrationStatus | null;
-    plausible: IntegrationStatus | null;
-  };
+  integrations: AnalyticsIntegration[];
+  trafficProviderLabels: Record<string, string>;
   canEdit: boolean;
 }
 
@@ -94,6 +99,7 @@ export default function Performance({
   kpis,
   pages,
   integrations,
+  trafficProviderLabels,
   canEdit,
 }: PerformanceProps) {
   const [activeTab, setActiveTab] = useState<'all' | 'at_risk' | 'ai_referrals' | 'organic'>('all');
@@ -169,17 +175,15 @@ export default function Performance({
                 <h1 className="text-xl font-bold text-white tracking-tight">
                   Page Performance &amp; Traffic Attribution
                 </h1>
-                {integrations.ga4 && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-mono bg-blue-500/10 text-blue-400 border border-blue-500/30">
-                    <CheckCircle2 className="h-3 w-3" /> GA4: {integrations.ga4.propertyId}
+                {integrations.map((integration) => (
+                  <span
+                    key={integration.id}
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-mono border ${PROVIDER_BADGE[integration.provider] ?? 'bg-slate-500/10 text-slate-300 border-slate-500/30'}`}
+                  >
+                    <CheckCircle2 className="h-3 w-3" /> {integration.label}: {integration.externalId}
                   </span>
-                )}
-                {integrations.plausible && (
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-mono bg-indigo-500/10 text-indigo-400 border border-indigo-500/30">
-                    <CheckCircle2 className="h-3 w-3" /> Plausible: {integrations.plausible.siteId}
-                  </span>
-                )}
-                {!integrations.ga4 && !integrations.plausible && (
+                ))}
+                {integrations.length === 0 && (
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30">
                     <AlertTriangle className="h-3 w-3" /> No Analytics Connected
                   </span>
@@ -244,7 +248,7 @@ export default function Performance({
             </div>
             <p className="mt-1 text-[11px] text-slate-400">
               Trailing {days} days search traffic across all landing pages
-              {kpis.traffic_provider && ` (from ${kpis.traffic_provider === 'ga4' ? 'GA4' : 'Plausible'})`}
+              {kpis.traffic_provider && ` (from ${trafficProviderLabels[kpis.traffic_provider] ?? kpis.traffic_provider})`}
             </p>
           </div>
 

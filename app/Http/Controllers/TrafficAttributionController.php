@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Domains\Integrations\Models\ProjectIntegration;
 use App\Domains\Integrations\Services\TrafficAttributionService;
+use App\Domains\Integrations\TrafficProvider;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
 use App\Features\RunnrIntegration;
@@ -33,8 +35,21 @@ class TrafficAttributionController extends Controller
 
         $report = $this->trafficService->getPagePerformanceReport($project, $days);
 
-        $ga4 = $project->integrations()->where('provider', 'ga4')->first();
-        $plausible = $project->integrations()->where('provider', 'plausible')->first();
+        $priority = TrafficProvider::values();
+        $analytics = $project->integrations()
+            ->whereIn('provider', $priority)
+            ->get()
+            ->sortBy(fn (ProjectIntegration $integration): int => (int) array_search($integration->provider, $priority, true))
+            ->map(fn (ProjectIntegration $integration): array => [
+                'id' => $integration->uuid,
+                'provider' => $integration->provider,
+                'label' => TrafficProvider::from($integration->provider)->shortLabel(),
+                'status' => $integration->status,
+                'externalId' => $integration->external_identifier,
+                'lastSyncedAt' => $integration->last_synced_at instanceof CarbonInterface ? $integration->last_synced_at->toIso8601String() : null,
+            ])
+            ->values()
+            ->all();
 
         return Inertia::render('Analytics/Performance', [
             'workspace' => [
@@ -52,20 +67,10 @@ class TrafficAttributionController extends Controller
             'days' => $days,
             'kpis' => $report['kpis'],
             'pages' => $report['pages'],
-            'integrations' => [
-                'ga4' => $ga4 !== null ? [
-                    'id' => $ga4->uuid,
-                    'status' => $ga4->status,
-                    'propertyId' => $ga4->external_identifier,
-                    'lastSyncedAt' => $ga4->last_synced_at instanceof CarbonInterface ? $ga4->last_synced_at->toIso8601String() : null,
-                ] : null,
-                'plausible' => $plausible !== null ? [
-                    'id' => $plausible->uuid,
-                    'status' => $plausible->status,
-                    'siteId' => $plausible->external_identifier,
-                    'lastSyncedAt' => $plausible->last_synced_at instanceof CarbonInterface ? $plausible->last_synced_at->toIso8601String() : null,
-                ] : null,
-            ],
+            'integrations' => $analytics,
+            'trafficProviderLabels' => collect(TrafficProvider::byPriority())
+                ->mapWithKeys(fn (TrafficProvider $provider): array => [$provider->value => $provider->shortLabel()])
+                ->all(),
             'canEdit' => $request->user()?->can('update', $project) ?? false,
         ]);
     }

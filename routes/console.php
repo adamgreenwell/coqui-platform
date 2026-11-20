@@ -30,6 +30,11 @@ Schedule::command('search-console:sync')
     ->dailyAt('04:00')
     ->withoutOverlapping();
 
+// Nightly synchronization of GA4 / Plausible page traffic into the attribution report.
+Schedule::command('traffic:sync')
+    ->dailyAt('04:30')
+    ->withoutOverlapping();
+
 // Daily run checking project crawl cadence and dispatching cloud site audits to coqui-worker.
 Schedule::command('coqui:run-scheduled-crawls')
     ->dailyAt('02:00')
