@@ -56,6 +56,19 @@ Do this once in test mode, then again in live mode before launch.
 
 On Coolify, set the variables on the application and redeploy (see [Coolify Deployment and Operations](Coolify-Deployment-And-Operations.md)).
 
+## Switching from the sandbox to live mode
+
+Customers, subscriptions and invoices don't carry over between Stripe accounts. A workspace that bought a plan with sandbox keys keeps that plan in the app after the switch, and its portal fails, because its Stripe IDs don't exist in live mode.
+
+1. In Coolify, replace `STRIPE_KEY`, `STRIPE_SECRET`, `STRIPE_WEBHOOK_SECRET` and the three `STRIPE_PRICE_*` IDs with the live values, then redeploy.
+2. From the `php` container's terminal, reset every workspace that was billed in the sandbox:
+
+   ```bash
+   php artisan billing:reset <workspace id, UUID or slug>
+   ```
+
+   It shows the workspace's current billing and asks for confirmation. Then it deletes the workspace's subscription and invoice rows, clears its Stripe customer and subscription IDs, and drops it to Free. Stripe itself isn't changed. Add `--force` to skip the prompt.
+
 ## Local Docker with Stripe test mode
 
 1. Put the test-mode values in `.env`: `STRIPE_KEY`, `STRIPE_SECRET` and the three `STRIPE_PRICE_*` IDs.
