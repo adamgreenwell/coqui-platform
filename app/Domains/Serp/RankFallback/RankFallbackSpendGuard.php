@@ -85,11 +85,14 @@ class RankFallbackSpendGuard
 
     /**
      * Record one paid request: a ledger row dated now, moved out of the
-     * check's hold so it isn't counted twice.
+     * check's hold so it isn't counted twice. $attributes are saved on the
+     * check in the same transaction.
+     *
+     * @param  array<string, mixed>  $attributes
      */
-    public function recordCharge(RankFallbackCheck $check, float $costUsd): void
+    public function recordCharge(RankFallbackCheck $check, float $costUsd, array $attributes = []): void
     {
-        DB::transaction(function () use ($check, $costUsd): void {
+        DB::transaction(function () use ($check, $costUsd, $attributes): void {
             DB::table('rank_fallback_spend')->insert([
                 'rank_fallback_check_id' => $check->id,
                 'workspace_id' => $check->workspace_id,
@@ -101,6 +104,7 @@ class RankFallbackSpendGuard
                 'pages_fetched' => $check->pages_fetched + 1,
                 'cost_usd' => (float) $check->cost_usd + $costUsd,
                 'reserved_usd' => max(0.0, (float) $check->reserved_usd - $costUsd),
+                ...$attributes,
             ]);
         });
     }

@@ -30,6 +30,9 @@ return new class extends Migration
             // The primary result counts if it arrived after this time.
             $table->timestamp('reference_at');
             $table->unsignedTinyInteger('pages_fetched')->default(0);
+            // Responses fetched so far, so a retry resumes at the next page
+            // instead of paying for the earlier ones again.
+            $table->json('pages')->nullable();
             $table->decimal('cost_usd', 10, 6)->default(0);
             // Unpaid part of the worst-case cost, held while the check runs so
             // concurrent checks can't all pass the caps against the same

@@ -173,6 +173,49 @@ class RankFallbackTest extends TestCase
         $this->assertSame('completed', $check->fresh()?->status);
     }
 
+    public function test_a_retry_resumes_after_the_pages_already_fetched(): void
+    {
+        $keyword = $this->keyword('voice generator');
+        $check = $this->check($keyword, null, now()->subHour());
+        // An earlier attempt fetched and paid for page 1, then timed out.
+        $check->update([
+            'pages' => [$this->page(['x.com', 'competitor-a.com', 'y.com', 'z.com', 'q.com', 'w.com', 'e.com', 'r.com', 't.com', 'u.com'])],
+            'pages_fetched' => 1,
+            'cost_usd' => 0.00075,
+        ]);
+
+        Http::fake(['api.serphouse.test/*' => Http::sequence()
+            ->push($this->page(['i.com', 'o.com', 'www.coqui.io', 'p.com', 'competitor-b.org', 's.com', 'd.com', 'f.com', 'g.com', 'h.com']))]);
+
+        FetchFallbackRankJob::dispatchSync($check->id);
+
+        Http::assertSentCount(1);
+        Http::assertSent(fn (Request $request): bool => $request['data']['page'] === 2);
+
+        $ranks = KeywordRankSnapshot::query()->where('tracked_keyword_id', $keyword->id)->orderBy('domain')->pluck('rank_group', 'domain')->all();
+        $this->assertSame(['competitor-a.com' => 2, 'competitor-b.org' => 15, 'coqui.io' => 13], $ranks);
+
+        $check->refresh();
+        $this->assertSame('completed', $check->status);
+        $this->assertSame(2, $check->pages_fetched);
+        $this->assertEqualsWithDelta(0.0015, (float) $check->cost_usd, 0.000001);
+    }
+
+    public function test_job_does_not_record_over_a_primary_task_collected_while_it_ran(): void
+    {
+        $keyword = $this->keyword('voice generator');
+        $taskId = $this->primaryTask($keyword, 'collected', now()->subHours(7));
+        $check = $this->check($keyword, $taskId, now()->subHours(7));
+
+        Http::fake(['api.serphouse.test/*' => Http::response($this->page(['www.coqui.io', 'competitor-a.com', 'competitor-b.org']))]);
+
+        FetchFallbackRankJob::dispatchSync($check->id);
+
+        $this->assertSame('skipped', $check->fresh()?->status);
+        $this->assertSame(0, KeywordRankSnapshot::query()->count());
+        $this->assertSame('collected', DB::table('dataforseo_tasks')->where('id', $taskId)->value('status'));
+    }
+
     public function test_job_skips_when_the_primary_result_arrived_first(): void
     {
         Http::fake();

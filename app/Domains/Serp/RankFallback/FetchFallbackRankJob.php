@@ -99,41 +99,48 @@ class FetchFallbackRankJob implements ShouldQueue
 
         $maxPages = max(1, (int) config('coqui.serphouse.max_pages', 10));
         $pageCost = (float) config('coqui.serphouse.page_cost_usd', 0.00075);
+        $competitors = $project->competitors->pluck('domain')->all();
 
-        // Reserve the worst case up front, so a check never stops halfway
-        // and records a partial SERP as "not ranking".
-        try {
-            $guard->reserve($check, $pageCost * $maxPages, $workspace);
-        } catch (RankFallbackBudgetException $e) {
-            $this->finish($check, 'skipped', $e->getMessage());
+        // Pages saved by an earlier attempt aren't fetched or paid for again.
+        $pages = $check->pages ?? [];
+        $complete = fn (array $pages): bool => $this->searchComplete($pages, $maxPages, $adapter, $parser, $project->domain, $competitors);
 
-            return;
+        if (! $complete($pages)) {
+            // Reserve the worst case for the remaining pages up front, so a
+            // check never stops halfway and records a partial SERP as "not
+            // ranking".
+            try {
+                $guard->reserve($check, $pageCost * ($maxPages - count($pages)), $workspace);
+            } catch (RankFallbackBudgetException $e) {
+                $this->finish($check, 'skipped', $e->getMessage());
+
+                return;
+            }
         }
 
-        $competitors = $project->competitors->pluck('domain')->all();
-        $pages = [];
+        while (! $complete($pages)) {
+            $pages[] = $client->googlePage($keyword->keyword, $keyword->language_code, $keyword->device, $keyword->location_code, count($pages) + 1);
 
-        for ($page = 1; $page <= $maxPages; $page++) {
-            $response = $client->googlePage($keyword->keyword, $keyword->language_code, $keyword->device, $keyword->location_code, $page);
-            $pages[] = $response;
-
-            // Only successful requests are billed.
-            $guard->recordCharge($check, $pageCost);
-
-            if ($adapter->organicCount($response) === 0) {
-                break;
-            }
-
-            // Stop once the project and every competitor have been found.
-            $found = $parser->parse($adapter->toItems($pages), $project->domain, $competitors)['domain_snapshots'];
-            if (collect($found)->every(fn (array $snapshot): bool => $snapshot['rank_group'] !== null)) {
-                break;
-            }
+            // Only successful requests are billed. The page is saved with the
+            // charge, so a retry after a timeout resumes from the next one.
+            $guard->recordCharge($check, $pageCost, ['pages' => $pages]);
         }
 
         $items = $adapter->toItems($pages);
 
         DB::transaction(function () use ($check, $keyword, $items, $recorder): void {
+            // Lock the primary task first, the same order the primary
+            // collectors use, so whichever records first wins and the other
+            // sees it.
+            if ($check->dataforseo_task_id !== null) {
+                $task = DB::table('dataforseo_tasks')->where('id', $check->dataforseo_task_id)->lockForUpdate()->first();
+                if ($task !== null && $task->status === 'collected') {
+                    $this->finish($check, 'skipped', 'The primary result arrived while checking.');
+
+                    return;
+                }
+            }
+
             $fresh = TrackedKeyword::query()->lockForUpdate()->find($keyword->id);
             if ($fresh === null || $this->primaryArrived($fresh, $check)) {
                 $this->finish($check, 'skipped', 'The primary result arrived while checking.');
@@ -147,7 +154,7 @@ class FetchFallbackRankJob implements ShouldQueue
                 // A late primary result must not overwrite this check.
                 DB::table('dataforseo_tasks')
                     ->where('id', $check->dataforseo_task_id)
-                    ->where('status', 'pending')
+                    ->whereIn('status', ['pending', 'failed'])
                     ->update(['status' => 'superseded', 'updated_at' => now()]);
             }
 
@@ -161,6 +168,29 @@ class FetchFallbackRankJob implements ShouldQueue
         if ($check !== null) {
             $this->finish($check, 'failed', $e->getMessage());
         }
+    }
+
+    /**
+     * Whether the pages fetched so far are enough: the last page came back
+     * empty, the project and every competitor have been found, or the page
+     * limit is reached.
+     *
+     * @param  list<array<string, mixed>>  $pages
+     * @param  list<string>  $competitors
+     */
+    private function searchComplete(array $pages, int $maxPages, SerphouseResultAdapter $adapter, SerpResultParser $parser, string $domain, array $competitors): bool
+    {
+        if ($pages === []) {
+            return false;
+        }
+
+        if (count($pages) >= $maxPages || $adapter->organicCount($pages[count($pages) - 1]) === 0) {
+            return true;
+        }
+
+        $found = $parser->parse($adapter->toItems($pages), $domain, $competitors)['domain_snapshots'];
+
+        return collect($found)->every(fn (array $snapshot): bool => $snapshot['rank_group'] !== null);
     }
 
     private function primaryArrived(TrackedKeyword $keyword, RankFallbackCheck $check): bool

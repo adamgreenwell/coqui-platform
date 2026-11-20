@@ -21,6 +21,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property CarbonInterface $checked_on
  * @property CarbonInterface $reference_at
  * @property int $pages_fetched
+ * @property list<array<string, mixed>>|null $pages
  * @property string $cost_usd
  * @property string $reserved_usd
  * @property string|null $error_message
@@ -47,6 +48,7 @@ class RankFallbackCheck extends Model
         'checked_on',
         'reference_at',
         'pages_fetched',
+        'pages',
         'cost_usd',
         'reserved_usd',
         'error_message',
@@ -60,6 +62,7 @@ class RankFallbackCheck extends Model
             'reference_at' => 'datetime',
             'completed_at' => 'datetime',
             'pages_fetched' => 'integer',
+            'pages' => 'array',
         ];
     }
 
