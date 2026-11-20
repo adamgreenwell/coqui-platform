@@ -31,6 +31,7 @@ class SmokeAndTelemetryAuthorizationTest extends TestCase
         $workspace = Workspace::query()->create([
             'name' => 'Victim Workspace',
             'slug' => 'victim-workspace',
+            'has_runnr_addon' => true,
             'owner_id' => $this->owner->id,
         ]);
         $workspace->members()->attach($this->owner, ['role' => 'owner']);

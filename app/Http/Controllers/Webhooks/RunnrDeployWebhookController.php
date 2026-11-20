@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Webhooks;
 
 use App\Domains\Integrations\Services\RunnrDeployWebhookHandler;
+use App\Domains\Projects\Models\Project;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -54,7 +55,11 @@ class RunnrDeployWebhookController extends Controller
         );
 
         if ($run === null) {
-            return response()->json(['status' => 'ignored', 'reason' => 'no_matching_project'], 202);
+            $reason = Project::query()->where('runnr_site_id', (string) $validated['site_id'])->exists()
+                ? 'feature_not_in_plan'
+                : 'no_matching_project';
+
+            return response()->json(['status' => 'ignored', 'reason' => $reason], 202);
         }
 
         return response()->json([

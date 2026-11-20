@@ -33,6 +33,7 @@ class BacklinkProfileTest extends TestCase
 
         $this->user = User::factory()->create();
         $this->workspace = Workspace::query()->create([
+            'plan_tier' => 'pro',
             'name' => 'SEO Agency',
             'slug' => 'seo-agency',
             'owner_id' => $this->user->id,

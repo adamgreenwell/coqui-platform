@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Domains\Billing\PlanFeature;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Integrations\Models\ProjectIntegration;
 use App\Domains\Projects\Models\Project;
@@ -186,10 +187,12 @@ class ProjectController extends Controller
         $latestCrawl = $project->crawlRuns()->latest('id')->first();
 
         /** @var CrawlRun|null $latestSmoke */
-        $latestSmoke = $project->crawlRuns()
-            ->where('source', 'deploy_smoke')
-            ->latest('id')
-            ->first();
+        $latestSmoke = $workspace->hasFeature(PlanFeature::RunnrSmokeTests)
+            ? $project->crawlRuns()
+                ->where('source', 'deploy_smoke')
+                ->latest('id')
+                ->first()
+            : null;
 
         $deploySmoke = null;
         if ($latestSmoke !== null) {

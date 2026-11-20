@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Domains\Billing\PlanFeature;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Projects\Models\Project;
 use App\Http\Controllers\Controller;
@@ -19,16 +20,21 @@ class RunnrDeploySmokeController extends Controller
      */
     public function badge(Request $request, string $token): Response
     {
-        $project = Project::query()->where('deploy_badge_token', $token)->firstOrFail();
+        $project = Project::query()->with('workspace')->where('deploy_badge_token', $token)->firstOrFail();
+
+        // Badges stay embeddable after a downgrade but stop reporting results.
+        $smokeTestsActive = $project->workspace?->hasFeature(PlanFeature::RunnrSmokeTests) === true;
 
         /** @var CrawlRun|null $latestRun */
-        $latestRun = CrawlRun::query()
-            ->where('project_id', $project->id)
-            ->where('source', 'deploy_smoke')
-            ->latest('id')
-            ->first();
+        $latestRun = $smokeTestsActive
+            ? CrawlRun::query()
+                ->where('project_id', $project->id)
+                ->where('source', 'deploy_smoke')
+                ->latest('id')
+                ->first()
+            : null;
 
-        $statusText = 'none';
+        $statusText = $smokeTestsActive ? 'none' : 'inactive';
         $statusColor = '#9f9f9f';
 
         if ($latestRun !== null) {
@@ -64,6 +70,7 @@ class RunnrDeploySmokeController extends Controller
             'passing' => 56,
             'failing' => 52,
             'running' => 54,
+            'inactive' => 58,
             default => 44,
         };
         $totalWidth = $labelWidth + $statusWidth;
@@ -74,6 +81,7 @@ class RunnrDeploySmokeController extends Controller
             'passing' => 440,
             'failing' => 400,
             'running' => 420,
+            'inactive' => 480,
             default => 320,
         };
 

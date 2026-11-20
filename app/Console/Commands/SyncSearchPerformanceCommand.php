@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Domains\Billing\PlanFeature;
 use App\Domains\Integrations\Jobs\SyncBingWebmasterJob;
 use App\Domains\Integrations\Jobs\SyncGoogleSearchConsoleJob;
 use App\Domains\Integrations\Models\ProjectIntegration;
@@ -37,7 +38,10 @@ class SyncSearchPerformanceCommand extends Command
             $query->where('provider', $provider);
         }
 
-        $integrations = $query->get();
+        // Search performance sync is part of the traffic attribution plan feature.
+        $integrations = $query->with('project.workspace')->get()
+            ->filter(fn (ProjectIntegration $integration): bool => $integration->project?->workspace?->hasFeature(PlanFeature::TrafficAttribution) === true)
+            ->values();
 
         if ($integrations->isEmpty()) {
             $this->info('No connected Search Console / Bing integrations found to synchronize.');

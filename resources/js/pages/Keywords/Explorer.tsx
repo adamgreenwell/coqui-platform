@@ -33,6 +33,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { FeatureLink } from '../../components/PlanGate';
 import AppLayout, { type WorkspaceSummary } from '../../layouts/AppLayout';
 
 interface ProjectDetails {
@@ -696,13 +697,14 @@ export default function KeywordExplorer({
           </div>
 
           <div className="flex items-center gap-2">
-            <Link
+            <FeatureLink
+              feature="content-briefs"
               href={`/workspaces/${workspace.id}/projects/${project.id}/keywords/brief`}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-300 text-xs font-medium transition cursor-pointer"
             >
               <FileText className="h-3.5 w-3.5 text-teal-400" />
               <span>Content Brief</span>
-            </Link>
+            </FeatureLink>
 
             <Link
               href={`/workspaces/${workspace.id}/projects/${project.id}/keyword-gap`}
@@ -1294,13 +1296,15 @@ export default function KeywordExplorer({
                           {/* Actions */}
                           <td className="py-3 px-3 text-right">
                             <div className="inline-flex items-center justify-end gap-1.5">
-                              <Link
+                              <FeatureLink
+                                feature="content-briefs"
+                                pill={false}
                                 href={`/workspaces/${workspace.id}/projects/${project.id}/keywords/brief?keyword=${encodeURIComponent(item.keyword)}`}
                                 title="Generate SERP Content Brief"
                                 className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-teal-400 transition"
                               >
                                 <FileText className="h-3.5 w-3.5" />
-                              </Link>
+                              </FeatureLink>
                               {isFullyTracked ? (
                                 <span
                                   className="inline-flex items-center gap-1 text-[11px] text-emerald-400 font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 border border-emerald-500/20"

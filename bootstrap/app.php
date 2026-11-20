@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Http\Middleware\EnsureWorkspaceHasFeature;
 use App\Http\Middleware\ForceHttpsScheme;
 use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Foundation\Application;
@@ -33,6 +34,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'abilities' => CheckAbilities::class,
             'ability' => CheckForAnyAbility::class,
+            // feature:<pennant-feature> requires the route's workspace plan to include it.
+            'feature' => EnsureWorkspaceHasFeature::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

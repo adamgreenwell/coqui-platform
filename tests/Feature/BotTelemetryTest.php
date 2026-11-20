@@ -32,6 +32,7 @@ class BotTelemetryTest extends TestCase
         $this->workspace = Workspace::query()->create([
             'name' => 'Telemetry Workspace',
             'slug' => 'telemetry-workspace',
+            'has_runnr_addon' => true,
             'owner_id' => $this->user->id,
         ]);
         $this->workspace->members()->attach($this->user->id, ['role' => 'owner']);

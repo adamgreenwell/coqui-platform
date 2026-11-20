@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Domains\Billing\PlanFeature;
 use App\Domains\Integrations\Services\BotTelemetryService;
 use App\Domains\Projects\Models\Project;
 use App\Http\Controllers\Controller;
@@ -51,11 +52,19 @@ class BotTelemetryApiController extends Controller
 
         // The Runnr platform token may write telemetry for any site; a signed-in
         // user may only write telemetry for a project they can edit.
+        //
+        // Plan gating: Runnr's platform pushes are always stored, even when the
+        // workspace's plan lacks bot telemetry, and stay hidden behind the gated
+        // dashboard and API until it has the feature again. Runnr can't act on a
+        // rejection, so refusing would only leave gaps in the history. A person
+        // pushing telemetry themselves is told plainly that the plan lacks it.
         if (! $isRunnr) {
-            $project = Project::query()->where('runnr_site_id', $siteId)->first();
+            $project = Project::query()->with('workspace')->where('runnr_site_id', $siteId)->first();
             if ($project === null || ! Gate::forUser($request->user())->allows('update', $project)) {
                 return response()->json(['message' => 'Unauthorized telemetry access.'], 403);
             }
+
+            $project->workspace->ensureFeature(PlanFeature::BotTelemetry);
         }
 
         /** @var list<array{botFamily: string, statusBucket: int, hitCount: int, bytesServed?: int|null, bucketHour: string, topErrorPaths?: list<array{path: string, hits: int, status?: int|null}>|null}> $entries */

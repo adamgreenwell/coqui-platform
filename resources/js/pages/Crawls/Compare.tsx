@@ -25,6 +25,7 @@ import {
   X,
 } from 'lucide-react';
 import { useState } from 'react';
+import { UpgradePill, usePlan } from '../../components/PlanGate';
 import AppLayout, { type WorkspaceSummary } from '../../layouts/AppLayout';
 
 interface CrawlRunOption {
@@ -164,6 +165,8 @@ export default function Compare({
   const [issueSubFilter, setIssueSubFilter] = useState<'all' | 'new' | 'resolved'>('all');
   const [searchFilter, setSearchFilter] = useState('');
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const { has, billingUrl } = usePlan();
+  const canShare = has('white-label-reports');
   const [shareExpiresInDays, setShareExpiresInDays] = useState<number>(30);
   const [shareTitle, setShareTitle] = useState('');
   const [shareLoading, setShareLoading] = useState(false);
@@ -286,7 +289,22 @@ export default function Compare({
           )}
         </div>
 
-        {!isReadOnly && (
+        {!isReadOnly && !canShare && (
+          <div className="flex items-center gap-2">
+            {/* Client share links are a white-label reports feature. */}
+            <Link
+              href={billingUrl}
+              title="Upgrade your plan to share white-label client reports"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition cursor-pointer opacity-75"
+            >
+              <Share2 className="h-3.5 w-3.5" />
+              <span>Share Report</span>
+              <UpgradePill />
+            </Link>
+          </div>
+        )}
+
+        {!isReadOnly && canShare && (
           <div className="flex items-center gap-2">
             <button
               type="button"

@@ -50,11 +50,11 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function (): void {
 
     // Runnr deploy smoke test inspection
     Route::get('/projects/{project}/deploy-smoke/latest', [RunnrDeploySmokeController::class, 'latest'])
-        ->middleware('ability:projects:read,crawls:read');
+        ->middleware(['ability:projects:read,crawls:read', 'feature:runnr-smoke-tests']);
 
     // Bot crawl logs telemetry inspection
     Route::get('/projects/{project}/telemetry/bot-logs', [BotTelemetryApiController::class, 'show'])
-        ->middleware('ability:projects:read,crawls:read');
+        ->middleware(['ability:projects:read,crawls:read', 'feature:bot-telemetry']);
 });
 
 // Runnr edge bot crawler telemetry ingestion

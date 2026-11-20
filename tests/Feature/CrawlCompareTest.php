@@ -39,6 +39,7 @@ class CrawlCompareTest extends TestCase
 
         $this->user = User::factory()->create();
         $this->workspace = Workspace::query()->create([
+            'plan_tier' => 'agency',
             'name' => 'Acme SEO Team',
             'slug' => 'acme-seo-team',
             'owner_id' => $this->user->id,

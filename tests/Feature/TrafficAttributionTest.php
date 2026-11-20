@@ -38,6 +38,7 @@ class TrafficAttributionTest extends TestCase
 
         $this->user = User::factory()->create();
         $this->workspace = Workspace::query()->create([
+            'plan_tier' => 'pro',
             'name' => 'Analytics Workspace',
             'slug' => 'analytics-workspace',
             'owner_id' => $this->user->id,

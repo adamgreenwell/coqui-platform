@@ -37,10 +37,26 @@ return [
     'defaults' => [
         'supervisor-1' => [
             'connection' => 'redis',
-            'queue' => ['default', 'serp', 'crawls', 'backlinks', 'telemetry'],
+            // crawls-priority is listed here too so priority crawls still drain
+            // in any environment that doesn't start supervisor-priority.
+            'queue' => ['crawls-priority', 'default', 'serp', 'crawls', 'backlinks', 'telemetry'],
             'balance' => 'auto',
             'autoScalingStrategy' => 'time',
             'maxProcesses' => 3,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 128,
+            'tries' => 2,
+            'timeout' => 120,
+            'nice' => 0,
+        ],
+        // Dedicated workers for plans with the priority-queue feature, so their
+        // crawl dispatches skip the shared backlog on supervisor-1.
+        'supervisor-priority' => [
+            'connection' => 'redis',
+            'queue' => ['crawls-priority'],
+            'balance' => 'simple',
+            'maxProcesses' => 1,
             'maxTime' => 0,
             'maxJobs' => 0,
             'memory' => 128,
@@ -57,10 +73,16 @@ return [
                 'balanceMaxShift' => 1,
                 'balanceCooldown' => 3,
             ],
+            'supervisor-priority' => [
+                'maxProcesses' => 2,
+            ],
         ],
         'local' => [
             'supervisor-1' => [
                 'maxProcesses' => 3,
+            ],
+            'supervisor-priority' => [
+                'maxProcesses' => 1,
             ],
         ],
     ],

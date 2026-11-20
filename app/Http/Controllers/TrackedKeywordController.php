@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Domains\Billing\PlanFeature;
 use App\Domains\Integrations\Models\ProjectIntegration;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
@@ -84,12 +85,16 @@ class TrackedKeywordController extends Controller
         // Query trailing 28 finalized days for first-party search performance overlay
         $cutoffDate = Carbon::now()->subDays(32)->format('Y-m-d');
 
-        $performanceStats = DB::table('search_performance_queries')
-            ->where('project_id', $project->id)
-            ->where('date', '>=', $cutoffDate)
-            ->selectRaw('provider, LOWER(query) as query_lower, SUM(clicks) as total_clicks, SUM(impressions) as total_impressions, CASE WHEN SUM(impressions) > 0 THEN ROUND(SUM(position * impressions) / SUM(impressions), 1) ELSE ROUND(AVG(position), 1) END as avg_position')
-            ->groupBy('provider', 'query_lower')
-            ->get();
+        // The GSC/Bing overlay belongs to the traffic attribution plan feature;
+        // without it the columns stay empty and the page shows an upgrade prompt.
+        $performanceStats = $workspace->hasFeature(PlanFeature::TrafficAttribution)
+            ? DB::table('search_performance_queries')
+                ->where('project_id', $project->id)
+                ->where('date', '>=', $cutoffDate)
+                ->selectRaw('provider, LOWER(query) as query_lower, SUM(clicks) as total_clicks, SUM(impressions) as total_impressions, CASE WHEN SUM(impressions) > 0 THEN ROUND(SUM(position * impressions) / SUM(impressions), 1) ELSE ROUND(AVG(position), 1) END as avg_position')
+                ->groupBy('provider', 'query_lower')
+                ->get()
+            : collect();
 
         $gscStatsByQuery = $performanceStats
             ->where('provider', 'gsc')

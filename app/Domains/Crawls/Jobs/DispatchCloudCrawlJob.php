@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domains\Crawls\Jobs;
 
+use App\Domains\Billing\PlanFeature;
 use App\Domains\Crawls\Events\CrawlProgressUpdated;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Crawls\Services\CoquiWorkerClient;
@@ -23,6 +24,14 @@ class DispatchCloudCrawlJob implements ShouldQueue
     use Queueable;
     use SerializesModels;
 
+    public const QUEUE = 'crawls';
+
+    /**
+     * Served by its own Horizon supervisor, so priority crawls never wait
+     * behind the shared crawl backlog.
+     */
+    public const PRIORITY_QUEUE = 'crawls-priority';
+
     public int $tries = 2;
 
     public int $timeout = 120;
@@ -35,7 +44,20 @@ class DispatchCloudCrawlJob implements ShouldQueue
         public readonly string $crawlId,
         public readonly array $overrides = [],
     ) {
-        $this->onQueue('crawls');
+        $this->onQueue(self::queueFor($project));
+    }
+
+    /**
+     * Workspaces whose plan includes the priority queue feature get the
+     * dedicated crawl queue; everyone else shares the regular one.
+     */
+    public static function queueFor(Project $project): string
+    {
+        $workspace = $project->workspace;
+
+        return $workspace !== null && $workspace->hasFeature(PlanFeature::PriorityQueue)
+            ? self::PRIORITY_QUEUE
+            : self::QUEUE;
     }
 
     public function handle(CoquiWorkerClient $workerClient): void
