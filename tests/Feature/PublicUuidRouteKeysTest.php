@@ -17,6 +17,7 @@ use App\Models\User;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Sanctum\Sanctum;
@@ -137,6 +138,49 @@ class PublicUuidRouteKeysTest extends TestCase
                 ->where('allWorkspaces.0.id', $this->workspace->uuid)
                 ->where('auth.user.id', $this->owner->uuid)
                 ->etc());
+    }
+
+    /**
+     * Every page builds its URLs from `workspace.id` / `project.id`, so each
+     * one must receive UUIDs (an integer here means broken links on that page).
+     */
+    public function test_every_workspace_page_receives_uuid_ids(): void
+    {
+        Http::fake();
+        $this->workspace->update(['plan_tier' => 'agency']);
+        $ws = "/workspaces/{$this->workspace->uuid}";
+        $project = "{$ws}/projects/{$this->project->uuid}";
+
+        $workspacePages = [$ws, "{$ws}/members", "{$ws}/tokens", "{$ws}/billing", "{$ws}/projects/create"];
+        $projectPages = [
+            $project,
+            "{$project}/settings",
+            "{$project}/keywords",
+            "{$project}/keywords/brief",
+            "{$project}/keyword-explorer",
+            "{$project}/keyword-gap",
+            "{$project}/backlinks",
+            "{$project}/backlinks/watchlist",
+            "{$project}/backlinks/intersect",
+            "{$project}/analytics/performance",
+            "{$project}/bot-logs",
+            "{$project}/crawls/compare",
+        ];
+
+        foreach ([...$workspacePages, ...$projectPages] as $url) {
+            $hasProject = in_array($url, $projectPages, true);
+
+            $this->actingAs($this->owner)
+                ->get($url)
+                ->assertOk()
+                ->assertInertia(function (Assert $page) use ($hasProject, $url): void {
+                    $page->where('workspace.id', fn ($id): bool => $id === $this->workspace->uuid ?: $this->fail("{$url}: workspace.id is not the UUID"));
+                    if ($hasProject) {
+                        $page->where('project.id', fn ($id): bool => $id === $this->project->uuid ?: $this->fail("{$url}: project.id is not the UUID"));
+                    }
+                    $page->etc();
+                });
+        }
     }
 
     public function test_member_routes_use_user_uuids(): void

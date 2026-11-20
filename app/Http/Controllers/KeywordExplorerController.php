@@ -59,7 +59,11 @@ class KeywordExplorerController extends Controller
             ->all();
 
         return Inertia::render('Keywords/Explorer', [
-            'workspace' => $workspace->only(['id', 'name', 'slug']),
+            'workspace' => [
+                'id' => $workspace->uuid,
+                'name' => $workspace->name,
+                'slug' => $workspace->slug,
+            ],
             'project' => [
                 'id' => $project->uuid,
                 'name' => $project->name,
