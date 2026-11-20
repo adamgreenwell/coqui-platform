@@ -60,6 +60,11 @@ class DataForSeoWebhookController extends Controller
             return response()->json(['status' => 'already_collected']);
         }
 
+        // A fallback check already recorded this keyword's rankings.
+        if ($task->status === 'superseded') {
+            return response()->json(['status' => 'superseded']);
+        }
+
         /** @var array<string, mixed>|null $firstTask */
         $firstTask = $payload['tasks'][0] ?? null;
         if (is_array($firstTask)) {
@@ -67,6 +72,7 @@ class DataForSeoWebhookController extends Controller
             if ($taskStatusCode >= 40000) {
                 DB::table('dataforseo_tasks')
                     ->where('id', $task->id)
+                    ->where('status', 'pending')
                     ->update([
                         'status' => 'failed',
                         'result_payload' => json_encode($payload, JSON_THROW_ON_ERROR),
@@ -80,7 +86,14 @@ class DataForSeoWebhookController extends Controller
             }
         }
 
-        DB::transaction(function () use ($task, $payload): void {
+        $recorded = DB::transaction(function () use ($task, $payload): bool {
+            // Lock the task and re-read it: a backup check may have
+            // recorded this keyword since it was selected.
+            $current = DB::table('dataforseo_tasks')->where('id', $task->id)->lockForUpdate()->first();
+            if ($current === null || in_array($current->status, ['collected', 'superseded'], true)) {
+                return false;
+            }
+
             if ($task->task_type === 'serp_rank_tracking' && is_string($task->request_context)) {
                 /** @var array<string, mixed> $context */
                 $context = json_decode($task->request_context, true) ?? [];
@@ -106,8 +119,10 @@ class DataForSeoWebhookController extends Controller
                     'collected_at' => now(),
                     'updated_at' => now(),
                 ]);
+
+            return true;
         });
 
-        return response()->json(['status' => 'accepted']);
+        return response()->json(['status' => $recorded ? 'accepted' : 'already_recorded']);
     }
 }

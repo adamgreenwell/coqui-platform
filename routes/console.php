@@ -20,6 +20,11 @@ Schedule::command('dataforseo:run-rank-batches')
     ->dailyAt('05:10')
     ->withoutOverlapping();
 
+// Re-checks rank tasks that failed or stalled with the backup SERP provider.
+Schedule::command('rank:fallback')
+    ->hourly()
+    ->withoutOverlapping();
+
 // Weekly verification of starred customer backlinks using coqui-worker.
 Schedule::command('coqui:verify-backlinks')
     ->weeklyOn(1, '03:30')

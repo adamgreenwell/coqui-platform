@@ -10,7 +10,9 @@ use App\Features\RunnrIntegration;
 use App\Models\PersonalAccessToken;
 use App\Policies\ProjectPolicy;
 use App\Policies\WorkspacePolicy;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Pennant\Feature;
 use Laravel\Sanctum\Sanctum;
@@ -28,6 +30,9 @@ class AppServiceProvider extends ServiceProvider
         Gate::policy(Workspace::class, WorkspacePolicy::class);
 
         Sanctum::usePersonalAccessTokenModel(PersonalAccessToken::class);
+
+        // Backup rank checks, paced under the provider's request limit.
+        RateLimiter::for('rank-fallback', fn (): Limit => Limit::perMinute(max(1, (int) config('coqui.serphouse.checks_per_minute', 5))));
 
         // Laravel Pennant Plan Tier Feature Gating
         Feature::define('content-briefs', fn (Workspace $workspace): bool => in_array($workspace->plan_tier, Workspace::PRO_FEATURE_TIERS, true));

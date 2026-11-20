@@ -8,6 +8,7 @@ use App\Domains\Billing\Exceptions\FeatureNotAvailableException;
 use App\Domains\Billing\Models\BillingInvoice;
 use App\Domains\Billing\Models\WorkspaceSubscription;
 use App\Domains\Billing\PlanFeature;
+use App\Domains\Serp\RankFallback\RankFallbackSpendGuard;
 use App\Models\Concerns\HasPublicUuid;
 use App\Models\User;
 use Carbon\CarbonInterface;
@@ -172,15 +173,18 @@ class Workspace extends Model
     }
 
     /**
-     * Calculate DataForSEO spend for the current month.
+     * Live data spend for the current month: primary provider lookups plus
+     * backup rank checks, which share the monthly allowance.
      */
     public function currentMonthDfsSpend(): float
     {
-        return (float) DB::table('dataforseo_spend_ledger')
+        $primary = (float) DB::table('dataforseo_spend_ledger')
             ->where('workspace_id', $this->id)
             ->where('is_sandbox', false)
             ->where('recorded_at', '>=', now()->startOfMonth())
             ->sum('actual_cost_usd');
+
+        return $primary + RankFallbackSpendGuard::spendSince(now()->startOfMonth(), $this->id);
     }
 
     /**

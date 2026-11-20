@@ -57,6 +57,34 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | SERPHouse Rank-Tracking Fallback
+    |--------------------------------------------------------------------------
+    |
+    | Re-checks rankings when a DataForSEO rank task fails or stalls. Live
+    | Google results, one 10-result page per request ($0.75 per 1,000 pages on
+    | the Basic plan). Spend counts toward the workspace's live data allowance.
+    |
+    */
+    'serphouse' => [
+        'api_key' => env('SERPHOUSE_API_KEY'),
+        'base_url' => env('SERPHOUSE_API_BASE_URL', 'https://api.serphouse.com'),
+        'timeout' => (int) env('SERPHOUSE_HTTP_TIMEOUT', 30),
+        'fallback_enabled' => (bool) env('SERPHOUSE_FALLBACK_ENABLED', false),
+        'google_domain' => env('SERPHOUSE_GOOGLE_DOMAIN', 'google.com'),
+        // A pending primary task older than this gets a fallback check.
+        'stale_after_hours' => (int) env('SERPHOUSE_STALE_AFTER_HOURS', 6),
+        // 10 pages of 10 results matches the primary check's depth of 100.
+        'max_pages' => (int) env('SERPHOUSE_MAX_PAGES', 10),
+        'page_cost_usd' => (float) env('SERPHOUSE_PAGE_COST_USD', 0.00075),
+        'daily_cap_usd' => (float) env('SERPHOUSE_DAILY_CAP_USD', 2.00),
+        'monthly_cap_usd' => (float) env('SERPHOUSE_MONTHLY_CAP_USD', 25.00),
+        // Each check can make max_pages requests; 5 checks a minute stays
+        // under SERPHouse's 60 requests a minute.
+        'checks_per_minute' => (int) env('SERPHOUSE_CHECKS_PER_MINUTE', 5),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | SE Ranking Data API & Credit Controls
     |--------------------------------------------------------------------------
     |

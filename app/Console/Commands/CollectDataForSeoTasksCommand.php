@@ -93,6 +93,7 @@ class CollectDataForSeoTasksCommand extends Command
                 if ($taskStatusCode >= 40000) {
                     DB::table('dataforseo_tasks')
                         ->where('id', $task->id)
+                        ->where('status', 'pending')
                         ->update([
                             'status' => 'failed',
                             'result_payload' => json_encode($result, JSON_THROW_ON_ERROR),
@@ -111,6 +112,13 @@ class CollectDataForSeoTasksCommand extends Command
                 }
 
                 DB::transaction(function () use ($task, $result): void {
+                    // Lock the task and re-read it: a backup check may have
+                    // recorded this keyword since it was selected.
+                    $current = DB::table('dataforseo_tasks')->where('id', $task->id)->lockForUpdate()->first();
+                    if ($current === null || in_array($current->status, ['collected', 'superseded'], true)) {
+                        return;
+                    }
+
                     if ($task->task_type === 'serp_rank_tracking' && is_string($task->request_context)) {
                         /** @var array<string, mixed> $context */
                         $context = json_decode($task->request_context, true) ?? [];

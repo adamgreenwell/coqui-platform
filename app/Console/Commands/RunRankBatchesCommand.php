@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Domains\Serp\DataForSeo\DataForSeoClient;
+use App\Domains\Serp\Models\RankFallbackCheck;
 use App\Domains\Serp\Models\TrackedKeyword;
+use App\Domains\Serp\SpendRefusedException;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -141,21 +143,41 @@ class RunRankBatchesCommand extends Command
 
                 try {
                     $response = $client->submitStandardSerpTasks($tasksPayload, $project, isScheduled: true);
+                } catch (SpendRefusedException $e) {
+                    // A spend cap refused it: don't pay another provider instead.
+                    $this->warn("Skipped SERP tasks for project {$project->id}: {$e->getMessage()}");
+
+                    continue;
                 } catch (Throwable $e) {
                     $this->error("Failed submitting SERP tasks for project {$project->id}: {$e->getMessage()}");
+                    $this->queueFallback($chunk, $project->workspace_id);
 
                     continue;
                 }
 
-                $returnedTasks = $response['tasks'] ?? [];
+                $returnedTasks = is_array($response['tasks'] ?? null) ? $response['tasks'] : [];
+                $byId = [];
+                foreach ($chunk as $kw) {
+                    $byId[$kw->id] = $kw;
+                }
+                $accepted = [];
 
                 foreach ($returnedTasks as $index => $taskData) {
-                    $externalTaskId = (string) ($taskData['id'] ?? '');
-                    $kw = $chunk[$index] ?? null;
-
-                    if ($externalTaskId === '' || $kw === null) {
+                    if (! is_array($taskData)) {
                         continue;
                     }
+
+                    $externalTaskId = (string) ($taskData['id'] ?? '');
+                    // Match by our tag when it's echoed back, else by position.
+                    $tag = (string) ($taskData['data']['tag'] ?? '');
+                    $kw = str_starts_with($tag, 'kw:') ? ($byId[(int) substr($tag, 3)] ?? null) : ($chunk[$index] ?? null);
+
+                    // DataForSEO reports per-task errors inside a 200 response.
+                    if ($externalTaskId === '' || $kw === null || (int) ($taskData['status_code'] ?? 20100) >= 40000) {
+                        continue;
+                    }
+
+                    $accepted[$kw->id] = true;
 
                     $token = $tokenMap[$kw->id] ?? Str::random(32);
 
@@ -181,11 +203,43 @@ class RunRankBatchesCommand extends Command
 
                     $submittedCount++;
                 }
+
+                // Keywords with no accepted task (a rejected batch or task
+                // inside a 200 response) get a fallback check instead.
+                $rejected = array_values(array_filter($chunk, fn (TrackedKeyword $kw): bool => ! isset($accepted[$kw->id])));
+                if ($rejected !== []) {
+                    $this->error(count($rejected)." SERP task(s) for project {$project->id} weren't accepted (status ".($response['status_code'] ?? 'unknown').').');
+                    $this->queueFallback($rejected, $project->workspace_id);
+                }
             }
         }
 
         $this->info("Successfully submitted {$submittedCount} SERP rank tracking tasks to DataForSEO standard queue.");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Leave fallback checks for keywords whose batch couldn't be submitted;
+     * rank:fallback runs them if the fallback is on.
+     *
+     * @param  list<TrackedKeyword>  $keywords
+     */
+    private function queueFallback(array $keywords, int $workspaceId): void
+    {
+        $rows = array_map(fn (TrackedKeyword $keyword): array => [
+            'tracked_keyword_id' => $keyword->id,
+            'project_id' => $keyword->project_id,
+            'workspace_id' => $workspaceId,
+            'dataforseo_task_id' => null,
+            'reason' => RankFallbackCheck::REASON_SUBMIT_ERROR,
+            'status' => 'pending',
+            'checked_on' => today()->toDateString(),
+            'reference_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ], $keywords);
+
+        DB::table('rank_fallback_checks')->insertOrIgnore($rows);
     }
 }
