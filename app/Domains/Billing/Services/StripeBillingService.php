@@ -44,6 +44,24 @@ class StripeBillingService
                     'Basic Technical Issue Inspection',
                 ],
             ],
+            'personal' => [
+                'name' => 'Personal',
+                'price_usd' => 19,
+                'tracked_keyword_limit' => 300,
+                'cloud_crawl_url_limit' => 5000,
+                'monthly_dfs_budget_usd' => 8.00,
+                'features' => [
+                    'Everything in Free',
+                    '300 Tracked Keywords with Daily Updates',
+                    '5,000 Cloud Crawl URLs per audit',
+                    '$8/mo DataForSEO API Spend Allowance',
+                    'Live SERP Top-10 Content Brief Generator',
+                    'Backlink Profile Explorer & 404 Recovery',
+                    'Google Search Console & Bing Performance Overlay',
+                    'GA4 & Plausible Organic & AI Traffic Attribution',
+                    'Bot & AI Crawler Telemetry',
+                ],
+            ],
             'pro' => [
                 'name' => 'Pro Cloud',
                 'price_usd' => 49,
@@ -453,7 +471,7 @@ class StripeBillingService
         // A plan switch in the customer portal changes the subscription's
         // price, so the price decides the plan. Losing access is left to
         // customer.subscription.deleted.
-        if (in_array($planTier, ['pro', 'agency'], true)
+        if (in_array($planTier, Workspace::PAID_PLAN_TIERS, true)
             && in_array($status, self::ENTITLED_STATUSES, true)
             && $workspace->plan_tier !== $planTier) {
             $workspace->applyPlanTier($planTier);
@@ -651,7 +669,7 @@ class StripeBillingService
             }
         }
 
-        $paidTiers = ['pro', 'agency', 'runnr_addon'];
+        $paidTiers = [...Workspace::PAID_PLAN_TIERS, 'runnr_addon'];
 
         $metaTier = data_get($sub, 'metadata.plan_tier');
         if (is_string($metaTier) && in_array($metaTier, $paidTiers, true)) {

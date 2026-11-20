@@ -109,6 +109,15 @@ class PlanFeatureGatesTest extends TestCase
         $this->assertSame(0, ContentBrief::query()->count());
     }
 
+    public function test_the_personal_plan_unlocks_the_pro_feature_pages(): void
+    {
+        $this->workspace->applyPlanTier('personal');
+
+        foreach (['/keywords/brief', '/backlinks/watchlist', '/analytics/performance', '/bot-logs'] as $path) {
+            $this->actingAs($this->owner)->get($this->projectUrl($path))->assertOk();
+        }
+    }
+
     public function test_backlink_intelligence_is_gated(): void
     {
         $this->assertWebGate('GET', $this->projectUrl('/backlinks/watchlist'), 'pro', 'Backlink intelligence');
