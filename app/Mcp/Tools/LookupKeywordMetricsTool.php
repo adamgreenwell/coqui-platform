@@ -90,13 +90,49 @@ class LookupKeywordMetricsTool extends Tool
             static fn (string $keyword): bool => ! isset($metrics[strtolower($keyword)]),
         ));
 
+        // A failed upstream task can still come back as HTTP 200 with no
+        // results. Don't pass that off as "no data" for every keyword.
+        $lookupFailed = $this->lookupFailed($result['providers']['dataforseo']);
+        if ($lookupFailed && $metrics === []) {
+            return Response::error("Couldn't fetch keyword metrics right now. Try again in a few minutes.");
+        }
+
         return Response::json([
             'mode' => 'live',
             'source' => $source,
             'project' => $project->domain,
             'keywords' => array_values($metrics),
-            'not_found' => $missing,
+            ...($lookupFailed ? ['unavailable' => $missing] : ['not_found' => $missing]),
         ]);
+    }
+
+    /**
+     * Whether the detailed lookup ran and failed, at the request or task level.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    private function lookupFailed(array $payload): bool
+    {
+        if ($payload === []) {
+            return false;
+        }
+
+        if ((int) ($payload['status_code'] ?? 20000) >= 40000) {
+            return true;
+        }
+
+        $tasks = is_array($payload['tasks'] ?? null) ? $payload['tasks'] : [];
+        if ($tasks === []) {
+            return true;
+        }
+
+        foreach ($tasks as $task) {
+            if (! is_array($task) || (int) ($task['status_code'] ?? 20000) >= 40000) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

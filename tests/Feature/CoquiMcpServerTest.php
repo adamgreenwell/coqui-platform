@@ -261,4 +261,30 @@ class CoquiMcpServerTest extends TestCase
 
         $this->assertDatabaseHas('dataforseo_spend_ledger', ['workspace_id' => $project->workspace_id]);
     }
+
+    public function test_failed_live_lookup_is_an_error_not_missing_data(): void
+    {
+        config()->set('coqui.dataforseo.login', 'test-login');
+        config()->set('coqui.dataforseo.password', 'test-password');
+        config()->set('coqui.dataforseo.base_url', 'https://sandbox.dataforseo.com');
+        config()->set('coqui.seranking.api_key', null);
+
+        Http::fake([
+            'https://sandbox.dataforseo.com/*' => Http::response([
+                'status_code' => 20000,
+                'cost' => 0,
+                'tasks' => [['status_code' => 40501, 'status_message' => 'Invalid Field', 'cost' => 0, 'result' => null]],
+            ], 200),
+        ]);
+
+        $owner = User::factory()->create();
+        $this->makeProject($owner, 'failing.com');
+
+        CoquiSeoServer::actingAs($owner)
+            ->tool(LookupKeywordMetricsTool::class, ['keywords' => 'seo crawler', 'execute' => true, 'domain' => 'failing.com'])
+            ->assertHasErrors()
+            ->assertSee("Couldn't fetch keyword metrics right now")
+            ->assertDontSee('not_found')
+            ->assertDontSee('Invalid Field');
+    }
 }
