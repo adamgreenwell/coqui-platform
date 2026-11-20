@@ -556,6 +556,21 @@ class UmamiIntegrationTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_a_job_for_a_deleted_project_stops_instead_of_requeueing(): void
+    {
+        Carbon::setTestNow('2026-11-20 12:00:00');
+        Queue::fake();
+        Http::fake();
+        $integration = $this->umamiIntegration();
+        $integration->update(['last_synced_at' => Carbon::parse('2026-11-01')]);
+        $this->project->delete();
+
+        (new SyncTrafficAnalyticsJob($integration->fresh() ?? $integration))->handle(app(TrafficAttributionService::class));
+
+        Http::assertNothingSent();
+        Queue::assertNothingPushed();
+    }
+
     public function test_free_workspaces_can_connect_umami(): void
     {
         $this->workspace->applyPlanTier('free');

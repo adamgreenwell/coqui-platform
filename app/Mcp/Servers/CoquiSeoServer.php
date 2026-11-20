@@ -18,7 +18,7 @@ class CoquiSeoServer extends Server
 
     protected string $instructions = <<<'MARKDOWN'
         Coqui SEO Platform exposes project crawl summaries, technical SEO issues, and
-        multi-provider keyword routing across SE Ranking and DataForSEO.
+        keyword metrics (search volume, CPC, competition and keyword difficulty).
     MARKDOWN;
 
     /**

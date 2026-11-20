@@ -6,6 +6,7 @@ namespace App\Domains\Serp\DataForSeo;
 
 use App\Domains\Projects\Models\Workspace;
 use App\Domains\Serp\ReadOnlySpendScope;
+use App\Domains\Serp\SpendRefusedMessages;
 use Illuminate\Support\Facades\DB;
 
 class DataForSeoSpendGuard
@@ -37,7 +38,7 @@ class DataForSeoSpendGuard
                 $dailyCap,
                 $todaySpend,
                 $estimatedCostUsd,
-            ));
+            ), SpendRefusedMessages::DAILY_LIMIT);
         }
 
         $monthSpend = $this->spendSince(now()->startOfMonth());
@@ -55,10 +56,10 @@ class DataForSeoSpendGuard
             $workspaceBudget = (float) $workspace->monthly_dfs_budget_usd;
 
             if (($workspaceMonthSpend + $estimatedCostUsd) > $workspaceBudget) {
-                throw new DataForSeoBudgetException(sprintf(
-                    'Workspace monthly DataForSEO budget ($%.2f) exceeded.',
-                    $workspaceBudget,
-                ));
+                throw new DataForSeoBudgetException(
+                    sprintf('Workspace monthly DataForSEO budget ($%.2f) exceeded.', $workspaceBudget),
+                    SpendRefusedMessages::workspaceAllowance($workspaceBudget),
+                );
             }
         }
     }
