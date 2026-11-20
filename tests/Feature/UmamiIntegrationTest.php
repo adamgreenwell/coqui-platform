@@ -538,6 +538,24 @@ class UmamiIntegrationTest extends TestCase
             ->assertSessionHasErrors('base_url');
     }
 
+    public function test_manual_syncs_queue_umami_instead_of_running_in_the_request(): void
+    {
+        Queue::fake();
+        Http::fake();
+        $integration = $this->umamiIntegration();
+
+        $this->actingAs($this->owner)
+            ->post("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/integrations/{$integration->uuid}/sync")
+            ->assertSessionHas('success', fn (string $message): bool => str_starts_with($message, 'Umami sync queued'));
+
+        $this->actingAs($this->owner)
+            ->post("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/analytics/sync")
+            ->assertSessionHas('success', fn (string $message): bool => str_contains($message, 'Umami is syncing in the background'));
+
+        Queue::assertPushed(SyncTrafficAnalyticsJob::class, 2);
+        Http::assertNothingSent();
+    }
+
     public function test_connect_requires_traffic_attribution(): void
     {
         $this->workspace->applyPlanTier('free');

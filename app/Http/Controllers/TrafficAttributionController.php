@@ -81,11 +81,14 @@ class TrafficAttributionController extends Controller
         Gate::authorize('update', $project);
 
         $result = $this->trafficService->syncProjectTraffic($project, 30);
+        $queued = $result['queued'] === []
+            ? ''
+            : ' '.implode(', ', $result['queued']).' is syncing in the background.';
 
         if ($result['success']) {
             return redirect()
                 ->back()
-                ->with('success', "Traffic attribution synchronized: {$result['records_synced']} snapshots updated.");
+                ->with('success', "Traffic attribution synchronized: {$result['records_synced']} snapshots updated.{$queued}");
         }
 
         $errorMsg = implode(', ', $result['errors']);

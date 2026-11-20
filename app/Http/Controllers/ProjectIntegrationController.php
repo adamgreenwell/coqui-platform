@@ -473,6 +473,14 @@ class ProjectIntegrationController extends Controller implements HasMiddleware
             SyncGoogleSearchConsoleJob::dispatch($integration);
         } elseif ($integration->provider === 'bing') {
             SyncBingWebmasterJob::dispatch($integration);
+        } elseif ($integration->provider === TrafficProvider::Umami->value) {
+            // A backfill can take minutes (Umami Cloud is rate limited), longer
+            // than a web request may run, so it goes to the queue in week-long jobs.
+            SyncTrafficAnalyticsJob::dispatch($integration);
+
+            return redirect()
+                ->back()
+                ->with('success', 'Umami sync queued. New traffic appears once it finishes.');
         } elseif (TrafficProvider::tryFrom($integration->provider) !== null) {
             try {
                 $trafficService->syncIntegration($integration);

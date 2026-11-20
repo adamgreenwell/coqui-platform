@@ -6,6 +6,7 @@ namespace App\Domains\Integrations\Services;
 
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Crawls\Models\CrawlUrl;
+use App\Domains\Integrations\Jobs\SyncTrafficAnalyticsJob;
 use App\Domains\Integrations\Models\PageTrafficSnapshot;
 use App\Domains\Integrations\Models\ProjectIntegration;
 use App\Domains\Integrations\Models\SearchPerformancePage;
@@ -161,8 +162,9 @@ class TrafficAttributionService
 
     /**
      * Synchronize traffic snapshots for every analytics integration on the project.
+     * Umami is queued rather than run here, since a backfill can take minutes.
      *
-     * @return array{success: bool, records_synced: int, errors: list<string>}
+     * @return array{success: bool, records_synced: int, errors: list<string>, queued: list<string>}
      */
     public function syncProjectTraffic(Project $project, int $days = 30): array
     {
@@ -172,8 +174,16 @@ class TrafficAttributionService
 
         $totalSynced = 0;
         $errors = [];
+        $queued = [];
 
         foreach ($integrations as $integration) {
+            if ($integration->provider === TrafficProvider::Umami->value) {
+                SyncTrafficAnalyticsJob::dispatch($integration, $days);
+                $queued[] = TrafficProvider::Umami->shortLabel();
+
+                continue;
+            }
+
             try {
                 $totalSynced += $this->syncIntegration($integration, $days);
             } catch (Throwable $e) {
@@ -186,6 +196,7 @@ class TrafficAttributionService
             'success' => $errors === [],
             'records_synced' => $totalSynced,
             'errors' => $errors,
+            'queued' => $queued,
         ];
     }
 
