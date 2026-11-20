@@ -102,6 +102,11 @@ class StripeBillingService
     public const MODE_UNCONFIGURED = 'unconfigured';
 
     /**
+     * Subscription statuses that keep a plan or add-on usable.
+     */
+    private const ENTITLED_STATUSES = ['active', 'trialing', 'past_due'];
+
+    /**
      * How billing actions are served:
      * - stripe: a real secret key is set, so Checkout and the portal hit Stripe.
      * - mock: no key (or a mock_ key) in local/testing, so actions return fake
@@ -142,7 +147,7 @@ class StripeBillingService
             throw new BillingUnavailableException('Online payments are not set up yet, so plans cannot be purchased right now. Please contact support.');
         }
 
-        if ($planTier !== 'runnr_addon' && $this->hasActiveBaseSubscription($workspace)) {
+        if ($planTier !== 'runnr_addon' && $this->hasActiveSubscription($workspace, 'default')) {
             throw new BillingUnavailableException('This workspace already has a paid plan. Switch plans from the Stripe customer portal so you are not billed twice.');
         }
 
@@ -167,6 +172,14 @@ class StripeBillingService
             'metadata' => [
                 'workspace_id' => (string) $workspace->id,
                 'plan_tier' => $planTier,
+            ],
+            // Copied onto the subscription so later subscription webhooks can
+            // be tied back to the workspace and plan.
+            'subscription_data' => [
+                'metadata' => [
+                    'workspace_id' => (string) $workspace->id,
+                    'plan_tier' => $planTier,
+                ],
             ],
             'line_items' => [
                 [
@@ -215,15 +228,6 @@ class StripeBillingService
             'customer' => $workspace->stripe_id,
             'return_url' => $returnUrl,
         ], 'portal', $workspace);
-    }
-
-    private function hasActiveBaseSubscription(Workspace $workspace): bool
-    {
-        return WorkspaceSubscription::query()
-            ->where('workspace_id', $workspace->id)
-            ->where('type', 'default')
-            ->whereIn('stripe_status', ['active', 'trialing', 'past_due'])
-            ->exists();
     }
 
     /**
@@ -327,10 +331,15 @@ class StripeBillingService
         $stripeSubId = isset($session['subscription']) ? (string) $session['subscription'] : null;
 
         $workspace->stripe_id = $stripeCustomerId;
-        $workspace->stripe_subscription_id = $stripeSubId;
-        $workspace->subscription_status = 'active';
 
         $isRunnrAddon = $planTier === 'runnr_addon';
+        if (! $isRunnrAddon) {
+            // The workspace columns track the base plan subscription only; an
+            // add-on purchase must not overwrite them.
+            $workspace->stripe_subscription_id = $stripeSubId;
+            $workspace->subscription_status = 'active';
+        }
+
         if ($isRunnrAddon) {
             $workspace->has_runnr_addon = true;
             $workspace->save();
@@ -370,25 +379,64 @@ class StripeBillingService
     {
         $subId = (string) ($sub['id'] ?? '');
         $status = (string) ($sub['status'] ?? 'active');
-        $periodEnd = isset($sub['current_period_end']) && is_numeric($sub['current_period_end'])
-            ? Carbon::createFromTimestamp((int) $sub['current_period_end'])
-            : null;
 
-        /** @var Workspace|null $workspace */
-        $workspace = Workspace::query()
-            ->where('stripe_subscription_id', $subId)
-            ->orWhere('stripe_id', (string) ($sub['customer'] ?? ''))
-            ->first();
+        $local = $this->localSubscription($subId);
+        $workspace = $this->workspaceForSubscription($sub, $local);
 
-        if ($workspace !== null) {
-            $workspace->update([
-                'subscription_status' => $status,
-                'current_period_end' => $periodEnd,
-            ]);
+        if ($workspace === null) {
+            return [
+                'success' => true,
+                'event' => 'customer.subscription.updated',
+                'message' => "Subscription {$subId} does not belong to a known workspace.",
+            ];
+        }
 
-            WorkspaceSubscription::query()->where('stripe_id', $subId)->update([
-                'stripe_status' => $status,
-            ]);
+        $planTier = $this->planTierForSubscription($sub, $local);
+        $isRunnrAddon = $planTier === 'runnr_addon' || $local?->type === 'runnr_addon';
+        $cancelAt = data_get($sub, 'cancel_at');
+
+        if ($local !== null || $planTier !== null) {
+            WorkspaceSubscription::query()->updateOrCreate(
+                [
+                    'workspace_id' => $workspace->id,
+                    'stripe_id' => $subId,
+                ],
+                [
+                    'type' => $isRunnrAddon ? 'runnr_addon' : 'default',
+                    'stripe_status' => $status,
+                    'stripe_price' => $planTier ?? $local->stripe_price,
+                    'quantity' => 1,
+                    'ends_at' => is_numeric($cancelAt) ? Carbon::createFromTimestamp((int) $cancelAt) : null,
+                ]
+            );
+        }
+
+        if ($isRunnrAddon) {
+            if (in_array($status, self::ENTITLED_STATUSES, true) && ! $workspace->has_runnr_addon) {
+                $workspace->update(['has_runnr_addon' => true]);
+            }
+
+            return [
+                'success' => true,
+                'event' => 'customer.subscription.updated',
+                'message' => "Runnr add-on subscription {$subId} updated to {$status}.",
+            ];
+        }
+
+        $workspace->update([
+            'stripe_subscription_id' => $subId,
+            'subscription_status' => $status,
+            'current_period_end' => $this->currentPeriodEnd($sub),
+        ]);
+
+        // A plan switch in the customer portal changes the subscription's
+        // price, so the price decides the plan. Losing access is left to
+        // customer.subscription.deleted.
+        if (in_array($planTier, ['pro', 'agency'], true)
+            && in_array($status, self::ENTITLED_STATUSES, true)
+            && $workspace->plan_tier !== $planTier) {
+            $workspace->applyPlanTier($planTier);
+            Log::info("Workspace {$workspace->id} switched to plan {$planTier} via Stripe subscription {$subId}.");
         }
 
         return [
@@ -406,32 +454,160 @@ class StripeBillingService
     {
         $subId = (string) ($sub['id'] ?? '');
 
-        /** @var Workspace|null $workspace */
-        $workspace = Workspace::query()
-            ->where('stripe_subscription_id', $subId)
-            ->orWhere('stripe_id', (string) ($sub['customer'] ?? ''))
-            ->first();
+        $local = $this->localSubscription($subId);
+        $workspace = $this->workspaceForSubscription($sub, $local);
 
-        if ($workspace !== null) {
-            $workspace->applyPlanTier('free');
-            $workspace->update([
-                'subscription_status' => 'canceled',
-                'has_runnr_addon' => false,
-            ]);
-
-            WorkspaceSubscription::query()->where('stripe_id', $subId)->update([
-                'stripe_status' => 'canceled',
-                'ends_at' => Carbon::now(),
-            ]);
-
-            Log::info("Workspace {$workspace->id} downgraded to Free tier after subscription cancellation.");
+        if ($workspace === null) {
+            return [
+                'success' => true,
+                'event' => 'customer.subscription.deleted',
+                'message' => "Subscription {$subId} does not belong to a known workspace.",
+            ];
         }
+
+        WorkspaceSubscription::query()->where('stripe_id', $subId)->update([
+            'stripe_status' => 'canceled',
+            'ends_at' => Carbon::now(),
+        ]);
+
+        $planTier = $this->planTierForSubscription($sub, $local);
+        $keepsRunnrAddon = $this->hasActiveSubscription($workspace, 'runnr_addon');
+
+        if ($planTier === 'runnr_addon' || $local?->type === 'runnr_addon') {
+            // Only the add-on ended; the base plan is untouched.
+            $workspace->update(['has_runnr_addon' => $keepsRunnrAddon]);
+
+            Log::info("Runnr add-on subscription {$subId} for workspace {$workspace->id} cancelled.");
+
+            return [
+                'success' => true,
+                'event' => 'customer.subscription.deleted',
+                'message' => "Runnr add-on subscription {$subId} cancelled.",
+            ];
+        }
+
+        if ($this->hasActiveSubscription($workspace, 'default')) {
+            return [
+                'success' => true,
+                'event' => 'customer.subscription.deleted',
+                'message' => "Subscription {$subId} cancelled; another plan subscription is still active.",
+            ];
+        }
+
+        $workspace->applyPlanTier('free');
+        $workspace->update([
+            'subscription_status' => 'canceled',
+            'has_runnr_addon' => $keepsRunnrAddon,
+        ]);
+
+        Log::info("Workspace {$workspace->id} downgraded to Free tier after subscription cancellation.");
 
         return [
             'success' => true,
             'event' => 'customer.subscription.deleted',
             'message' => "Subscription {$subId} cancelled; workspace reset to Free.",
         ];
+    }
+
+    private function localSubscription(string $stripeSubscriptionId): ?WorkspaceSubscription
+    {
+        if ($stripeSubscriptionId === '') {
+            return null;
+        }
+
+        return WorkspaceSubscription::query()->where('stripe_id', $stripeSubscriptionId)->first();
+    }
+
+    /**
+     * @param  array<string, mixed>  $sub
+     */
+    private function workspaceForSubscription(array $sub, ?WorkspaceSubscription $local): ?Workspace
+    {
+        $workspace = $local?->workspace;
+        if ($workspace !== null) {
+            return $workspace;
+        }
+
+        $subId = (string) ($sub['id'] ?? '');
+        $customerId = (string) ($sub['customer'] ?? '');
+        $metaWorkspaceId = data_get($sub, 'metadata.workspace_id');
+
+        if ($subId !== '') {
+            $workspace = Workspace::query()->where('stripe_subscription_id', $subId)->first();
+            if ($workspace !== null) {
+                return $workspace;
+            }
+        }
+
+        if ($customerId === '') {
+            return null;
+        }
+
+        $byCustomer = Workspace::query()->where('stripe_id', $customerId);
+
+        if (is_numeric($metaWorkspaceId)) {
+            $byCustomer->whereKey((int) $metaWorkspaceId);
+        }
+
+        return $byCustomer->first();
+    }
+
+    /**
+     * Which plan a Stripe subscription is for. The configured price IDs win,
+     * because a portal plan switch changes the price but not the metadata.
+     *
+     * @param  array<string, mixed>  $sub
+     */
+    private function planTierForSubscription(array $sub, ?WorkspaceSubscription $local): ?string
+    {
+        $tiersByPrice = [];
+        foreach ((array) config('services.stripe.prices', []) as $tier => $priceId) {
+            if (is_string($priceId) && $priceId !== '') {
+                $tiersByPrice[$priceId] = (string) $tier;
+            }
+        }
+
+        $items = data_get($sub, 'items.data');
+        if (is_array($items)) {
+            foreach ($items as $item) {
+                $priceId = data_get($item, 'price.id');
+                if (is_string($priceId) && isset($tiersByPrice[$priceId])) {
+                    return $tiersByPrice[$priceId];
+                }
+            }
+        }
+
+        $paidTiers = ['pro', 'agency', 'runnr_addon'];
+
+        $metaTier = data_get($sub, 'metadata.plan_tier');
+        if (is_string($metaTier) && in_array($metaTier, $paidTiers, true)) {
+            return $metaTier;
+        }
+
+        $localTier = $local?->stripe_price;
+
+        return in_array($localTier, $paidTiers, true) ? $localTier : null;
+    }
+
+    /**
+     * Newer Stripe API versions moved current_period_end onto the items.
+     *
+     * @param  array<string, mixed>  $sub
+     */
+    private function currentPeriodEnd(array $sub): ?Carbon
+    {
+        $timestamp = data_get($sub, 'current_period_end') ?? data_get($sub, 'items.data.0.current_period_end');
+
+        return is_numeric($timestamp) ? Carbon::createFromTimestamp((int) $timestamp) : null;
+    }
+
+    private function hasActiveSubscription(Workspace $workspace, string $type): bool
+    {
+        return WorkspaceSubscription::query()
+            ->where('workspace_id', $workspace->id)
+            ->where('type', $type)
+            ->whereIn('stripe_status', self::ENTITLED_STATUSES)
+            ->exists();
     }
 
     /**

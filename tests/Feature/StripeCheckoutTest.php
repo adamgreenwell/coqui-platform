@@ -128,6 +128,8 @@ class StripeCheckoutTest extends TestCase
                 && $request['line_items'][0]['price'] === 'price_agency_test'
                 && $request['metadata']['workspace_id'] === (string) $this->workspace->id
                 && $request['metadata']['plan_tier'] === 'agency'
+                && $request['subscription_data']['metadata']['workspace_id'] === (string) $this->workspace->id
+                && $request['subscription_data']['metadata']['plan_tier'] === 'agency'
                 && $request['customer_email'] === 'owner@example.com';
         });
     }
