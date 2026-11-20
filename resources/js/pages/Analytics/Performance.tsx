@@ -39,6 +39,7 @@ interface PagePerformanceKpis {
   at_risk_pages_count: number;
   top_ai_assistant: string | null;
   ai_brand_totals: Record<string, number>;
+  traffic_provider: 'ga4' | 'plausible' | null;
 }
 
 interface PagePerformanceItem {
@@ -243,6 +244,7 @@ export default function Performance({
             </div>
             <p className="mt-1 text-[11px] text-slate-400">
               Trailing {days} days search traffic across all landing pages
+              {kpis.traffic_provider && ` (from ${kpis.traffic_provider === 'ga4' ? 'GA4' : 'Plausible'})`}
             </p>
           </div>
 
