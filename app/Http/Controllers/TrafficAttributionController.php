@@ -45,7 +45,7 @@ class TrafficAttributionController extends Controller
                 'provider' => $integration->provider,
                 'label' => TrafficProvider::from($integration->provider)->shortLabel(),
                 'status' => $integration->status,
-                'externalId' => $integration->external_identifier,
+                'site' => $integration->site_url ?? $integration->external_identifier,
                 'lastSyncedAt' => $integration->last_synced_at instanceof CarbonInterface ? $integration->last_synced_at->toIso8601String() : null,
             ])
             ->values()

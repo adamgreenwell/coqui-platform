@@ -25,6 +25,7 @@ class TrafficAttributionService
     public function __construct(
         private readonly Ga4AnalyticsClient $ga4Client,
         private readonly PlausibleAnalyticsClient $plausibleClient,
+        private readonly UmamiAnalyticsClient $umamiClient,
     ) {}
 
     /**
@@ -146,6 +147,7 @@ class TrafficAttributionService
         return match (TrafficProvider::tryFrom($integration->provider)) {
             TrafficProvider::Ga4 => $this->syncGa4($integration, $days),
             TrafficProvider::Plausible => $this->syncPlausible($integration, $days),
+            TrafficProvider::Umami => $this->syncUmami($integration, $days),
             null => throw new RuntimeException("{$integration->provider} is not an analytics provider."),
         };
     }
@@ -348,18 +350,7 @@ class TrafficAttributionService
             return 0;
         }
 
-        $endDate = Carbon::today();
-        $startDate = Carbon::today()->subDays($days);
-
-        // After the first sync only recent days are fetched again. The last
-        // two are included because Plausible can still add late events.
-        $lastSynced = $integration->last_synced_at;
-        if ($lastSynced instanceof CarbonInterface) {
-            $resumeFrom = Carbon::parse($lastSynced->format('Y-m-d'))->subDays(2);
-            if ($resumeFrom->gt($startDate)) {
-                $startDate = $resumeFrom;
-            }
-        }
+        [$startDate, $endDate] = $this->incrementalWindow($integration, $days);
 
         $daily = $this->plausibleClient->fetchDailyMetrics($integration, $startDate, $endDate);
 
@@ -427,18 +418,159 @@ class TrafficAttributionService
             }
         }
 
+        return $this->storeDailySnapshots($integration, $project, TrafficProvider::Plausible, $startDate, $endDate, $recordsToUpsert, $now);
+    }
+
+    /**
+     * Sync landing page metrics from Umami. Search and AI visits are counted
+     * per page from referrer-filtered metrics rather than estimated.
+     */
+    public function syncUmami(ProjectIntegration $integration, int $days = 30): int
+    {
+        $project = $integration->project;
+        if ($project === null) {
+            return 0;
+        }
+
+        [$startDate, $endDate] = $this->incrementalWindow($integration, $days);
+
+        $daily = $this->umamiClient->fetchDailyMetrics($integration, $startDate, $endDate);
+
+        $now = Carbon::now();
+        $records = [];
+
+        foreach ($daily as $date => $metrics) {
+            $searchReferrers = [];
+            /** @var array<string, string> $aiReferrers referrer => assistant */
+            $aiReferrers = [];
+
+            foreach ($metrics['referrers'] as $referrer) {
+                $brand = $this->classifyAiAssistant($referrer['referrer']);
+                if ($brand !== null) {
+                    $aiReferrers[$referrer['referrer']] = $brand;
+                } elseif ($this->isOrganicSearch('', $referrer['referrer'])) {
+                    $searchReferrers[] = $referrer['referrer'];
+                }
+            }
+
+            $byReferrer = $this->umamiClient->fetchPagesByReferrer(
+                $integration,
+                $date,
+                [...$searchReferrers, ...array_keys($aiReferrers)],
+            );
+
+            /** @var array<string, int> $organicByPath */
+            $organicByPath = [];
+            foreach ($searchReferrers as $referrer) {
+                foreach ($byReferrer[$referrer] ?? [] as $row) {
+                    $path = $this->normalizePath($row['page']);
+                    $organicByPath[$path] = ($organicByPath[$path] ?? 0) + $row['visitors'];
+                }
+            }
+
+            /** @var array<string, array<string, int>> $aiByPath path => assistant => visitors */
+            $aiByPath = [];
+            foreach ($aiReferrers as $referrer => $brand) {
+                foreach ($byReferrer[$referrer] ?? [] as $row) {
+                    $path = $this->normalizePath($row['page']);
+                    $aiByPath[$path][$brand] = ($aiByPath[$path][$brand] ?? 0) + $row['visitors'];
+                }
+            }
+
+            // "/features" and "/features/" are one page once normalized.
+            /** @var array<string, array{visitors: int, visits: int, bounces: int, totaltime: int}> $pages */
+            $pages = [];
+            foreach ($metrics['pages'] as $row) {
+                $path = $this->normalizePath($row['page']);
+                $page = $pages[$path] ?? ['visitors' => 0, 'visits' => 0, 'bounces' => 0, 'totaltime' => 0];
+                $pages[$path] = [
+                    'visitors' => $page['visitors'] + $row['visitors'],
+                    'visits' => $page['visits'] + $row['visits'],
+                    'bounces' => $page['bounces'] + $row['bounces'],
+                    'totaltime' => $page['totaltime'] + $row['totaltime'],
+                ];
+            }
+
+            foreach ($pages as $path => $page) {
+                $total = $page['visitors'];
+                // Referrer counts are unique visitors per referrer, so cap
+                // them at the page's total.
+                $organic = min($organicByPath[$path] ?? 0, $total);
+                $aiBreakdown = $aiByPath[$path] ?? [];
+                $ai = min(array_sum($aiBreakdown), $total - $organic);
+
+                $records[] = [
+                    'project_id' => $project->id,
+                    'provider' => TrafficProvider::Umami->value,
+                    'path' => $path,
+                    'path_hash' => hash('sha256', $path),
+                    'date' => $date,
+                    'organic_sessions' => $organic,
+                    'ai_referral_sessions' => $ai,
+                    'direct_sessions' => max(0, $total - $organic - $ai),
+                    'total_sessions' => $total,
+                    'bounce_rate' => $page['visits'] > 0 ? round($page['bounces'] / $page['visits'] * 100, 2) : 0.0,
+                    'avg_engagement_time_sec' => $page['visits'] > 0 ? intdiv($page['totaltime'], $page['visits']) : 0,
+                    'ai_referrals_breakdown' => (string) json_encode($aiBreakdown),
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            }
+        }
+
+        return $this->storeDailySnapshots($integration, $project, TrafficProvider::Umami, $startDate, $endDate, $records, $now);
+    }
+
+    /**
+     * Days to fetch: the whole window on the first sync, then only the last
+     * sync day and the two before it, since providers can still add late
+     * events.
+     *
+     * @return array{0: Carbon, 1: Carbon}
+     */
+    private function incrementalWindow(ProjectIntegration $integration, int $days): array
+    {
+        $endDate = Carbon::today();
+        $startDate = Carbon::today()->subDays($days);
+
+        $lastSynced = $integration->last_synced_at;
+        if ($lastSynced instanceof CarbonInterface) {
+            $resumeFrom = Carbon::parse($lastSynced->format('Y-m-d'))->subDays(2);
+            if ($resumeFrom->gt($startDate)) {
+                $startDate = $resumeFrom;
+            }
+        }
+
+        return [$startDate, $endDate];
+    }
+
+    /**
+     * Replace a provider's daily snapshots for the fetched days, mark the
+     * integration synced and log it. Returns the number of rows stored.
+     *
+     * @param  list<array<string, mixed>>  $records
+     */
+    private function storeDailySnapshots(
+        ProjectIntegration $integration,
+        Project $project,
+        TrafficProvider $provider,
+        Carbon $startDate,
+        Carbon $endDate,
+        array $records,
+        Carbon $now,
+    ): int {
         // Each fetched day replaces what was stored for it, so a page with no
         // visits that day doesn't keep an older value.
-        DB::transaction(function () use ($project, $startDate, $endDate, $recordsToUpsert): void {
+        DB::transaction(function () use ($project, $provider, $startDate, $endDate, $records): void {
             PageTrafficSnapshot::query()
                 ->where('project_id', $project->id)
-                ->where('provider', 'plausible')
+                ->where('provider', $provider->value)
                 ->where('date', '>=', $startDate->format('Y-m-d'))
                 // A bound on the next day also matches dates stored with a time.
                 ->where('date', '<', $endDate->copy()->addDay()->format('Y-m-d'))
                 ->delete();
 
-            foreach (array_chunk($recordsToUpsert, 500) as $chunk) {
+            foreach (array_chunk($records, 500) as $chunk) {
                 PageTrafficSnapshot::query()->upsert(
                     $chunk,
                     ['project_id', 'provider', 'path_hash', 'date'],
@@ -457,7 +589,7 @@ class TrafficAttributionService
             }
         });
 
-        $count = count($recordsToUpsert);
+        $count = count($records);
 
         $integration->update([
             'status' => 'connected',
@@ -467,10 +599,10 @@ class TrafficAttributionService
         ProjectActivity::log(
             project: $project,
             eventType: 'integration.synced',
-            title: 'Plausible Analytics Synced',
-            description: "Synchronized {$count} traffic attribution snapshots from Plausible Analytics.",
+            title: "{$provider->label()} Synced",
+            description: "Synchronized {$count} traffic attribution snapshots from {$provider->label()}.",
             properties: [
-                'provider' => 'plausible',
+                'provider' => $provider->value,
                 'records_count' => $count,
                 'start_date' => $startDate->format('Y-m-d'),
                 'end_date' => $endDate->format('Y-m-d'),

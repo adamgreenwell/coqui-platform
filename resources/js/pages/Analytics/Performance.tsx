@@ -63,7 +63,7 @@ interface AnalyticsIntegration {
   provider: string;
   label: string;
   status: string;
-  externalId: string | null;
+  site: string | null;
   lastSyncedAt: string | null;
 }
 
@@ -71,6 +71,7 @@ interface AnalyticsIntegration {
 const PROVIDER_BADGE: Record<string, string> = {
   ga4: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
   plausible: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/30',
+  umami: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30',
 };
 
 interface PerformanceProps {
@@ -180,7 +181,7 @@ export default function Performance({
                     key={integration.id}
                     className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-mono border ${PROVIDER_BADGE[integration.provider] ?? 'bg-slate-500/10 text-slate-300 border-slate-500/30'}`}
                   >
-                    <CheckCircle2 className="h-3 w-3" /> {integration.label}: {integration.externalId}
+                    <CheckCircle2 className="h-3 w-3" /> {integration.label}: {integration.site}
                   </span>
                 ))}
                 {integrations.length === 0 && (
@@ -190,7 +191,7 @@ export default function Performance({
                 )}
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Unified crawl technical health overlay with Google Search Console clicks and GA4 / Plausible organic &amp; AI assistant traffic.
+                Unified crawl technical health overlay with Google Search Console clicks and GA4 / Umami / Plausible organic &amp; AI assistant traffic.
               </p>
             </div>
           </div>
@@ -575,7 +576,7 @@ export default function Performance({
                         <p className="text-xs text-slate-500 max-w-sm">
                           {searchQuery
                             ? 'Try refining your search filter.'
-                            : 'Sync your GA4 or Plausible analytics or run a crawl to generate performance records.'}
+                            : 'Sync your GA4, Umami or Plausible analytics or run a crawl to generate performance records.'}
                         </p>
                       </div>
                     </td>

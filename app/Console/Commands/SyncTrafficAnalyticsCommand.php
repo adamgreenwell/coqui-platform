@@ -16,10 +16,10 @@ class SyncTrafficAnalyticsCommand extends Command
 {
     protected $signature = 'traffic:sync
                             {--project= : Optional project ID to synchronize}
-                            {--provider= : Optional provider filter (ga4 or plausible)}
+                            {--provider= : Optional provider filter (ga4, umami or plausible)}
                             {--now : Run synchronously immediately instead of queueing}';
 
-    protected $description = 'Synchronize page traffic from connected analytics integrations (GA4, Plausible).';
+    protected $description = 'Synchronize page traffic from connected analytics integrations (GA4, Umami, Plausible).';
 
     public function handle(TrafficAttributionService $trafficService): int
     {

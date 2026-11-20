@@ -14,6 +14,7 @@ import {
   Key,
   Laptop,
   LineChart,
+  PieChart,
   Link2,
   Lock,
   Plus,
@@ -209,6 +210,7 @@ export default function ProjectShow({
   const [plausibleModalOpen, setPlausibleModalOpen] = useState(false);
   const [plausibleSiteId, setPlausibleSiteId] = useState(project.domain || '');
   const [plausibleApiKey, setPlausibleApiKey] = useState('');
+  const [umamiModalOpen, setUmamiModalOpen] = useState(false);
   const [copiedBadge, setCopiedBadge] = useState(false);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
   const [liveActivities, setLiveActivities] = useState<ActivityItem[]>(activities);
@@ -220,6 +222,7 @@ export default function ProjectShow({
   const runnrIntegration = integrations.find((i) => i.provider === 'runnr');
   const ga4Integration = integrations.find((i) => i.provider === 'ga4');
   const plausibleIntegration = integrations.find((i) => i.provider === 'plausible');
+  const umamiIntegration = integrations.find((i) => i.provider === 'umami');
 
   const { has, billingUrl } = usePlan();
   const hasTrafficAttribution = has('traffic-attribution');
@@ -253,6 +256,17 @@ export default function ProjectShow({
     domain: '',
     label: '',
   });
+
+  const umamiForm = useForm({
+    base_url: '',
+    api_key: '',
+    website_id: '',
+  });
+
+  const closeUmamiModal = () => {
+    setUmamiModalOpen(false);
+    umamiForm.clearErrors();
+  };
 
   useEffect(() => {
     setLiveActivities(activities);
@@ -660,7 +674,7 @@ export default function ProjectShow({
               <>
                 <h2 className="text-base font-semibold text-white">First-Party Integrations</h2>
                 <p className="text-xs text-slate-400">
-                  Direct API integrations for Google Search Console, Bing Webmaster Tools, Google Analytics 4, and Plausible.
+                  Direct API integrations for Google Search Console, Bing Webmaster Tools, Google Analytics 4, Umami, and Plausible.
                 </p>
               </>
             )}
@@ -1009,6 +1023,84 @@ export default function ProjectShow({
                     >
                       <Plus className="h-3.5 w-3.5" />
                       <span>Connect GA4 Property</span>
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
+
+            {/* Umami Analytics Card */}
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 flex flex-col justify-between gap-4">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                    <PieChart className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold text-white">Umami Analytics</h3>
+                    <p className="text-xs text-slate-400">
+                      Self-hosted or cloud Umami with per-page search and AI referrals
+                    </p>
+                  </div>
+                </div>
+                {umamiIntegration?.status === 'connected' ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                    <CheckCircle2 className="h-3 w-3" /> Connected
+                  </span>
+                ) : umamiIntegration?.status === 'needs_reconnect' ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                    <AlertTriangle className="h-3 w-3" /> Reconnect
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-800 text-slate-400 border border-slate-700">
+                    Not Connected
+                  </span>
+                )}
+              </div>
+
+              {umamiIntegration?.site_url && (
+                <div className="text-xs text-slate-400 flex items-center gap-1 font-mono">
+                  <span className="text-slate-500">Website:</span>
+                  <span className="text-slate-200">{umamiIntegration.site_url}</span>
+                </div>
+              )}
+
+              {umamiIntegration?.last_synced_at && (
+                <div className="text-[11px] text-slate-500">
+                  Last synced: {formatRelativeTime(umamiIntegration.last_synced_at)}
+                </div>
+              )}
+
+              <div className="flex items-center gap-2 pt-2 border-t border-slate-800/80">
+                {canEdit && !hasTrafficAttribution && lockedIntegrationActions(umamiIntegration)}
+                {canEdit && hasTrafficAttribution && (
+                  umamiIntegration?.status === 'connected' ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => router.post(`/workspaces/${workspace.id}/projects/${project.id}/integrations/${umamiIntegration.id}/sync`)}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition cursor-pointer"
+                      >
+                        <RefreshCw className="h-3 w-3" />
+                        <span>Sync Now</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => router.delete(`/workspaces/${workspace.id}/projects/${project.id}/integrations/${umamiIntegration.id}`)}
+                        className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-slate-400 hover:text-red-400 hover:bg-red-500/10 text-xs font-medium transition cursor-pointer ml-auto"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                        <span>Disconnect</span>
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setUmamiModalOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-medium text-xs transition cursor-pointer shadow-md shadow-cyan-500/10"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      <span>{umamiIntegration ? 'Reconnect Umami' : 'Connect Umami Website'}</span>
                     </button>
                   )
                 )}
@@ -1549,6 +1641,116 @@ export default function ProjectShow({
                     className="px-4 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs transition cursor-pointer shadow-md shadow-amber-500/20"
                   >
                     Connect GA4
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* Umami Setup Modal */}
+        {umamiModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+            <div className="relative w-full max-w-lg rounded-xl border border-slate-800 bg-slate-900 p-6 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 rounded-lg bg-cyan-500/10 border border-cyan-500/30 text-cyan-400">
+                    <PieChart className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-semibold text-white">Connect Umami Analytics</h3>
+                    <p className="text-xs text-slate-400">Per-page search and AI referral visits from Umami v2 or v3</p>
+                  </div>
+                </div>
+                <button type="button" onClick={closeUmamiModal} className="text-slate-400 hover:text-white">
+                  ✕
+                </button>
+              </div>
+
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  umamiForm.post(`/workspaces/${workspace.id}/projects/${project.id}/integrations/umami/connect`, {
+                    preserveScroll: true,
+                    onSuccess: () => {
+                      setUmamiModalOpen(false);
+                      umamiForm.reset();
+                    },
+                  });
+                }}
+                className="space-y-4 text-xs"
+              >
+                <div>
+                  <label htmlFor="umami-base-url" className="block text-xs font-medium text-slate-300">
+                    Umami URL <span className="text-rose-400">*</span>
+                  </label>
+                  <input
+                    id="umami-base-url"
+                    type="url"
+                    required
+                    value={umamiForm.data.base_url}
+                    onChange={(e) => umamiForm.setData('base_url', e.target.value)}
+                    className="mt-1 block w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+                    placeholder="https://analytics.example.com"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    The public https address of your Umami instance, or https://api.umami.is for Umami Cloud.
+                  </p>
+                  {umamiForm.errors.base_url && <p className="mt-1 text-[11px] text-red-400">{umamiForm.errors.base_url}</p>}
+                </div>
+
+                <div>
+                  <label htmlFor="umami-api-key" className="block text-xs font-medium text-slate-300">
+                    API Key <span className="text-rose-400">*</span>
+                  </label>
+                  <input
+                    id="umami-api-key"
+                    type="password"
+                    required
+                    autoComplete="off"
+                    value={umamiForm.data.api_key}
+                    onChange={(e) => umamiForm.setData('api_key', e.target.value)}
+                    className="mt-1 block w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50"
+                    placeholder="Enter Umami API key"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Created in Umami under Settings &gt; API keys.
+                  </p>
+                  {umamiForm.errors.api_key && <p className="mt-1 text-[11px] text-red-400">{umamiForm.errors.api_key}</p>}
+                </div>
+
+                <div>
+                  <label htmlFor="umami-website-id" className="block text-xs font-medium text-slate-300">
+                    Website ID <span className="text-slate-500">(optional)</span>
+                  </label>
+                  <input
+                    id="umami-website-id"
+                    type="text"
+                    value={umamiForm.data.website_id}
+                    onChange={(e) => umamiForm.setData('website_id', e.target.value)}
+                    className="mt-1 block w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 font-mono"
+                    placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500">
+                    Leave blank to use the Umami website whose domain matches {project.domain}.
+                  </p>
+                  {umamiForm.errors.website_id && <p className="mt-1 text-[11px] text-red-400">{umamiForm.errors.website_id}</p>}
+                </div>
+
+                <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-800">
+                  <button
+                    type="button"
+                    onClick={closeUmamiModal}
+                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={umamiForm.processing}
+                    className="px-4 py-1.5 rounded-lg bg-cyan-600 hover:bg-cyan-500 disabled:opacity-60 text-white font-semibold text-xs transition cursor-pointer shadow-md shadow-cyan-500/20"
+                  >
+                    {umamiForm.processing ? 'Connecting…' : 'Connect Umami'}
                   </button>
                 </div>
               </form>
