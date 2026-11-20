@@ -10,6 +10,7 @@ use App\Domains\Projects\Models\ProjectCompetitor;
 use App\Domains\Projects\Models\Workspace;
 use App\Domains\Serp\DataForSeo\DataForSeoCacheRepository;
 use App\Domains\Serp\Models\TrackedKeyword;
+use App\Domains\Serp\SpendRefusedMessages;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -333,7 +334,7 @@ class KeywordGapTest extends TestCase
             ]);
 
         $response->assertStatus(500);
-        $response->assertJsonPath('message', 'Failed to analyze competitor keyword gaps: Internal Server Error');
+        $response->assertJsonPath('message', 'Couldn\'t analyze competitor keyword gaps right now. Try again in a few minutes.');
 
         $cached = $this->cacheRepo->get('/v3/dataforseo_labs/google/domain_intersection/live', [
             'target1' => 'ahrefs.com',
@@ -428,6 +429,7 @@ class KeywordGapTest extends TestCase
 
         $response->assertStatus(422);
         $response->assertJsonPath('error', 'budget_exceeded');
+        $response->assertJsonPath('message', SpendRefusedMessages::workspaceAllowance(0.0));
     }
 
     public function test_track_action_promotes_gap_keywords_to_rank_tracker_with_cadence_preservation(): void

@@ -4,6 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domains\Serp\DataForSeo;
 
-use RuntimeException;
+use App\Domains\Serp\SpendRefusedException;
 
-class DataForSeoBudgetException extends RuntimeException {}
+class DataForSeoBudgetException extends SpendRefusedException {}

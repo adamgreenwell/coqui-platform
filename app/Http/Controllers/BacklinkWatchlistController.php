@@ -151,7 +151,7 @@ class BacklinkWatchlistController extends Controller
             project: $project,
             eventType: 'backlinks.imported_from_dfs',
             title: 'Imported backlinks into watchlist',
-            description: sprintf('Imported %d high-value backlinks from DataForSEO into active link-rot monitor.', $count),
+            description: sprintf('Imported %d high-value backlinks into active link-rot monitoring.', $count),
             properties: [
                 'imported_count' => $count,
             ],
@@ -159,7 +159,7 @@ class BacklinkWatchlistController extends Controller
         );
 
         return redirect()->route('workspaces.projects.backlinks.watchlist.index', [$workspace, $project])
-            ->with('success', sprintf('Successfully imported %d backlinks from DataForSEO into watchlist.', $count));
+            ->with('success', sprintf('Successfully imported %d backlinks into the watchlist.', $count));
     }
 
     public function importCsv(Request $request, Workspace $workspace, Project $project): RedirectResponse

@@ -180,7 +180,7 @@ export default function BacklinksIndex({
   const [domainSortAsc, setDomainSortAsc] = useState(false);
 
   const handleRefresh = () => {
-    if (confirm(`Refresh backlink intelligence for ${project.domain} from DataForSEO?`)) {
+    if (confirm(`Run a live refresh of backlink intelligence for ${project.domain}?`)) {
       setRefreshing(true);
       router.post(
         `/workspaces/${workspace.id}/projects/${project.id}/backlinks/refresh`,
@@ -320,7 +320,7 @@ export default function BacklinksIndex({
               onClick={handleRefresh}
               disabled={refreshing}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium transition cursor-pointer disabled:opacity-50"
-              title="Force refresh backlink intelligence via live DataForSEO API"
+              title="Force a live refresh of backlink intelligence"
             >
               <RefreshCw className={`h-3.5 w-3.5 text-purple-400 ${refreshing ? 'animate-spin' : ''}`} />
               <span>{refreshing ? 'Refreshing...' : 'Refresh Backlinks'}</span>

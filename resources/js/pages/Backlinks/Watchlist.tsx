@@ -139,7 +139,7 @@ export default function BacklinkWatchlist({
   };
 
   const handleImportDfs = () => {
-    if (confirm(`Import up to 100 high-value backlinks for ${project.domain} from DataForSEO into active link-rot monitor?`)) {
+    if (confirm(`Import up to 100 high-value backlinks for ${project.domain} into active link-rot monitoring?`)) {
       setImportingDfs(true);
       router.post(
         `/workspaces/${workspace.id}/projects/${project.id}/backlinks/watchlist/import-dfs`,
@@ -270,10 +270,10 @@ export default function BacklinkWatchlist({
               onClick={handleImportDfs}
               disabled={importingDfs}
               className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium transition cursor-pointer disabled:opacity-50"
-              title="Import top backlinks from DataForSEO into active monitoring"
+              title="Import top backlinks into active monitoring"
             >
               <Sparkles className={`h-3.5 w-3.5 text-sky-400 ${importingDfs ? 'animate-spin' : ''}`} />
-              <span>{importingDfs ? 'Importing...' : 'Import from DataForSEO'}</span>
+              <span>{importingDfs ? 'Importing...' : 'Import top backlinks'}</span>
             </button>
 
             <button
@@ -541,7 +541,7 @@ export default function BacklinkWatchlist({
                             disabled={importingDfs}
                             className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 text-xs font-medium transition cursor-pointer"
                           >
-                            Import from DataForSEO
+                            Import top backlinks
                           </button>
                         </div>
                       </div>

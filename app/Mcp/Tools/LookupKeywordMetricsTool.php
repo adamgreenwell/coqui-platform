@@ -5,10 +5,9 @@ declare(strict_types=1);
 namespace App\Mcp\Tools;
 
 use App\Domains\Projects\Models\Project;
-use App\Domains\Serp\DataForSeo\DataForSeoBudgetException;
-use App\Domains\Serp\SeRanking\SeRankingAcceptanceRule;
-use App\Domains\Serp\SeRanking\SeRankingBudgetException;
+use App\Domains\Serp\Services\KeywordResearchService;
 use App\Domains\Serp\Services\SeoProviderRouter;
+use App\Domains\Serp\SpendRefusedException;
 use App\Mcp\Concerns\ResolvesAccessibleProject;
 use App\Models\User;
 use Illuminate\Contracts\JsonSchema\JsonSchema;
@@ -22,11 +21,11 @@ class LookupKeywordMetricsTool extends Tool
 
     protected string $name = 'lookup_keyword_metrics';
 
-    protected string $description = 'Inspect keyword acceptance routing and fetch metrics across SE Ranking and DataForSEO.';
+    protected string $description = 'Look up search volume, CPC, competition and keyword difficulty for keywords. Runs as a dry run unless execute is true; live lookups are billed to a project\'s workspace allowance.';
 
     public function __construct(
-        private readonly SeRankingAcceptanceRule $acceptanceRule,
         private readonly SeoProviderRouter $router,
+        private readonly KeywordResearchService $keywordResearch,
     ) {}
 
     public function handle(Request $request): Response
@@ -39,22 +38,17 @@ class LookupKeywordMetricsTool extends Tool
         ]);
 
         $source = strtolower((string) ($validated['source'] ?? config('coqui.seranking.default_source', 'us')));
-        $keywords = array_values(array_filter(array_map(
+        $keywords = array_values(array_unique(array_filter(array_map(
             static fn (string $item): string => trim($item),
             explode(',', (string) $validated['keywords']),
-        )));
+        ))));
 
-        $partition = $this->acceptanceRule->partition($keywords, $source);
-        $shouldExecute = (bool) ($validated['execute'] ?? false);
-
-        if (! $shouldExecute) {
+        if (! (bool) ($validated['execute'] ?? false)) {
             return Response::json([
                 'mode' => 'dry_run',
                 'source' => $source,
-                'routing' => [
-                    'seranking' => $partition['accepted'],
-                    'dataforseo_fallback' => $partition['rejected'],
-                ],
+                'keywords' => $keywords,
+                'next_step' => 'Call again with execute=true and a project domain to fetch live metrics.',
             ]);
         }
 
@@ -75,24 +69,73 @@ class LookupKeywordMetricsTool extends Tool
             return Response::error("Project not found for domain [{$normalized}].");
         }
 
+        $locationCode = (int) ($project->location_code ?: 2840);
+        $languageCode = (string) ($project->language_code ?: 'en');
+
         try {
             $result = $this->router->lookupKeywords(
                 $keywords,
                 project: $project,
-                locationCode: (int) ($project->location_code ?: 2840),
-                languageCode: (string) ($project->language_code ?: 'en'),
+                locationCode: $locationCode,
+                languageCode: $languageCode,
                 seRankingSource: $source,
             );
-        } catch (DataForSeoBudgetException|SeRankingBudgetException $e) {
-            return Response::error($e->getMessage());
+        } catch (SpendRefusedException $e) {
+            return Response::error($e->publicMessage());
         }
+
+        $metrics = $this->metrics($result['providers'], $locationCode, $languageCode);
+        $missing = array_values(array_filter(
+            $keywords,
+            static fn (string $keyword): bool => ! isset($metrics[strtolower($keyword)]),
+        ));
 
         return Response::json([
             'mode' => 'live',
             'source' => $source,
             'project' => $project->domain,
-            ...$result,
+            'keywords' => array_values($metrics),
+            'not_found' => $missing,
         ]);
+    }
+
+    /**
+     * One row per keyword in the same shape whichever source answered, so the
+     * response doesn't reveal where the data came from.
+     *
+     * @param  array{seranking: list<array<string, mixed>>, dataforseo: array<string, mixed>}  $providers
+     * @return array<string, array{keyword: string, search_volume: int|null, cpc: float|null, competition: float|null, keyword_difficulty: int|null}>
+     */
+    private function metrics(array $providers, int $locationCode, string $languageCode): array
+    {
+        $metrics = [];
+
+        foreach ($providers['seranking'] as $row) {
+            $keyword = strtolower(trim((string) ($row['keyword'] ?? '')));
+            if ($keyword === '' || ($row['is_data_found'] ?? true) === false) {
+                continue;
+            }
+
+            $metrics[$keyword] = [
+                'keyword' => $keyword,
+                'search_volume' => isset($row['volume']) ? (int) $row['volume'] : null,
+                'cpc' => isset($row['cpc']) ? (float) $row['cpc'] : null,
+                'competition' => isset($row['competition']) ? (float) $row['competition'] : null,
+                'keyword_difficulty' => isset($row['difficulty']) ? (int) $row['difficulty'] : null,
+            ];
+        }
+
+        foreach ($this->keywordResearch->parseOverviewItems($providers['dataforseo'], $locationCode, $languageCode) as $keyword => $row) {
+            $metrics[$keyword] ??= [
+                'keyword' => $keyword,
+                'search_volume' => isset($row['search_volume']) ? (int) $row['search_volume'] : null,
+                'cpc' => isset($row['cpc']) ? (float) $row['cpc'] : null,
+                'competition' => isset($row['competition']) ? (float) $row['competition'] : null,
+                'keyword_difficulty' => isset($row['keyword_difficulty']) ? (int) $row['keyword_difficulty'] : null,
+            ];
+        }
+
+        return $metrics;
     }
 
     /**
@@ -102,14 +145,14 @@ class LookupKeywordMetricsTool extends Tool
     {
         return [
             'keywords' => $schema->string()
-                ->description('Comma-separated keywords to inspect')
+                ->description('Comma-separated keywords to look up')
                 ->required(),
             'source' => $schema->string()
                 ->description('Regional database code (default: us)'),
             'execute' => $schema->boolean()
-                ->description('Set true to execute live provider lookups; defaults to dry-run routing preview'),
+                ->description('Set true to run a live, billed lookup; defaults to a dry run that only echoes the keywords'),
             'domain' => $schema->string()
-                ->description('Project domain whose workspace budget pays for live lookups (required when execute=true)'),
+                ->description('Project domain whose workspace allowance pays for live lookups (required when execute=true)'),
         ];
     }
 }

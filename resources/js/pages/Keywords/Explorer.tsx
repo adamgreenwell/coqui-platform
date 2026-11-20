@@ -691,7 +691,7 @@ export default function KeywordExplorer({
               </span>
             </div>
             <p className="mt-1 text-xs text-slate-400">
-              Interactive keyword research powered by DataForSEO Labs with 30-day cross-project caching and instant Rank Tracker integration for{' '}
+              Interactive keyword research with 30-day cross-project caching and instant Rank Tracker integration for{' '}
               <span className="text-slate-200 font-mono font-medium">{project.domain}</span>.
             </p>
           </div>
@@ -991,7 +991,7 @@ export default function KeywordExplorer({
               <span className="text-[11px] text-slate-500">
                 {summary.cached_count > 0
                   ? `${Math.round((summary.cached_count / summary.total_keywords) * 100)}% served from cache ($0)`
-                  : 'New DataForSEO queries'}
+                  : 'New live queries'}
               </span>
             </div>
 
@@ -1286,7 +1286,7 @@ export default function KeywordExplorer({
                             ) : (
                               <span
                                 className="text-[10px] text-slate-500 font-mono"
-                                title="Fetched live from DataForSEO Labs"
+                                title="Fetched live"
                               >
                                 Live
                               </span>
@@ -1418,7 +1418,7 @@ export default function KeywordExplorer({
                   <span>700-Keyword Batching</span>
                 </div>
                 <p className="text-[11px] text-slate-500">
-                  Bulk analyze up to 700 keywords in a single DataForSEO Labs request at wholesale unit rates.
+                  Bulk analyze up to 700 keywords in a single request.
                 </p>
               </div>
 

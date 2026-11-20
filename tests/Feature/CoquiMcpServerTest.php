@@ -80,7 +80,8 @@ class CoquiMcpServerTest extends TestCase
             ->assertOk()
             ->assertSee('dry_run')
             ->assertSee('seo crawler')
-            ->assertSee('dataforseo_fallback');
+            ->assertDontSee('dataforseo')
+            ->assertDontSee('seranking');
     }
 
     public function test_project_tools_enforce_workspace_authorization(): void
@@ -234,7 +235,11 @@ class CoquiMcpServerTest extends TestCase
             'https://sandbox.dataforseo.com/*' => Http::response([
                 'status_code' => 20000,
                 'cost' => 0.0121,
-                'tasks' => [['status_code' => 20000, 'cost' => 0.0121, 'result' => [['items' => []]]]],
+                'tasks' => [['status_code' => 20000, 'cost' => 0.0121, 'result' => [['items' => [[
+                    'keyword' => 'seo crawler',
+                    'keyword_info' => ['search_volume' => 1900, 'cpc' => 2.5, 'competition' => 0.4],
+                    'keyword_properties' => ['keyword_difficulty' => 41],
+                ]]]]]],
             ], 200),
         ]);
 
@@ -242,9 +247,17 @@ class CoquiMcpServerTest extends TestCase
         $project = $this->makeProject($owner, 'billable.com');
 
         CoquiSeoServer::actingAs($owner)
-            ->tool(LookupKeywordMetricsTool::class, ['keywords' => 'seo crawler', 'execute' => true, 'domain' => 'billable.com'])
+            ->tool(LookupKeywordMetricsTool::class, ['keywords' => 'seo crawler, unknown phrase', 'execute' => true, 'domain' => 'billable.com'])
             ->assertOk()
-            ->assertSee('live');
+            ->assertSee('live')
+            ->assertSee('"search_volume":1900')
+            ->assertSee('"keyword_difficulty":41')
+            ->assertSee('"not_found":["unknown phrase"]')
+            // Metrics come back in one neutral shape, not a provider's raw payload.
+            ->assertDontSee('"tasks"')
+            ->assertDontSee('"cost"')
+            ->assertDontSee('dataforseo')
+            ->assertDontSee('seranking');
 
         $this->assertDatabaseHas('dataforseo_spend_ledger', ['workspace_id' => $project->workspace_id]);
     }
