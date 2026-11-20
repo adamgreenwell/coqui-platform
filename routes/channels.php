@@ -6,13 +6,16 @@ use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
 use App\Models\User;
 use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Str;
 
-Broadcast::channel('project.{projectId}', function (?User $user, int|string $projectId): bool {
-    if ($user === null) {
+// Channels are keyed by public UUIDs, matching the route keys, so the browser
+// never handles sequential IDs. Unknown or non-UUID keys are simply refused.
+Broadcast::channel('project.{projectUuid}', function (?User $user, string $projectUuid): bool {
+    if ($user === null || ! Str::isUuid($projectUuid)) {
         return false;
     }
 
-    $project = Project::query()->find((int) $projectId);
+    $project = Project::query()->where('uuid', $projectUuid)->first();
     if ($project === null) {
         return false;
     }
@@ -20,12 +23,12 @@ Broadcast::channel('project.{projectId}', function (?User $user, int|string $pro
     return (bool) $user->can('view', $project);
 });
 
-Broadcast::channel('workspace.{workspaceId}', function (?User $user, int|string $workspaceId): bool {
-    if ($user === null) {
+Broadcast::channel('workspace.{workspaceUuid}', function (?User $user, string $workspaceUuid): bool {
+    if ($user === null || ! Str::isUuid($workspaceUuid)) {
         return false;
     }
 
-    $workspace = Workspace::query()->find((int) $workspaceId);
+    $workspace = Workspace::query()->where('uuid', $workspaceUuid)->first();
     if ($workspace === null) {
         return false;
     }

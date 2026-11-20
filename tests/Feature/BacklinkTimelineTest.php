@@ -149,7 +149,7 @@ class BacklinkTimelineTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/backlinks?days=90");
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks?days=90");
 
         $response->assertOk();
         $response->assertInertia(fn ($page) => $page
@@ -218,7 +218,7 @@ class BacklinkTimelineTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/backlinks?days=30");
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks?days=30");
 
         $response->assertOk();
         $response->assertInertia(fn ($page) => $page
@@ -276,7 +276,7 @@ class BacklinkTimelineTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/backlinks");
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks");
 
         $response->assertOk();
         $response->assertInertia(fn ($page) => $page
@@ -378,7 +378,7 @@ class BacklinkTimelineTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/backlinks");
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks");
 
         $response->assertOk();
         $response->assertInertia(fn ($page) => $page

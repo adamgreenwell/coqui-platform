@@ -12,6 +12,7 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -30,7 +31,7 @@ class CrawlCompareController extends Controller
             ->limit(30)
             ->get(['id', 'external_crawl_id', 'source', 'status', 'total_urls', 'error_count', 'warning_count', 'created_at', 'finalized_at'])
             ->map(fn (CrawlRun $r): array => [
-                'id' => $r->id,
+                'id' => $r->external_crawl_id,
                 'externalCrawlId' => $r->external_crawl_id,
                 'source' => $r->source,
                 'status' => $r->status,
@@ -39,7 +40,7 @@ class CrawlCompareController extends Controller
                 'warningCount' => $r->warning_count,
                 'createdAt' => $r->created_at?->toIso8601String(),
                 'finalizedAt' => $r->finalized_at?->toIso8601String(),
-                'label' => sprintf('#%d (%s) - %s URLs', $r->id, $r->created_at?->format('M j, Y H:i') ?? '', number_format($r->total_urls)),
+                'label' => sprintf('%s (%s) - %s URLs', $r->created_at?->format('M j, Y H:i') ?? 'Crawl', ucfirst(str_replace('_', ' ', $r->source)), number_format($r->total_urls)),
             ])
             ->all();
 
@@ -52,23 +53,9 @@ class CrawlCompareController extends Controller
         $targetRun = null;
 
         if ($baselineParam !== null && $targetParam !== null) {
-            $baselineRun = $project->crawlRuns()
-                ->where(function ($q) use ($baselineParam): void {
-                    $q->where('external_crawl_id', $baselineParam);
-                    if (ctype_digit((string) $baselineParam)) {
-                        $q->orWhere('id', (int) $baselineParam);
-                    }
-                })
-                ->first();
-
-            $targetRun = $project->crawlRuns()
-                ->where(function ($q) use ($targetParam): void {
-                    $q->where('external_crawl_id', $targetParam);
-                    if (ctype_digit((string) $targetParam)) {
-                        $q->orWhere('id', (int) $targetParam);
-                    }
-                })
-                ->first();
+            // Runs are addressed by their external UUID only; sequential IDs match nothing.
+            $baselineRun = $this->findRun($project, $baselineParam);
+            $targetRun = $this->findRun($project, $targetParam);
         } elseif (count($availableRuns) >= 2) {
             // Default target is latest run, baseline is previous run
             $targetRun = $project->crawlRuns()->latest('id')->first();
@@ -84,18 +71,18 @@ class CrawlCompareController extends Controller
 
         return Inertia::render('Crawls/Compare', [
             'workspace' => [
-                'id' => $workspace->id,
+                'id' => $workspace->uuid,
                 'name' => $workspace->name,
                 'slug' => $workspace->slug,
             ],
             'project' => [
-                'id' => $project->id,
+                'id' => $project->uuid,
                 'name' => $project->name,
                 'domain' => $project->domain,
             ],
             'availableRuns' => $availableRuns,
-            'selectedBaselineId' => $baselineRun?->id,
-            'selectedTargetId' => $targetRun?->id,
+            'selectedBaselineId' => $baselineRun?->external_crawl_id,
+            'selectedTargetId' => $targetRun?->external_crawl_id,
             'diff' => $diff,
             'isReadOnly' => false,
         ]);
@@ -107,16 +94,14 @@ class CrawlCompareController extends Controller
 
         /** @var array<string, mixed> $validated */
         $validated = $request->validate([
-            'baseline_id' => ['required', 'integer'],
-            'target_id' => ['required', 'integer'],
+            'baseline_id' => ['required', 'uuid'],
+            'target_id' => ['required', 'uuid'],
             'title' => ['nullable', 'string', 'max:255'],
             'expires_in_days' => ['nullable', 'integer', 'in:7,30,90'],
         ]);
 
-        /** @var CrawlRun $baselineRun */
-        $baselineRun = $project->crawlRuns()->findOrFail((int) $validated['baseline_id']);
-        /** @var CrawlRun $targetRun */
-        $targetRun = $project->crawlRuns()->findOrFail((int) $validated['target_id']);
+        $baselineRun = $this->findRun($project, $validated['baseline_id']) ?? abort(404);
+        $targetRun = $this->findRun($project, $validated['target_id']) ?? abort(404);
 
         /** @var User|null $user */
         $user = $request->user();
@@ -140,5 +125,15 @@ class CrawlCompareController extends Controller
             'shareUrl' => $shareUrl,
             'expiresAt' => $report->expires_at?->toIso8601String(),
         ], 201);
+    }
+
+    private function findRun(Project $project, mixed $externalCrawlId): ?CrawlRun
+    {
+        if (! is_string($externalCrawlId) || ! Str::isUuid($externalCrawlId)) {
+            return null;
+        }
+
+        /** @var CrawlRun|null */
+        return $project->crawlRuns()->where('external_crawl_id', $externalCrawlId)->first();
     }
 }

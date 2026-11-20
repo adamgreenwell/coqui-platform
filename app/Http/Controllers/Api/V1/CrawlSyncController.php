@@ -15,6 +15,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 
 class CrawlSyncController extends Controller
 {
@@ -36,25 +37,8 @@ class CrawlSyncController extends Controller
             ], 422);
         }
 
-        /** @var CrawlRun $baselineRun */
-        $baselineRun = $project->crawlRuns()
-            ->where(function ($q) use ($baselineParam): void {
-                $q->where('external_crawl_id', $baselineParam);
-                if (ctype_digit((string) $baselineParam)) {
-                    $q->orWhere('id', (int) $baselineParam);
-                }
-            })
-            ->firstOrFail();
-
-        /** @var CrawlRun $targetRun */
-        $targetRun = $project->crawlRuns()
-            ->where(function ($q) use ($targetParam): void {
-                $q->where('external_crawl_id', $targetParam);
-                if (ctype_digit((string) $targetParam)) {
-                    $q->orWhere('id', (int) $targetParam);
-                }
-            })
-            ->firstOrFail();
+        $baselineRun = $this->findRun($project, $baselineParam);
+        $targetRun = $this->findRun($project, $targetParam);
 
         $diff = $this->diffService->compare($baselineRun, $targetRun);
 
@@ -82,7 +66,7 @@ class CrawlSyncController extends Controller
         $paginator = $query->paginate($perPage);
 
         $runs = $paginator->getCollection()->map(fn (CrawlRun $r): array => [
-            'id' => $r->id,
+            'id' => $r->external_crawl_id,
             'externalCrawlId' => $r->external_crawl_id,
             'source' => $r->source,
             'seed' => $r->seed,
@@ -115,15 +99,7 @@ class CrawlSyncController extends Controller
     {
         Gate::authorize('view', $project);
 
-        /** @var CrawlRun $run */
-        $run = $project->crawlRuns()
-            ->where(function ($q) use ($crawlId): void {
-                $q->where('external_crawl_id', $crawlId);
-                if (ctype_digit($crawlId)) {
-                    $q->orWhere('id', (int) $crawlId);
-                }
-            })
-            ->firstOrFail();
+        $run = $this->findRun($project, $crawlId);
 
         $issueSummary = DB::table('crawl_issues')
             ->select('severity', 'rule', DB::raw('count(*) as count'))
@@ -139,9 +115,9 @@ class CrawlSyncController extends Controller
             ->all();
 
         return response()->json([
-            'id' => $run->id,
+            'id' => $run->external_crawl_id,
             'externalCrawlId' => $run->external_crawl_id,
-            'projectId' => $run->project_id,
+            'projectId' => $project->uuid,
             'source' => $run->source,
             'seed' => $run->seed,
             'seedKind' => $run->seed_kind,
@@ -187,7 +163,7 @@ class CrawlSyncController extends Controller
         }
 
         return response()->json([
-            'id' => $run->id,
+            'id' => $run->external_crawl_id,
             'externalCrawlId' => $run->external_crawl_id,
             'status' => $run->status,
         ], 201);
@@ -197,10 +173,7 @@ class CrawlSyncController extends Controller
     {
         Gate::authorize('update', $project);
 
-        $run = $project->crawlRuns()
-            ->where('external_crawl_id', $crawlId)
-            ->where('source', IngestDesktopCrawlSnapshot::DESKTOP_SOURCE)
-            ->firstOrFail();
+        $run = $this->findRun($project, $crawlId, IngestDesktopCrawlSnapshot::DESKTOP_SOURCE);
 
         /** @var array<string, mixed> $validated */
         $validated = $request->validate(CrawlSyncPayload::chunkRules());
@@ -224,10 +197,7 @@ class CrawlSyncController extends Controller
     {
         Gate::authorize('update', $project);
 
-        $run = $project->crawlRuns()
-            ->where('external_crawl_id', $crawlId)
-            ->where('source', IngestDesktopCrawlSnapshot::DESKTOP_SOURCE)
-            ->firstOrFail();
+        $run = $this->findRun($project, $crawlId, IngestDesktopCrawlSnapshot::DESKTOP_SOURCE);
 
         $validated = $request->validate([
             'status' => ['nullable', 'in:completed,paused,failed,cancelled'],
@@ -243,5 +213,23 @@ class CrawlSyncController extends Controller
             'warnings' => $finalized->warning_count,
             'opportunities' => $finalized->opportunity_count,
         ]);
+    }
+
+    /**
+     * Crawl runs are addressed only by their external UUID. Anything else,
+     * including a sequential run ID, is a 404 (and never reaches a Postgres
+     * uuid comparison that would reject the input).
+     */
+    private function findRun(Project $project, mixed $crawlId, ?string $source = null): CrawlRun
+    {
+        if (! is_string($crawlId) || ! Str::isUuid($crawlId)) {
+            abort(404);
+        }
+
+        /** @var CrawlRun */
+        return $project->crawlRuns()
+            ->where('external_crawl_id', $crawlId)
+            ->when($source !== null, fn ($q) => $q->where('source', $source))
+            ->firstOrFail();
     }
 }

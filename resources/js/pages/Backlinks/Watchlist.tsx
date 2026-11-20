@@ -28,14 +28,14 @@ import { type FormEvent, useMemo, useState } from 'react';
 import AppLayout, { type WorkspaceSummary } from '../../layouts/AppLayout';
 
 interface ProjectDetails {
-  id: number;
+  id: string;
   name: string;
   domain: string;
   canonicalUrl: string;
 }
 
 interface MonitoredBacklinkItem {
-  id: number;
+  id: string;
   source_url: string;
   target_url: string;
   expected_anchor: string | null;
@@ -93,7 +93,7 @@ export default function BacklinkWatchlist({
   const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'lost' | 'rel_changed' | 'error'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [verifyingAll, setVerifyingAll] = useState(false);
-  const [verifyingId, setVerifyingId] = useState<number | null>(null);
+  const [verifyingId, setVerifyingId] = useState<string | null>(null);
   const [importingDfs, setImportingDfs] = useState(false);
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [csvModalOpen, setCsvModalOpen] = useState(false);
@@ -127,7 +127,7 @@ export default function BacklinkWatchlist({
     );
   };
 
-  const handleVerifySingle = (linkId: number) => {
+  const handleVerifySingle = (linkId: string) => {
     setVerifyingId(linkId);
     router.post(
       `/workspaces/${workspace.id}/projects/${project.id}/backlinks/watchlist/${linkId}/verify`,

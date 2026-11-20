@@ -15,6 +15,7 @@ Because `coqui-core` serializes every struct with `#[serde(rename_all = "camelCa
   - `projects:read`: Discover workspaces and list projects for targeting.
   - `projects:write`: Register new projects directly from Coqui Desktop.
 - **Scoping & RBAC:** Every project route resolves the target `Project` and validates workspace membership (`view` or `update` policy via Laravel Gate).
+- **Identifiers:** Every `id` the API returns for users, workspaces and projects is an opaque UUID string, and `{project}` in a URL is that UUID. Crawl runs are identified by their `externalCrawlId` (also returned as `id`), so `{crawlId}` is always that UUID. Sequential database IDs are never accepted (they return `404`) and never returned. The `workspace_id` filter on `GET /api/v1/projects` and `workspaceId` on `POST /api/v1/projects` take the workspace UUID.
 
 ---
 

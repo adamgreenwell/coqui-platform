@@ -68,7 +68,7 @@ class BacklinkWatchlistTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/backlinks/watchlist");
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks/watchlist");
 
         $response->assertOk();
         $response->assertInertia(fn ($page) => $page
@@ -91,7 +91,7 @@ class BacklinkWatchlistTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->post("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/backlinks/watchlist", [
+            ->post("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks/watchlist", [
                 'source_url' => 'https://venturebeat.com/ai-seo',
                 'target_url' => 'https://coquiseo.com/',
                 'expected_anchor' => 'Coqui',
@@ -177,7 +177,7 @@ class BacklinkWatchlistTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->post("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/backlinks/watchlist/verify");
+            ->post("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks/watchlist/verify");
 
         $response->assertRedirect(route('workspaces.projects.backlinks.watchlist.index', [$this->workspace, $this->project]));
 
@@ -211,7 +211,7 @@ class BacklinkWatchlistTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->post("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/backlinks/watchlist/{$link->id}/verify");
+            ->post("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks/watchlist/{$link->uuid}/verify");
 
         $response->assertRedirect(route('workspaces.projects.backlinks.watchlist.index', [$this->workspace, $this->project]));
 
@@ -258,7 +258,7 @@ class BacklinkWatchlistTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->post("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/backlinks/watchlist/import-dfs");
+            ->post("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks/watchlist/import-dfs");
 
         $response->assertRedirect(route('workspaces.projects.backlinks.watchlist.index', [$this->workspace, $this->project]));
 
@@ -287,7 +287,7 @@ CSV;
         $file = UploadedFile::fake()->createWithContent('backlinks.csv', $csvContent);
 
         $response = $this->actingAs($this->user)
-            ->post("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/backlinks/watchlist/import-csv", [
+            ->post("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks/watchlist/import-csv", [
                 'csv_file' => $file,
             ]);
 
@@ -319,7 +319,7 @@ CSV;
         ]);
 
         $response = $this->actingAs($this->user)
-            ->delete("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/backlinks/watchlist/{$link->id}");
+            ->delete("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks/watchlist/{$link->uuid}");
 
         $response->assertRedirect(route('workspaces.projects.backlinks.watchlist.index', [$this->workspace, $this->project]));
 

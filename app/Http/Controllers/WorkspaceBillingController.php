@@ -47,7 +47,7 @@ class WorkspaceBillingController extends Controller
 
         return Inertia::render('Workspaces/Billing', [
             'workspace' => [
-                'id' => $workspace->id,
+                'id' => $workspace->uuid,
                 'name' => $workspace->name,
                 'slug' => $workspace->slug,
                 'plan_tier' => $workspace->plan_tier,

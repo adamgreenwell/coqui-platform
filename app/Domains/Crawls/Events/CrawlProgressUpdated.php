@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domains\Crawls\Events;
 
+use App\Domains\Projects\Models\Project;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
@@ -33,7 +34,7 @@ class CrawlProgressUpdated implements ShouldBroadcastNow
     public function broadcastOn(): array
     {
         return [
-            new PrivateChannel('project.'.$this->projectId),
+            new PrivateChannel(Project::broadcastChannelName($this->projectId)),
         ];
     }
 

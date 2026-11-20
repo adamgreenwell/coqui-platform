@@ -483,7 +483,7 @@ class RunnrDeployWebhookTest extends TestCase
             ],
         ]);
 
-        $response = $this->getJson("/api/v1/projects/{$this->project->id}/deploy-smoke/latest");
+        $response = $this->getJson("/api/v1/projects/{$this->project->uuid}/deploy-smoke/latest");
         $response->assertOk()
             ->assertJson([
                 'projectId' => $this->project->id,
@@ -499,7 +499,7 @@ class RunnrDeployWebhookTest extends TestCase
     public function test_can_connect_and_disconnect_runnr_integration_via_web(): void
     {
         $this->actingAs($this->user)
-            ->post("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/integrations/runnr/connect", [
+            ->post("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/integrations/runnr/connect", [
                 'runnr_site_id' => 'site_runnr_new_999',
             ])
             ->assertRedirect();
@@ -514,7 +514,7 @@ class RunnrDeployWebhookTest extends TestCase
         ]);
 
         $this->actingAs($this->user)
-            ->delete("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/integrations/runnr/disconnect")
+            ->delete("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/integrations/runnr/disconnect")
             ->assertRedirect();
 
         $this->project->refresh();

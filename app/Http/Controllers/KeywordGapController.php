@@ -30,7 +30,7 @@ class KeywordGapController extends Controller
 
         $competitors = $project->competitors()
             ->orderBy('sort_order')
-            ->get(['id', 'domain', 'label', 'sort_order']);
+            ->get(['id', 'uuid', 'domain', 'label', 'sort_order']);
 
         /** @var list<string> $trackedKeywords */
         $trackedKeywords = $project->trackedKeywords()
@@ -50,7 +50,7 @@ class KeywordGapController extends Controller
         return Inertia::render('Keywords/Gap', [
             'workspace' => $workspace->only(['id', 'name', 'slug']),
             'project' => [
-                'id' => $project->id,
+                'id' => $project->uuid,
                 'name' => $project->name,
                 'domain' => $project->domain,
                 'canonical_url' => $project->canonical_url,

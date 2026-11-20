@@ -67,7 +67,7 @@ class ReadOnlyMemberPaidLookupTest extends TestCase
 
     private function url(string $path): string
     {
-        return "/workspaces/{$this->workspace->id}/projects/{$this->project->id}/{$path}";
+        return "/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/{$path}";
     }
 
     private function cacheKeyword(string $keyword): void

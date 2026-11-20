@@ -35,7 +35,7 @@ import { getEcho } from '../../echo';
 import AppLayout, { type WorkspaceSummary } from '../../layouts/AppLayout';
 
 interface ProjectDetails {
-  id: number;
+  id: string;
   name: string;
   domain: string;
   canonical_url: string;
@@ -44,7 +44,7 @@ interface ProjectDetails {
 }
 
 interface CompetitorItem {
-  id: number;
+  id: string;
   domain: string;
   label?: string | null;
   sort_order: number;
@@ -65,7 +65,7 @@ interface SearchPerformanceOverlay {
 }
 
 interface TrackedKeywordItem {
-  id: number;
+  id: string;
   keyword: string;
   device: string;
   location_code: number;

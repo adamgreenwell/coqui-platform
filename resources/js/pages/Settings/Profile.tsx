@@ -5,7 +5,7 @@ import AppLayout from '../../layouts/AppLayout';
 interface PageProps {
   auth: {
     user: {
-      id: number;
+      id: string;
       name: string;
       email: string;
     };

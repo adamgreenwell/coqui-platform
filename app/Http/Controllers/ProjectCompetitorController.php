@@ -84,15 +84,15 @@ class ProjectCompetitorController extends Controller
 
         $validated = $request->validate([
             'order' => ['required', 'array'],
-            'order.*' => ['integer'],
+            'order.*' => ['uuid'],
         ]);
 
-        /** @var list<int> $order */
-        $order = (array) $validated['order'];
+        /** @var list<string> $order */
+        $order = array_values((array) $validated['order']);
 
-        foreach ($order as $index => $competitorId) {
+        foreach ($order as $index => $competitorUuid) {
             $project->competitors()
-                ->where('id', $competitorId)
+                ->where('uuid', $competitorUuid)
                 ->update(['sort_order' => $index + 1]);
         }
 

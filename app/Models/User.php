@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Models;
 
 use App\Domains\Projects\Models\Workspace;
+use App\Models\Concerns\HasPublicUuid;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
@@ -16,6 +17,7 @@ use Laravel\Sanctum\HasApiTokens;
 
 /**
  * @property int $id
+ * @property string $uuid
  * @property string $name
  * @property string $email
  * @property string $password
@@ -25,7 +27,7 @@ use Laravel\Sanctum\HasApiTokens;
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasApiTokens, HasFactory, Notifiable;
+    use HasApiTokens, HasFactory, HasPublicUuid, Notifiable;
 
     /** @var list<string> */
     protected $fillable = [

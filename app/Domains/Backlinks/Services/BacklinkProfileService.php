@@ -454,7 +454,7 @@ class BacklinkProfileService
         usort($brokenPages, fn ($a, $b) => ($b['backlinks'] <=> $a['backlinks']) ?: ($b['rank'] <=> $a['rank']));
 
         $crawlRunSummary = $latestCrawl !== null ? [
-            'id' => (string) $latestCrawl->id,
+            'id' => $latestCrawl->external_crawl_id,
             'status' => $latestCrawl->status,
             'finished_at' => $latestCrawl->finalized_at?->toIso8601String(),
             'total_urls' => $latestCrawl->total_urls,

@@ -37,12 +37,12 @@ class TrafficAttributionController extends Controller
 
         return Inertia::render('Analytics/Performance', [
             'workspace' => [
-                'id' => $workspace->id,
+                'id' => $workspace->uuid,
                 'name' => $workspace->name,
                 'slug' => $workspace->slug,
             ],
             'project' => [
-                'id' => $project->id,
+                'id' => $project->uuid,
                 'name' => $project->name,
                 'domain' => $project->domain,
                 'canonical_url' => $project->canonical_url,
@@ -53,13 +53,13 @@ class TrafficAttributionController extends Controller
             'pages' => $report['pages'],
             'integrations' => [
                 'ga4' => $ga4 !== null ? [
-                    'id' => $ga4->id,
+                    'id' => $ga4->uuid,
                     'status' => $ga4->status,
                     'propertyId' => $ga4->external_identifier,
                     'lastSyncedAt' => $ga4->last_synced_at instanceof CarbonInterface ? $ga4->last_synced_at->toIso8601String() : null,
                 ] : null,
                 'plausible' => $plausible !== null ? [
-                    'id' => $plausible->id,
+                    'id' => $plausible->uuid,
                     'status' => $plausible->status,
                     'siteId' => $plausible->external_identifier,
                     'lastSyncedAt' => $plausible->last_synced_at instanceof CarbonInterface ? $plausible->last_synced_at->toIso8601String() : null,

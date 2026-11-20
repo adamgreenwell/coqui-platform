@@ -60,7 +60,7 @@ class TrafficAttributionTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->post("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/integrations/ga4/connect", [
+            ->post("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/integrations/ga4/connect", [
                 'property_id' => 'properties/987654321',
                 'api_key' => 'ga4-test-secret',
             ]);
@@ -83,7 +83,7 @@ class TrafficAttributionTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->post("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/integrations/plausible/connect", [
+            ->post("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/integrations/plausible/connect", [
                 'site_id' => 'trafficsite.com',
                 'api_key' => 'plausible-test-token',
             ]);
@@ -352,7 +352,7 @@ class TrafficAttributionTest extends TestCase
     public function test_performance_web_route_renders_inertia_view_with_report(): void
     {
         $response = $this->actingAs($this->user)
-            ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/analytics/performance?days=30");
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/analytics/performance?days=30");
 
         $response->assertStatus(200);
         $response->assertInertia(fn (Assert $page) => $page
@@ -383,7 +383,7 @@ class TrafficAttributionTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->post("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/analytics/sync");
+            ->post("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/analytics/sync");
 
         $response->assertRedirect();
         $response->assertSessionHas('success');
@@ -399,7 +399,7 @@ class TrafficAttributionTest extends TestCase
         ]);
 
         $response = $this->actingAs($this->user)
-            ->delete("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/integrations/{$ga4->id}");
+            ->delete("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/integrations/{$ga4->uuid}");
 
         $response->assertRedirect();
         $response->assertSessionHas('success', 'Google Analytics 4 disconnected.');

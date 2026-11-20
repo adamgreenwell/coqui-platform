@@ -317,7 +317,7 @@ class CoquiWorkerJobBridgeTest extends TestCase
         Queue::fake();
 
         $response = $this->actingAs($this->user)->post(
-            "/workspaces/{$this->workspace->id}/projects/{$this->project->id}/crawls/dispatch",
+            "/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/crawls/dispatch",
             ['max_urls' => 500]
         );
 
@@ -334,7 +334,7 @@ class CoquiWorkerJobBridgeTest extends TestCase
 
         // Second attempt while first is pending returns 409 JSON or redirect with error
         $secondResponse = $this->actingAs($this->user)->postJson(
-            "/workspaces/{$this->workspace->id}/projects/{$this->project->id}/crawls/dispatch"
+            "/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/crawls/dispatch"
         );
 
         $secondResponse->assertStatus(409)

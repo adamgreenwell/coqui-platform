@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domains\Projects\Events;
 
+use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
@@ -25,7 +26,7 @@ class ProjectActivityLogged implements ShouldBroadcastNow
     public function broadcastOn(): array
     {
         return [
-            new PrivateChannel('project.'.$this->activity->project_id),
+            new PrivateChannel(Project::broadcastChannelName($this->activity->project_id)),
         ];
     }
 

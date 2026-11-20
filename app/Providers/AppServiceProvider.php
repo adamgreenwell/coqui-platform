@@ -6,11 +6,13 @@ namespace App\Providers;
 
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
+use App\Models\PersonalAccessToken;
 use App\Policies\ProjectPolicy;
 use App\Policies\WorkspacePolicy;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 use Laravel\Pennant\Feature;
+use Laravel\Sanctum\Sanctum;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -23,6 +25,8 @@ class AppServiceProvider extends ServiceProvider
     {
         Gate::policy(Project::class, ProjectPolicy::class);
         Gate::policy(Workspace::class, WorkspacePolicy::class);
+
+        Sanctum::usePersonalAccessTokenModel(PersonalAccessToken::class);
 
         // Laravel Pennant Plan Tier Feature Gating
         Feature::define('content-briefs', fn (Workspace $workspace): bool => in_array($workspace->plan_tier, ['pro', 'agency'], true));

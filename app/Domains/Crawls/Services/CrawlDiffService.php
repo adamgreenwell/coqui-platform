@@ -289,7 +289,7 @@ class CrawlDiffService
         return [
             'summary' => [
                 'baseline' => [
-                    'id' => $baselineRun->id,
+                    'id' => $baselineRun->external_crawl_id,
                     'externalCrawlId' => $baselineRun->external_crawl_id,
                     'seed' => $baselineRun->seed,
                     'source' => $baselineRun->source,
@@ -302,7 +302,7 @@ class CrawlDiffService
                     'finalizedAt' => $baselineRun->finalized_at?->toIso8601String(),
                 ],
                 'target' => [
-                    'id' => $targetRun->id,
+                    'id' => $targetRun->external_crawl_id,
                     'externalCrawlId' => $targetRun->external_crawl_id,
                     'seed' => $targetRun->seed,
                     'source' => $targetRun->source,

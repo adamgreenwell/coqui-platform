@@ -239,7 +239,7 @@ class BotTelemetryTest extends TestCase
             ],
         ]);
 
-        $response = $this->getJson("/api/v1/projects/{$this->project->id}/telemetry/bot-logs?days=7");
+        $response = $this->getJson("/api/v1/projects/{$this->project->uuid}/telemetry/bot-logs?days=7");
 
         $response->assertOk()
             ->assertJsonPath('projectId', $this->project->id)
@@ -268,7 +268,7 @@ class BotTelemetryTest extends TestCase
         ]);
 
         $this->actingAs($this->user)
-            ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/bot-logs")
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/bot-logs")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Projects/BotLogs')
@@ -283,7 +283,7 @@ class BotTelemetryTest extends TestCase
     public function test_remediate_404_creates_redirect_activity(): void
     {
         $this->actingAs($this->user)
-            ->post("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/bot-logs/remediate", [
+            ->post("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/bot-logs/remediate", [
                 'source_path' => '/legacy-article',
                 'target_path' => '/articles/modern-guide',
             ])
@@ -301,11 +301,11 @@ class BotTelemetryTest extends TestCase
         $outsider = User::factory()->create();
 
         $this->actingAs($outsider)
-            ->get("/workspaces/{$this->workspace->id}/projects/{$this->project->id}/bot-logs")
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/bot-logs")
             ->assertForbidden();
 
         Sanctum::actingAs($outsider, ['projects:read']);
-        $this->getJson("/api/v1/projects/{$this->project->id}/telemetry/bot-logs")
+        $this->getJson("/api/v1/projects/{$this->project->uuid}/telemetry/bot-logs")
             ->assertForbidden();
     }
 }

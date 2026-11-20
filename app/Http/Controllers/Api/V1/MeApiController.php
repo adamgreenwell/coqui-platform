@@ -21,7 +21,7 @@ class MeApiController extends Controller
             ->where('owner_id', $user->id)
             ->orWhereHas('members', fn ($q) => $q->where('users.id', $user->id))
             ->orderBy('name')
-            ->get(['id', 'name', 'slug', 'plan_tier', 'owner_id'])
+            ->get(['id', 'uuid', 'name', 'slug', 'plan_tier', 'owner_id'])
             ->map(function (Workspace $ws) use ($user): array {
                 $role = 'viewer';
                 if ($ws->owner_id === $user->id) {
@@ -35,7 +35,7 @@ class MeApiController extends Controller
                 }
 
                 return [
-                    'id' => $ws->id,
+                    'id' => $ws->uuid,
                     'name' => $ws->name,
                     'slug' => $ws->slug,
                     'planTier' => $ws->plan_tier,
@@ -46,7 +46,7 @@ class MeApiController extends Controller
 
         return response()->json([
             'user' => [
-                'id' => $user->id,
+                'id' => $user->uuid,
                 'name' => $user->name,
                 'email' => $user->email,
             ],

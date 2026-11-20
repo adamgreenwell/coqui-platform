@@ -29,7 +29,7 @@ class ProjectController extends Controller
 
         return Inertia::render('Projects/Create', [
             'workspace' => [
-                'id' => $workspace->id,
+                'id' => $workspace->uuid,
                 'name' => $workspace->name,
                 'slug' => $workspace->slug,
             ],
@@ -200,7 +200,7 @@ class ProjectController extends Controller
             $smokeDeploy = is_array($smokeConfig['deploy'] ?? null) ? $smokeConfig['deploy'] : null;
 
             $deploySmoke = [
-                'id' => $latestSmoke->id,
+                'id' => $latestSmoke->external_crawl_id,
                 'externalCrawlId' => $latestSmoke->external_crawl_id,
                 'status' => $latestSmoke->status,
                 'passed' => $smokeResults['passed'] ?? ($latestSmoke->status === 'completed' && $latestSmoke->error_count === 0),
@@ -214,12 +214,12 @@ class ProjectController extends Controller
             ];
         }
 
-        /** @var list<array{id: int, domain: string, label: string|null, sort_order: int}> $competitors */
+        /** @var list<array{id: string, domain: string, label: string|null, sort_order: int}> $competitors */
         $competitors = $project->competitors()
             ->orderBy('sort_order')
-            ->get(['id', 'domain', 'label', 'sort_order'])
+            ->get(['id', 'uuid', 'domain', 'label', 'sort_order'])
             ->map(fn (ProjectCompetitor $c): array => [
-                'id' => $c->id,
+                'id' => $c->uuid,
                 'domain' => $c->domain,
                 'label' => $c->label,
                 'sort_order' => $c->sort_order,
@@ -245,12 +245,12 @@ class ProjectController extends Controller
 
         return Inertia::render('Projects/Show', [
             'workspace' => [
-                'id' => $workspace->id,
+                'id' => $workspace->uuid,
                 'name' => $workspace->name,
                 'slug' => $workspace->slug,
             ],
             'project' => [
-                'id' => $project->id,
+                'id' => $project->uuid,
                 'name' => $project->name,
                 'domain' => $project->domain,
                 'canonical_url' => $project->canonical_url,
@@ -262,7 +262,7 @@ class ProjectController extends Controller
                 'created_at' => $project->created_at?->toIso8601String(),
             ],
             'latestCrawl' => $latestCrawl !== null ? [
-                'id' => $latestCrawl->id,
+                'id' => $latestCrawl->external_crawl_id,
                 'externalCrawlId' => $latestCrawl->external_crawl_id,
                 'status' => $latestCrawl->status,
                 'source' => $latestCrawl->source,
@@ -277,10 +277,10 @@ class ProjectController extends Controller
             'monitoredBacklinksCount' => $project->monitoredBacklinks()->count(),
             'competitors' => $competitors,
             'integrations' => $project->integrations()
-                ->select(['id', 'provider', 'site_url', 'external_identifier', 'status', 'last_synced_at'])
+                ->select(['id', 'uuid', 'provider', 'site_url', 'external_identifier', 'status', 'last_synced_at'])
                 ->get()
                 ->map(fn (ProjectIntegration $i): array => [
-                    'id' => $i->id,
+                    'id' => $i->uuid,
                     'provider' => $i->provider,
                     'site_url' => $i->site_url,
                     'status' => $i->status,
@@ -301,12 +301,12 @@ class ProjectController extends Controller
         abort_if($project->workspace_id !== $workspace->id, 404);
         Gate::authorize('update', $project);
 
-        /** @var list<array{id: int, domain: string, label: string|null, sort_order: int}> $competitors */
+        /** @var list<array{id: string, domain: string, label: string|null, sort_order: int}> $competitors */
         $competitors = $project->competitors()
             ->orderBy('sort_order')
-            ->get(['id', 'domain', 'label', 'sort_order'])
+            ->get(['id', 'uuid', 'domain', 'label', 'sort_order'])
             ->map(fn (ProjectCompetitor $c): array => [
-                'id' => $c->id,
+                'id' => $c->uuid,
                 'domain' => $c->domain,
                 'label' => $c->label,
                 'sort_order' => $c->sort_order,
@@ -315,12 +315,12 @@ class ProjectController extends Controller
 
         return Inertia::render('Projects/Settings', [
             'workspace' => [
-                'id' => $workspace->id,
+                'id' => $workspace->uuid,
                 'name' => $workspace->name,
                 'slug' => $workspace->slug,
             ],
             'project' => [
-                'id' => $project->id,
+                'id' => $project->uuid,
                 'name' => $project->name,
                 'domain' => $project->domain,
                 'canonical_url' => $project->canonical_url,

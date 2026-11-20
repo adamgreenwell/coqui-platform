@@ -15,6 +15,7 @@ use App\Domains\Integrations\Models\SearchPerformancePage;
 use App\Domains\Integrations\Models\SearchPerformanceQuery;
 use App\Domains\Serp\Models\ContentBrief;
 use App\Domains\Serp\Models\TrackedKeyword;
+use App\Models\Concerns\HasPublicUuid;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -25,6 +26,7 @@ use Illuminate\Support\Str;
 
 /**
  * @property int $id
+ * @property string $uuid
  * @property int $workspace_id
  * @property string $name
  * @property string $domain
@@ -42,6 +44,7 @@ use Illuminate\Support\Str;
  */
 class Project extends Model
 {
+    use HasPublicUuid;
     use SoftDeletes;
 
     /**
@@ -54,6 +57,17 @@ class Project extends Model
         }
 
         return (string) $this->deploy_badge_token;
+    }
+
+    /**
+     * Private broadcast channel for a project, keyed by its public UUID so the
+     * browser never needs the sequential project ID to subscribe.
+     */
+    public static function broadcastChannelName(int $projectId): string
+    {
+        $uuid = static::query()->withTrashed()->whereKey($projectId)->value('uuid');
+
+        return 'project.'.(is_string($uuid) ? $uuid : 'unknown');
     }
 
     /** @var list<string> */

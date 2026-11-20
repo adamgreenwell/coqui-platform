@@ -14,7 +14,7 @@ import {
 import { type ReactNode, useState } from 'react';
 
 export interface WorkspaceSummary {
-  id: number;
+  id: string;
   name: string;
   slug: string;
   plan_tier?: string;
@@ -24,7 +24,7 @@ export interface WorkspaceSummary {
 interface PageProps {
   auth?: {
     user: {
-      id: number;
+      id: string;
       name: string;
       email: string;
     } | null;

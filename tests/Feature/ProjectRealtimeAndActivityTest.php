@@ -76,21 +76,21 @@ class ProjectRealtimeAndActivityTest extends TestCase
             // Workspace private channel authorization
             $this->actingAs($owner)
                 ->post('/broadcasting/auth', [
-                    'channel_name' => "private-workspace.{$workspace->id}",
+                    'channel_name' => "private-workspace.{$workspace->uuid}",
                     'socket_id' => '1234.5678',
                 ])
                 ->assertOk();
 
             $this->actingAs($member)
                 ->post('/broadcasting/auth', [
-                    'channel_name' => "private-workspace.{$workspace->id}",
+                    'channel_name' => "private-workspace.{$workspace->uuid}",
                     'socket_id' => '1234.5678',
                 ])
                 ->assertOk();
 
             $this->actingAs($outsider)
                 ->post('/broadcasting/auth', [
-                    'channel_name' => "private-workspace.{$workspace->id}",
+                    'channel_name' => "private-workspace.{$workspace->uuid}",
                     'socket_id' => '1234.5678',
                 ])
                 ->assertForbidden();
@@ -98,21 +98,21 @@ class ProjectRealtimeAndActivityTest extends TestCase
             // Project private channel authorization
             $this->actingAs($owner)
                 ->post('/broadcasting/auth', [
-                    'channel_name' => "private-project.{$project->id}",
+                    'channel_name' => "private-project.{$project->uuid}",
                     'socket_id' => '1234.5678',
                 ])
                 ->assertOk();
 
             $this->actingAs($member)
                 ->post('/broadcasting/auth', [
-                    'channel_name' => "private-project.{$project->id}",
+                    'channel_name' => "private-project.{$project->uuid}",
                     'socket_id' => '1234.5678',
                 ])
                 ->assertOk();
 
             $this->actingAs($outsider)
                 ->post('/broadcasting/auth', [
-                    'channel_name' => "private-project.{$project->id}",
+                    'channel_name' => "private-project.{$project->uuid}",
                     'socket_id' => '1234.5678',
                 ])
                 ->assertForbidden();
@@ -124,6 +124,14 @@ class ProjectRealtimeAndActivityTest extends TestCase
                     'socket_id' => '1234.5678',
                 ])
                 ->assertForbidden();
+
+            // The legacy integer channel name is refused, even for the owner
+            $this->actingAs($owner)
+                ->post('/broadcasting/auth', [
+                    'channel_name' => "private-project.{$project->id}",
+                    'socket_id' => '1234.5678',
+                ])
+                ->assertForbidden();
         } finally {
             config(['broadcasting.default' => 'null']);
             Broadcast::purge();
@@ -132,9 +140,26 @@ class ProjectRealtimeAndActivityTest extends TestCase
 
     public function test_standardized_event_payloads_and_channels(): void
     {
+        /** @var User $owner */
+        $owner = User::factory()->create();
+        /** @var Workspace $workspace */
+        $workspace = Workspace::query()->create([
+            'name' => 'Channel Workspace',
+            'slug' => 'channel-workspace',
+            'owner_id' => $owner->id,
+        ]);
+        /** @var Project $project */
+        $project = Project::query()->create([
+            'workspace_id' => $workspace->id,
+            'name' => 'Channel Project',
+            'domain' => 'channel-app.com',
+            'canonical_url' => 'https://channel-app.com/',
+        ]);
+        $channelName = 'private-project.'.$project->uuid;
+
         // 1. CrawlProgressUpdated event
         $crawlEvent = new CrawlProgressUpdated(
-            projectId: 42,
+            projectId: $project->id,
             externalCrawlId: (string) Str::uuid(),
             crawledUrls: 120,
             totalUrls: 500,
@@ -147,11 +172,11 @@ class ProjectRealtimeAndActivityTest extends TestCase
         $channels = $crawlEvent->broadcastOn();
         $this->assertCount(1, $channels);
         $this->assertInstanceOf(PrivateChannel::class, $channels[0]);
-        $this->assertSame('private-project.42', $channels[0]->name);
+        $this->assertSame($channelName, $channels[0]->name);
         $this->assertSame('CrawlProgressUpdated', $crawlEvent->broadcastAs());
 
         $crawlPayload = $crawlEvent->broadcastWith();
-        $this->assertSame(42, $crawlPayload['project_id']);
+        $this->assertSame($project->id, $crawlPayload['project_id']);
         $this->assertSame(120, $crawlPayload['crawled_urls']);
         $this->assertSame(500, $crawlPayload['total_urls']);
         $this->assertSame(3, $crawlPayload['error_count']);
@@ -159,7 +184,7 @@ class ProjectRealtimeAndActivityTest extends TestCase
 
         // 2. SerpBatchCompleted event
         $serpEvent = new SerpBatchCompleted(
-            projectId: 42,
+            projectId: $project->id,
             batchId: 'batch-xyz-123',
             keywordCount: 50,
             updatedCount: 48,
@@ -168,7 +193,7 @@ class ProjectRealtimeAndActivityTest extends TestCase
 
         $serpChannels = $serpEvent->broadcastOn();
         $this->assertCount(1, $serpChannels);
-        $this->assertSame('private-project.42', $serpChannels[0]->name);
+        $this->assertSame($channelName, $serpChannels[0]->name);
         $this->assertSame('SerpBatchCompleted', $serpEvent->broadcastAs());
 
         $serpPayload = $serpEvent->broadcastWith();
@@ -177,7 +202,7 @@ class ProjectRealtimeAndActivityTest extends TestCase
 
         // 3. BacklinkAlertTriggered event
         $alertEvent = new BacklinkAlertTriggered(
-            projectId: 42,
+            projectId: $project->id,
             alertType: 'lost_backlink',
             severity: 'critical',
             message: 'High-authority backlink dropped',
@@ -187,7 +212,7 @@ class ProjectRealtimeAndActivityTest extends TestCase
 
         $alertChannels = $alertEvent->broadcastOn();
         $this->assertCount(1, $alertChannels);
-        $this->assertSame('private-project.42', $alertChannels[0]->name);
+        $this->assertSame($channelName, $alertChannels[0]->name);
         $this->assertSame('BacklinkAlertTriggered', $alertEvent->broadcastAs());
 
         $alertPayload = $alertEvent->broadcastWith();
@@ -213,7 +238,7 @@ class ProjectRealtimeAndActivityTest extends TestCase
 
         // 1. Creating a project logs activity
         $this->actingAs($user)
-            ->post("/workspaces/{$workspace->id}/projects", [
+            ->post("/workspaces/{$workspace->uuid}/projects", [
                 'name' => 'Activity Test Project',
                 'url' => 'https://activity-site.com',
             ])
@@ -233,7 +258,7 @@ class ProjectRealtimeAndActivityTest extends TestCase
 
         // 2. Adding a competitor logs activity
         $this->actingAs($user)
-            ->post("/workspaces/{$workspace->id}/projects/{$project->id}/competitors", [
+            ->post("/workspaces/{$workspace->uuid}/projects/{$project->uuid}/competitors", [
                 'domain' => 'competitor-one.com',
                 'label' => 'Rival Brand',
             ])
@@ -248,7 +273,7 @@ class ProjectRealtimeAndActivityTest extends TestCase
 
         // 3. Updating project settings logs activity
         $this->actingAs($user)
-            ->put("/workspaces/{$workspace->id}/projects/{$project->id}", [
+            ->put("/workspaces/{$workspace->uuid}/projects/{$project->uuid}", [
                 'name' => 'Renamed Activity Project',
                 'location_code' => 2826,
                 'language_code' => 'en',
@@ -263,7 +288,7 @@ class ProjectRealtimeAndActivityTest extends TestCase
 
         // 4. Removing a competitor logs activity
         $this->actingAs($user)
-            ->delete("/workspaces/{$workspace->id}/projects/{$project->id}/competitors/{$competitor->id}")
+            ->delete("/workspaces/{$workspace->uuid}/projects/{$project->uuid}/competitors/{$competitor->uuid}")
             ->assertRedirect();
 
         $this->assertDatabaseHas('project_activities', [
@@ -396,7 +421,7 @@ class ProjectRealtimeAndActivityTest extends TestCase
 
         // Project Overview Show view hydrates activities in Inertia props
         $this->actingAs($owner)
-            ->get("/workspaces/{$workspace->id}/projects/{$project->id}")
+            ->get("/workspaces/{$workspace->uuid}/projects/{$project->uuid}")
             ->assertOk()
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Projects/Show')
@@ -407,18 +432,18 @@ class ProjectRealtimeAndActivityTest extends TestCase
 
         // JSON activities API endpoint returns paginated results
         $this->actingAs($owner)
-            ->get("/workspaces/{$workspace->id}/projects/{$project->id}/activities")
+            ->get("/workspaces/{$workspace->uuid}/projects/{$project->uuid}/activities")
             ->assertOk()
             ->assertJsonPath('total', 2)
             ->assertJsonPath('data.0.title', 'Test Activity 2');
 
         // Outsider cannot view project overview or activity API
         $this->actingAs($outsider)
-            ->get("/workspaces/{$workspace->id}/projects/{$project->id}")
+            ->get("/workspaces/{$workspace->uuid}/projects/{$project->uuid}")
             ->assertForbidden();
 
         $this->actingAs($outsider)
-            ->get("/workspaces/{$workspace->id}/projects/{$project->id}/activities")
+            ->get("/workspaces/{$workspace->uuid}/projects/{$project->uuid}/activities")
             ->assertForbidden();
     }
 }

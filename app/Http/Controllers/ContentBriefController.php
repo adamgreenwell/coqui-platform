@@ -55,12 +55,12 @@ class ContentBriefController extends Controller
 
         return Inertia::render('Keywords/ContentBrief', [
             'workspace' => [
-                'id' => $workspace->id,
+                'id' => $workspace->uuid,
                 'name' => $workspace->name,
                 'slug' => $workspace->slug,
             ],
             'project' => [
-                'id' => $project->id,
+                'id' => $project->uuid,
                 'name' => $project->name,
                 'domain' => $project->domain,
                 'canonicalUrl' => $project->canonical_url,

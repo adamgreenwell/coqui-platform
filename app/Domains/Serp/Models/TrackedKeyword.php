@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domains\Serp\Models;
 
 use App\Domains\Projects\Models\Project;
+use App\Models\Concerns\HasPublicUuid;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -12,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * @property int $id
+ * @property string $uuid
  * @property int $project_id
  * @property string $keyword
  * @property string $device
@@ -27,6 +29,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  */
 class TrackedKeyword extends Model
 {
+    use HasPublicUuid;
+
     /** @var list<string> */
     protected $fillable = [
         'project_id',

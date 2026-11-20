@@ -15,6 +15,7 @@ use App\Domains\Serp\Models\TrackedKeyword;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Illuminate\Validation\ValidationException;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -86,6 +87,7 @@ class WorkspaceBillingTest extends TestCase
         $keywords = [];
         for ($i = 1; $i <= 100; $i++) {
             $keywords[] = [
+                'uuid' => (string) Str::uuid7(),
                 'project_id' => $this->project->id,
                 'keyword' => "keyword-{$i}",
                 'device' => 'desktop',
@@ -268,7 +270,7 @@ class WorkspaceBillingTest extends TestCase
     public function test_workspace_admin_cannot_change_plan_without_payment(): void
     {
         $response = $this->actingAs($this->owner)
-            ->post('/workspaces/'.$this->workspace->id.'/billing/change-tier', [
+            ->post('/workspaces/'.$this->workspace->uuid.'/billing/change-tier', [
                 'plan_tier' => 'agency',
                 'has_runnr_addon' => true,
             ]);

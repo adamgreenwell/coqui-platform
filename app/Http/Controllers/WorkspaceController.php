@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
 use App\Models\User;
 use Illuminate\Http\RedirectResponse;
@@ -87,7 +88,7 @@ class WorkspaceController extends Controller
 
         return Inertia::render('Workspaces/Show', [
             'workspace' => [
-                'id' => $workspace->id,
+                'id' => $workspace->uuid,
                 'name' => $workspace->name,
                 'slug' => $workspace->slug,
                 'planTier' => $workspace->plan_tier,
@@ -101,11 +102,18 @@ class WorkspaceController extends Controller
             ],
             'projects' => $workspace->projects()->latest('id')->take(10)->get([
                 'id',
+                'uuid',
                 'name',
                 'domain',
                 'canonical_url',
                 'last_crawled_at',
-            ]),
+            ])->map(fn (Project $project): array => [
+                'id' => $project->uuid,
+                'name' => $project->name,
+                'domain' => $project->domain,
+                'canonical_url' => $project->canonical_url,
+                'last_crawled_at' => $project->last_crawled_at?->toIso8601String(),
+            ])->all(),
             'allWorkspaces' => $this->workspacesForUser($user),
         ]);
     }
@@ -126,7 +134,7 @@ class WorkspaceController extends Controller
     }
 
     /**
-     * @return list<array<string, mixed>>
+     * @return list<array{id: string, name: string, slug: string, plan_tier: string}>
      */
     private function workspacesForUser(User $user): array
     {
@@ -134,8 +142,15 @@ class WorkspaceController extends Controller
             ->where('owner_id', $user->id)
             ->orWhereHas('members', fn ($q) => $q->where('users.id', $user->id))
             ->orderBy('name')
-            ->get(['id', 'name', 'slug', 'plan_tier'])
-            ->toArray();
+            ->get(['id', 'uuid', 'name', 'slug', 'plan_tier'])
+            ->map(fn (Workspace $workspace): array => [
+                'id' => $workspace->uuid,
+                'name' => $workspace->name,
+                'slug' => $workspace->slug,
+                'plan_tier' => $workspace->plan_tier,
+            ])
+            ->values()
+            ->all();
     }
 
     private function resolveUserRole(User $user, Workspace $workspace): string

@@ -12,6 +12,7 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 class ProjectApiController extends Controller
@@ -30,13 +31,18 @@ class ProjectApiController extends Controller
                 $wsQuery->where('owner_id', $user->id)
                     ->orWhereHas('members', fn ($m) => $m->where('users.id', $user->id));
             })
-            ->with(['workspace:id,name,slug'])
+            ->with(['workspace:id,uuid,name,slug'])
             ->with(['crawlRuns' => function ($cQuery): void {
                 $cQuery->latest('id')->limit(1);
             }]);
 
-        if (is_numeric($workspaceId)) {
-            $query->where('workspace_id', (int) $workspaceId);
+        if ($workspaceId !== null && $workspaceId !== '') {
+            // Workspaces are filtered by public UUID; anything else matches nothing.
+            if (is_string($workspaceId) && Str::isUuid($workspaceId)) {
+                $query->whereRelation('workspace', 'uuid', $workspaceId);
+            } else {
+                $query->whereRaw('1 = 0');
+            }
         }
 
         if (is_string($search) && trim($search) !== '') {
@@ -53,8 +59,8 @@ class ProjectApiController extends Controller
             $latestCrawl = $p->crawlRuns->first();
 
             return [
-                'id' => $p->id,
-                'workspaceId' => $p->workspace_id,
+                'id' => $p->uuid,
+                'workspaceId' => $p->workspace?->uuid,
                 'workspaceName' => $p->workspace?->name,
                 'name' => $p->name,
                 'domain' => $p->domain,
@@ -66,7 +72,7 @@ class ProjectApiController extends Controller
                 'createdAt' => $p->created_at?->toIso8601String(),
                 'updatedAt' => $p->updated_at?->toIso8601String(),
                 'latestCrawl' => $latestCrawl !== null ? [
-                    'id' => $latestCrawl->id,
+                    'id' => $latestCrawl->external_crawl_id,
                     'externalCrawlId' => $latestCrawl->external_crawl_id,
                     'source' => $latestCrawl->source,
                     'status' => $latestCrawl->status,
@@ -97,7 +103,7 @@ class ProjectApiController extends Controller
 
         /** @var array<string, mixed> $validated */
         $validated = $request->validate([
-            'workspaceId' => ['nullable', 'integer'],
+            'workspaceId' => ['nullable', 'uuid'],
             'name' => ['required', 'string', 'max:255'],
             'domain' => ['required', 'string', 'max:255'],
             'canonicalUrl' => ['nullable', 'string', 'max:2048'],
@@ -107,9 +113,9 @@ class ProjectApiController extends Controller
         ]);
 
         $workspaceId = $validated['workspaceId'] ?? null;
-        if (is_numeric($workspaceId)) {
+        if (is_string($workspaceId) && $workspaceId !== '') {
             /** @var Workspace $workspace */
-            $workspace = Workspace::query()->findOrFail((int) $workspaceId);
+            $workspace = Workspace::query()->where('uuid', $workspaceId)->firstOrFail();
         } else {
             /** @var Workspace|null $workspace */
             $workspace = Workspace::query()
@@ -170,8 +176,8 @@ class ProjectApiController extends Controller
                 );
 
                 return response()->json([
-                    'id' => $existingProject->id,
-                    'workspaceId' => $existingProject->workspace_id,
+                    'id' => $existingProject->uuid,
+                    'workspaceId' => $workspace->uuid,
                     'workspaceName' => $workspace->name,
                     'name' => $existingProject->name,
                     'domain' => $existingProject->domain,
@@ -212,8 +218,8 @@ class ProjectApiController extends Controller
         );
 
         return response()->json([
-            'id' => $project->id,
-            'workspaceId' => $project->workspace_id,
+            'id' => $project->uuid,
+            'workspaceId' => $workspace->uuid,
             'workspaceName' => $workspace->name,
             'name' => $project->name,
             'domain' => $project->domain,
@@ -229,13 +235,13 @@ class ProjectApiController extends Controller
     {
         Gate::authorize('view', $project);
 
-        $project->load(['workspace:id,name,slug']);
+        $project->load(['workspace:id,uuid,name,slug']);
         $latestCrawl = $project->crawlRuns()->latest('id')->first();
         $crawlCount = $project->crawlRuns()->count();
 
         return response()->json([
-            'id' => $project->id,
-            'workspaceId' => $project->workspace_id,
+            'id' => $project->uuid,
+            'workspaceId' => $project->workspace?->uuid,
             'workspaceName' => $project->workspace?->name,
             'name' => $project->name,
             'domain' => $project->domain,
@@ -247,7 +253,7 @@ class ProjectApiController extends Controller
             'crawlStats' => [
                 'totalRuns' => $crawlCount,
                 'latestRun' => $latestCrawl !== null ? [
-                    'id' => $latestCrawl->id,
+                    'id' => $latestCrawl->external_crawl_id,
                     'externalCrawlId' => $latestCrawl->external_crawl_id,
                     'source' => $latestCrawl->source,
                     'status' => $latestCrawl->status,

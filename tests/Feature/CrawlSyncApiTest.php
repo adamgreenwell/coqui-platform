@@ -36,7 +36,7 @@ class CrawlSyncApiTest extends TestCase
 
         $crawlId = (string) Str::uuid();
 
-        $this->postJson("/api/v1/projects/{$project->id}/crawls/sync", [
+        $this->postJson("/api/v1/projects/{$project->uuid}/crawls/sync", [
             'id' => $crawlId,
             'seed' => 'https://coquiseo.com/',
             'seedKind' => 'url',
@@ -52,7 +52,7 @@ class CrawlSyncApiTest extends TestCase
             'totalUrls' => 1,
         ])->assertCreated();
 
-        $this->postJson("/api/v1/projects/{$project->id}/crawls/{$crawlId}/chunks", [
+        $this->postJson("/api/v1/projects/{$project->uuid}/crawls/{$crawlId}/chunks", [
             'urls' => [
                 [
                     'id' => 1,
@@ -87,7 +87,7 @@ class CrawlSyncApiTest extends TestCase
             ],
         ])->assertOk();
 
-        $this->postJson("/api/v1/projects/{$project->id}/crawls/{$crawlId}/finalize", [
+        $this->postJson("/api/v1/projects/{$project->uuid}/crawls/{$crawlId}/finalize", [
             'status' => 'completed',
         ])
             ->assertOk()
@@ -123,13 +123,13 @@ class CrawlSyncApiTest extends TestCase
             ->assertOk()
             ->assertJson([
                 'user' => [
-                    'id' => $user->id,
+                    'id' => $user->uuid,
                     'name' => 'Alex Developer',
                     'email' => 'alex@example.com',
                 ],
                 'workspaces' => [
                     [
-                        'id' => $workspace->id,
+                        'id' => $workspace->uuid,
                         'name' => 'Agency Alpha',
                         'slug' => 'agency-alpha',
                         'planTier' => 'scale',
@@ -230,7 +230,7 @@ class CrawlSyncApiTest extends TestCase
                 'domain' => 'newsaas.io',
                 'canonicalUrl' => 'https://newsaas.io/',
                 'crawlCadence' => 'daily',
-                'workspaceId' => $workspace->id,
+                'workspaceId' => $workspace->uuid,
             ]);
 
         $this->assertDatabaseHas('projects', [
@@ -257,13 +257,13 @@ class CrawlSyncApiTest extends TestCase
 
         Sanctum::actingAs($user, ['projects:read']);
 
-        $this->getJson("/api/v1/projects/{$project->id}")
+        $this->getJson("/api/v1/projects/{$project->uuid}")
             ->assertOk()
             ->assertJson([
-                'id' => $project->id,
+                'id' => $project->uuid,
                 'name' => 'Detail Test',
                 'domain' => 'detailtest.com',
-                'workspaceId' => $workspace->id,
+                'workspaceId' => $workspace->uuid,
                 'workspaceName' => 'Workspace One',
             ]);
     }
@@ -320,12 +320,12 @@ class CrawlSyncApiTest extends TestCase
         Sanctum::actingAs($user, ['crawls:read']);
 
         // List crawls
-        $this->getJson("/api/v1/projects/{$project->id}/crawls")
+        $this->getJson("/api/v1/projects/{$project->uuid}/crawls")
             ->assertOk()
             ->assertJson([
                 'data' => [
                     [
-                        'id' => $run->id,
+                        'id' => $externalId,
                         'externalCrawlId' => $externalId,
                         'totalUrls' => 50,
                     ],
@@ -333,10 +333,10 @@ class CrawlSyncApiTest extends TestCase
             ]);
 
         // Show crawl detail
-        $this->getJson("/api/v1/projects/{$project->id}/crawls/{$externalId}")
+        $this->getJson("/api/v1/projects/{$project->uuid}/crawls/{$externalId}")
             ->assertOk()
             ->assertJson([
-                'id' => $run->id,
+                'id' => $externalId,
                 'externalCrawlId' => $externalId,
                 'totalUrls' => 50,
                 'errorCount' => 1,
@@ -367,7 +367,7 @@ class CrawlSyncApiTest extends TestCase
 
         $crawlId = (string) Str::uuid();
 
-        $this->postJson("/api/v1/projects/{$project->id}/crawls/sync", [
+        $this->postJson("/api/v1/projects/{$project->uuid}/crawls/sync", [
             'id' => $crawlId,
             'seed' => 'https://collisiontest.com/',
             'seedKind' => 'url',
@@ -377,7 +377,7 @@ class CrawlSyncApiTest extends TestCase
         ])->assertCreated();
 
         // Send a chunk that contains the exact same URL twice and duplicate issues
-        $this->postJson("/api/v1/projects/{$project->id}/crawls/{$crawlId}/chunks", [
+        $this->postJson("/api/v1/projects/{$project->uuid}/crawls/{$crawlId}/chunks", [
             'urls' => [
                 [
                     'url' => 'https://collisiontest.com/page-1',
@@ -406,7 +406,7 @@ class CrawlSyncApiTest extends TestCase
             ],
         ])->assertOk();
 
-        $this->postJson("/api/v1/projects/{$project->id}/crawls/{$crawlId}/finalize")
+        $this->postJson("/api/v1/projects/{$project->uuid}/crawls/{$crawlId}/finalize")
             ->assertOk()
             ->assertJson([
                 'totalUrls' => 1,
@@ -438,7 +438,7 @@ class CrawlSyncApiTest extends TestCase
         Sanctum::actingAs($user, ['projects:read']);
 
         // Should succeed on read
-        $this->getJson("/api/v1/projects/{$project->id}")->assertOk();
+        $this->getJson("/api/v1/projects/{$project->uuid}")->assertOk();
 
         // Should be forbidden on project creation
         $this->postJson('/api/v1/projects', [
@@ -447,7 +447,7 @@ class CrawlSyncApiTest extends TestCase
         ])->assertForbidden();
 
         // Should be forbidden on crawl sync
-        $this->postJson("/api/v1/projects/{$project->id}/crawls/sync", [
+        $this->postJson("/api/v1/projects/{$project->uuid}/crawls/sync", [
             'id' => (string) Str::uuid(),
             'seed' => 'https://authproject.com/',
             'seedKind' => 'url',
@@ -476,9 +476,9 @@ class CrawlSyncApiTest extends TestCase
 
         Sanctum::actingAs($attacker, ['crawls:sync', 'projects:read', 'projects:write']);
 
-        $this->getJson("/api/v1/projects/{$project->id}")->assertForbidden();
-        $this->getJson("/api/v1/projects/{$project->id}/crawls")->assertForbidden();
-        $this->postJson("/api/v1/projects/{$project->id}/crawls/sync", [
+        $this->getJson("/api/v1/projects/{$project->uuid}")->assertForbidden();
+        $this->getJson("/api/v1/projects/{$project->uuid}/crawls")->assertForbidden();
+        $this->postJson("/api/v1/projects/{$project->uuid}/crawls/sync", [
             'id' => (string) Str::uuid(),
             'seed' => 'https://secretproject.com/',
             'seedKind' => 'url',
@@ -548,7 +548,7 @@ class CrawlSyncApiTest extends TestCase
         ])
             ->assertOk()
             ->assertJson([
-                'id' => $project->id,
+                'id' => $project->uuid,
                 'name' => 'Restored Trashed Site',
                 'domain' => 'trashed.com',
                 'restored' => true,

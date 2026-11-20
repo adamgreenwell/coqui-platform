@@ -40,18 +40,18 @@ class BacklinkWatchlistController extends Controller
 
         return Inertia::render('Backlinks/Watchlist', [
             'workspace' => [
-                'id' => $workspace->id,
+                'id' => $workspace->uuid,
                 'name' => $workspace->name,
                 'slug' => $workspace->slug,
             ],
             'project' => [
-                'id' => $project->id,
+                'id' => $project->uuid,
                 'name' => $project->name,
                 'domain' => $project->domain,
                 'canonicalUrl' => $project->canonical_url,
             ],
             'links' => $links->map(fn (MonitoredBacklink $link): array => [
-                'id' => $link->id,
+                'id' => $link->uuid,
                 'source_url' => $link->source_url,
                 'target_url' => $link->target_url,
                 'expected_anchor' => $link->expected_anchor,

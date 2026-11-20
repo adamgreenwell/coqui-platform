@@ -60,7 +60,7 @@ class CrawlSyncTenantIsolationTest extends TestCase
 
         Sanctum::actingAs($this->attacker, ['crawls:sync']);
 
-        $this->postJson("/api/v1/projects/{$this->attackerProject->id}/crawls/sync", $this->syncPayload($victimRun->external_crawl_id))
+        $this->postJson("/api/v1/projects/{$this->attackerProject->uuid}/crawls/sync", $this->syncPayload($victimRun->external_crawl_id))
             ->assertStatus(409);
 
         $victimRun->refresh();
@@ -75,7 +75,7 @@ class CrawlSyncTenantIsolationTest extends TestCase
 
         Sanctum::actingAs($this->attacker, ['crawls:sync']);
 
-        $this->postJson("/api/v1/projects/{$this->attackerProject->id}/crawls/sync", $this->syncPayload($workerRun->external_crawl_id))
+        $this->postJson("/api/v1/projects/{$this->attackerProject->uuid}/crawls/sync", $this->syncPayload($workerRun->external_crawl_id))
             ->assertStatus(409);
 
         $this->assertSame('deploy_smoke', $workerRun->refresh()->source);
@@ -87,7 +87,7 @@ class CrawlSyncTenantIsolationTest extends TestCase
 
         foreach (['worker', 'deploy_smoke'] as $source) {
             $this->postJson(
-                "/api/v1/projects/{$this->attackerProject->id}/crawls/sync",
+                "/api/v1/projects/{$this->attackerProject->uuid}/crawls/sync",
                 $this->syncPayload((string) Str::uuid()) + ['source' => $source],
             )->assertStatus(422)->assertJsonValidationErrors('source');
         }
@@ -100,10 +100,10 @@ class CrawlSyncTenantIsolationTest extends TestCase
         Sanctum::actingAs($this->attacker, ['crawls:sync']);
         $crawlId = (string) Str::uuid();
 
-        $this->postJson("/api/v1/projects/{$this->attackerProject->id}/crawls/sync", $this->syncPayload($crawlId))
+        $this->postJson("/api/v1/projects/{$this->attackerProject->uuid}/crawls/sync", $this->syncPayload($crawlId))
             ->assertCreated();
         // Re-syncing the same crawl in the same project still updates it.
-        $this->postJson("/api/v1/projects/{$this->attackerProject->id}/crawls/sync", ['status' => 'completed'] + $this->syncPayload($crawlId))
+        $this->postJson("/api/v1/projects/{$this->attackerProject->uuid}/crawls/sync", ['status' => 'completed'] + $this->syncPayload($crawlId))
             ->assertCreated();
 
         $run = CrawlRun::query()->where('external_crawl_id', $crawlId)->sole();
@@ -117,7 +117,7 @@ class CrawlSyncTenantIsolationTest extends TestCase
         $smokeRun = $this->makeRun($this->attackerProject, 'deploy_smoke', 'running');
 
         Sanctum::actingAs($this->attacker, ['crawls:sync']);
-        $base = "/api/v1/projects/{$this->attackerProject->id}/crawls/{$smokeRun->external_crawl_id}";
+        $base = "/api/v1/projects/{$this->attackerProject->uuid}/crawls/{$smokeRun->external_crawl_id}";
 
         $this->postJson("{$base}/chunks", ['urls' => [], 'links' => [], 'issues' => []])->assertNotFound();
         $this->postJson("{$base}/finalize", ['status' => 'completed'])->assertNotFound();

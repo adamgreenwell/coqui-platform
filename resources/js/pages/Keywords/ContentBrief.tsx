@@ -83,12 +83,12 @@ interface RecentBriefSummary {
 
 interface Props {
   workspace: {
-    id: number;
+    id: string;
     name: string;
     slug: string;
   };
   project: {
-    id: number;
+    id: string;
     name: string;
     domain: string;
     canonicalUrl: string;

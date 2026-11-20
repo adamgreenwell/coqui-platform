@@ -14,7 +14,7 @@ import { type FormEvent, useState } from 'react';
 import AppLayout, { type WorkspaceSummary } from '../../layouts/AppLayout';
 
 interface TokenItem {
-  id: number;
+  id: string;
   name: string;
   abilities: string[] | null;
   lastUsedAt?: string | null;

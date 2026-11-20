@@ -26,7 +26,7 @@ import { useMemo, useState } from 'react';
 import AppLayout, { type WorkspaceSummary } from '../../layouts/AppLayout';
 
 interface ProjectDetails {
-  id: number;
+  id: string;
   name: string;
   domain: string;
   canonicalUrl: string;

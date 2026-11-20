@@ -11,7 +11,7 @@ import { type FormEvent, useState } from 'react';
 import AppLayout, { type WorkspaceSummary } from '../../layouts/AppLayout';
 
 interface MemberItem {
-  id: number;
+  id: string;
   name: string;
   email: string;
   role: 'owner' | 'admin' | 'editor' | 'viewer' | string;
@@ -28,7 +28,7 @@ export default function WorkspaceMembers({
   workspace,
   members,
 }: WorkspaceMembersProps) {
-  const { props } = usePage<{ auth?: { user?: { id: number } | null } }>();
+  const { props } = usePage<{ auth?: { user?: { id: string } | null } }>();
   const currentUserId = props.auth?.user?.id;
 
   const [inviteModalOpen, setInviteModalOpen] = useState(false);
@@ -48,7 +48,7 @@ export default function WorkspaceMembers({
     });
   };
 
-  const handleRoleChange = (memberId: number, newRole: string) => {
+  const handleRoleChange = (memberId: string, newRole: string) => {
     router.put(`/workspaces/${workspace.id}/members/${memberId}`, {
       role: newRole,
     });

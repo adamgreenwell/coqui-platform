@@ -6,6 +6,7 @@ namespace App\Domains\Projects\Models;
 
 use App\Domains\Billing\Models\BillingInvoice;
 use App\Domains\Billing\Models\WorkspaceSubscription;
+use App\Models\Concerns\HasPublicUuid;
 use App\Models\User;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
@@ -17,6 +18,7 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * @property int $id
+ * @property string $uuid
  * @property string $name
  * @property string $slug
  * @property string $plan_tier
@@ -36,6 +38,8 @@ use Illuminate\Validation\ValidationException;
  */
 class Workspace extends Model
 {
+    use HasPublicUuid;
+
     /** @var list<string> */
     protected $fillable = [
         'name',
