@@ -24,6 +24,7 @@ Production runs on a self-hosted **Coolify** server using `docker-compose.coolif
 
 1. **New resource → Docker Compose** (from the GitHub repo, branch `main`), with compose file location `/docker-compose.coolify.yml`.
 2. **Domain:** set `https://<app domain>` on the **`app`** service only (it is nginx on port 80; `php` speaks FastCGI and would return 502). Coolify's proxy issues the certificate and terminates TLS. Laravel trusts the forwarded headers (`bootstrap/app.php`), so URLs and redirects are generated as `https://`.
+   - **Behind Cloudflare:** if the Coolify domain is `http://…` (Cloudflare "Flexible" SSL reaches the origin over HTTP), Traefik forwards `X-Forwarded-Proto: http` and Laravel would build `http://` redirects that browsers block as mixed content. Keep `APP_URL` set to `https://<app domain>`: `ForceHttpsScheme` then treats every request as https. Set `APP_FORCE_HTTPS=false` to turn this off, or `true` to force it regardless of `APP_URL`. Switching the domain to `https://` with Cloudflare "Full (strict)" also encrypts the Cloudflare-to-origin hop.
 3. **Environment variables:** Coolify lists every `${VAR}` from the compose file. Fill in the checklist below. Mark **`REVERB_APP_KEY`** and **`VITE_REVERB_HOST`** (and any `VITE_*` you change) as available at build time, because Vite bakes them into the browser bundle.
 4. **Deploy.** Then check:
    - `https://<app domain>/up` returns 200.
