@@ -330,6 +330,27 @@ class StripeBillingService
         $stripeCustomerId = isset($session['customer']) ? (string) $session['customer'] : null;
         $stripeSubId = isset($session['subscription']) ? (string) $session['subscription'] : null;
 
+        // A checkout event can arrive late (Stripe retries after an outage) or
+        // be resent from the dashboard. Once the subscription is known, its own
+        // events own the plan: the checkout metadata still names the plan
+        // bought at checkout, so applying it again would undo a later portal
+        // switch or a cancellation.
+        $local = $this->localSubscription((string) $stripeSubId);
+        if ($local !== null) {
+            if (($workspace->stripe_id === null || $workspace->stripe_id === '') && $stripeCustomerId !== null) {
+                $workspace->stripe_id = $stripeCustomerId;
+                $workspace->save();
+            }
+
+            Log::info("Ignored repeated checkout for workspace {$workspace->id}: subscription {$stripeSubId} is already synced.");
+
+            return [
+                'success' => true,
+                'event' => 'checkout.session.completed',
+                'message' => "Subscription {$stripeSubId} already synced; plan left unchanged.",
+            ];
+        }
+
         $workspace->stripe_id = $stripeCustomerId;
 
         $isRunnrAddon = $planTier === 'runnr_addon';

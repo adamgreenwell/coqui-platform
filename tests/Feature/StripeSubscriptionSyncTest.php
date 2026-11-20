@@ -197,6 +197,82 @@ class StripeSubscriptionSyncTest extends TestCase
         $this->assertTrue($this->workspace->has_runnr_addon);
     }
 
+    /**
+     * @return array<string, mixed>
+     */
+    private function checkoutSession(string $subscriptionId, string $planTier): array
+    {
+        return [
+            'id' => 'cs_test_'.$subscriptionId,
+            'customer' => 'cus_sync',
+            'subscription' => $subscriptionId,
+            'metadata' => ['workspace_id' => (string) $this->workspace->id, 'plan_tier' => $planTier],
+        ];
+    }
+
+    public function test_a_first_checkout_applies_the_purchased_plan(): void
+    {
+        $this->postEvent('checkout.session.completed', $this->checkoutSession('sub_base', 'pro'))->assertOk();
+
+        $this->workspace->refresh();
+        $this->assertSame('pro', $this->workspace->plan_tier);
+        $this->assertSame('cus_sync', $this->workspace->stripe_id);
+        $this->assertSame('sub_base', $this->workspace->stripe_subscription_id);
+        $this->assertDatabaseHas('workspace_subscriptions', ['stripe_id' => 'sub_base', 'stripe_price' => 'pro']);
+    }
+
+    public function test_a_replayed_checkout_does_not_undo_a_portal_switch(): void
+    {
+        $this->subscribeToPro();
+        $this->postEvent('customer.subscription.updated', $this->subscription('sub_base', 'price_agency_test'))
+            ->assertOk();
+
+        $this->postEvent('checkout.session.completed', $this->checkoutSession('sub_base', 'pro'))->assertOk();
+
+        $this->assertSame('agency', $this->workspace->refresh()->plan_tier);
+        $this->assertDatabaseHas('workspace_subscriptions', ['stripe_id' => 'sub_base', 'stripe_price' => 'agency']);
+    }
+
+    public function test_a_replayed_checkout_does_not_revive_a_cancelled_plan(): void
+    {
+        $this->subscribeToPro();
+        $this->postEvent('customer.subscription.deleted', $this->subscription('sub_base', 'price_pro_test', [
+            'status' => 'canceled',
+        ]))->assertOk();
+
+        $this->postEvent('checkout.session.completed', $this->checkoutSession('sub_base', 'pro'))->assertOk();
+
+        $this->workspace->refresh();
+        $this->assertSame('free', $this->workspace->plan_tier);
+        $this->assertSame('canceled', $this->workspace->subscription_status);
+        $this->assertDatabaseHas('workspace_subscriptions', ['stripe_id' => 'sub_base', 'stripe_status' => 'canceled']);
+    }
+
+    public function test_a_replayed_add_on_checkout_does_not_revive_a_cancelled_add_on(): void
+    {
+        $this->subscribeToPro();
+        $this->addRunnrAddon();
+        $this->postEvent('customer.subscription.deleted', $this->subscription('sub_addon', 'price_runnr_test', [
+            'status' => 'canceled',
+        ]))->assertOk();
+
+        $this->postEvent('checkout.session.completed', $this->checkoutSession('sub_addon', 'runnr_addon'))->assertOk();
+
+        $this->assertFalse($this->workspace->refresh()->has_runnr_addon);
+    }
+
+    public function test_a_replayed_checkout_still_links_a_missing_customer(): void
+    {
+        $this->subscribeToPro();
+        $this->workspace->update(['stripe_id' => null]);
+
+        $this->postEvent('checkout.session.completed', $this->checkoutSession('sub_base', 'pro'))->assertOk();
+
+        $this->workspace->refresh();
+        $this->assertSame('cus_sync', $this->workspace->stripe_id);
+        $this->assertSame('pro', $this->workspace->plan_tier);
+    }
+
     public function test_cancelling_the_add_on_keeps_the_base_plan(): void
     {
         $this->subscribeToPro();
