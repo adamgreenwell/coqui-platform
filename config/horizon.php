@@ -48,6 +48,20 @@ return [
             'timeout' => 120,
             'nice' => 0,
         ],
+        // Dedicated workers for plans with the priority-queue feature, so their
+        // crawl dispatches skip the shared backlog on supervisor-1.
+        'supervisor-priority' => [
+            'connection' => 'redis',
+            'queue' => ['crawls-priority'],
+            'balance' => 'simple',
+            'maxProcesses' => 1,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 128,
+            'tries' => 2,
+            'timeout' => 120,
+            'nice' => 0,
+        ],
     ],
 
     'environments' => [
@@ -56,6 +70,9 @@ return [
                 'maxProcesses' => 10,
                 'balanceMaxShift' => 1,
                 'balanceCooldown' => 3,
+            ],
+            'supervisor-priority' => [
+                'maxProcesses' => 2,
             ],
         ],
         'local' => [

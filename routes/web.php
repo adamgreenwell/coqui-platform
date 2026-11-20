@@ -69,9 +69,14 @@ Route::middleware(['auth'])->group(function (): void {
     Route::delete('/workspaces/{workspace}/projects/{project}/keywords/{keyword}', [TrackedKeywordController::class, 'destroy'])->name('workspaces.projects.keywords.destroy');
     Route::get('/workspaces/{workspace}/projects/{project}/keywords/{keyword}/snapshots', [TrackedKeywordController::class, 'snapshots'])->name('workspaces.projects.keywords.snapshots');
 
-    Route::get('/workspaces/{workspace}/projects/{project}/keywords/brief', [ContentBriefController::class, 'show'])->name('workspaces.projects.keywords.brief');
-    Route::post('/workspaces/{workspace}/projects/{project}/keywords/brief', [ContentBriefController::class, 'generate'])->name('workspaces.projects.keywords.brief.generate');
-    Route::get('/workspaces/{workspace}/projects/{project}/keywords/brief/download', [ContentBriefController::class, 'download'])->name('workspaces.projects.keywords.brief.download');
+    // Plan-gated features: which plans include each one is defined with Pennant
+    // in AppServiceProvider; EnsureWorkspaceHasFeature enforces it.
+    // Content briefs.
+    Route::middleware('feature:content-briefs')->group(function (): void {
+        Route::get('/workspaces/{workspace}/projects/{project}/keywords/brief', [ContentBriefController::class, 'show'])->name('workspaces.projects.keywords.brief');
+        Route::post('/workspaces/{workspace}/projects/{project}/keywords/brief', [ContentBriefController::class, 'generate'])->name('workspaces.projects.keywords.brief.generate');
+        Route::get('/workspaces/{workspace}/projects/{project}/keywords/brief/download', [ContentBriefController::class, 'download'])->name('workspaces.projects.keywords.brief.download');
+    });
 
     Route::get('/workspaces/{workspace}/projects/{project}/keyword-explorer', [KeywordExplorerController::class, 'index'])->name('workspaces.projects.keyword-explorer.index');
     Route::post('/workspaces/{workspace}/projects/{project}/keyword-explorer/overview', [KeywordExplorerController::class, 'overview'])->name('workspaces.projects.keyword-explorer.overview');
@@ -82,39 +87,54 @@ Route::middleware(['auth'])->group(function (): void {
     Route::post('/workspaces/{workspace}/projects/{project}/keyword-gap/search', [KeywordGapController::class, 'search'])->name('workspaces.projects.keyword-gap.search');
     Route::post('/workspaces/{workspace}/projects/{project}/keyword-gap/track', [KeywordGapController::class, 'track'])->name('workspaces.projects.keyword-gap.track');
 
-    Route::get('/workspaces/{workspace}/projects/{project}/backlinks', [BacklinkController::class, 'index'])->name('workspaces.projects.backlinks.index');
-    Route::post('/workspaces/{workspace}/projects/{project}/backlinks/refresh', [BacklinkController::class, 'refresh'])->name('workspaces.projects.backlinks.refresh');
-    Route::get('/workspaces/{workspace}/projects/{project}/backlinks/watchlist', [BacklinkWatchlistController::class, 'index'])->name('workspaces.projects.backlinks.watchlist.index');
-    Route::post('/workspaces/{workspace}/projects/{project}/backlinks/watchlist', [BacklinkWatchlistController::class, 'store'])->name('workspaces.projects.backlinks.watchlist.store');
-    Route::post('/workspaces/{workspace}/projects/{project}/backlinks/watchlist/verify', [BacklinkWatchlistController::class, 'verifyAll'])->name('workspaces.projects.backlinks.watchlist.verify-all');
-    Route::post('/workspaces/{workspace}/projects/{project}/backlinks/watchlist/{monitoredBacklink}/verify', [BacklinkWatchlistController::class, 'verifySingle'])->name('workspaces.projects.backlinks.watchlist.verify-single');
-    Route::post('/workspaces/{workspace}/projects/{project}/backlinks/watchlist/import-dfs', [BacklinkWatchlistController::class, 'importDfs'])->name('workspaces.projects.backlinks.watchlist.import-dfs');
-    Route::post('/workspaces/{workspace}/projects/{project}/backlinks/watchlist/import-csv', [BacklinkWatchlistController::class, 'importCsv'])->name('workspaces.projects.backlinks.watchlist.import-csv');
-    Route::delete('/workspaces/{workspace}/projects/{project}/backlinks/watchlist/{monitoredBacklink}', [BacklinkWatchlistController::class, 'destroy'])->name('workspaces.projects.backlinks.watchlist.destroy');
+    // Backlink intelligence: profile, history, watchlist/link rot, imports and intersect.
+    Route::middleware('feature:backlink-intelligence')->group(function (): void {
+        Route::get('/workspaces/{workspace}/projects/{project}/backlinks', [BacklinkController::class, 'index'])->name('workspaces.projects.backlinks.index');
+        Route::post('/workspaces/{workspace}/projects/{project}/backlinks/refresh', [BacklinkController::class, 'refresh'])->name('workspaces.projects.backlinks.refresh');
+        Route::get('/workspaces/{workspace}/projects/{project}/backlinks/watchlist', [BacklinkWatchlistController::class, 'index'])->name('workspaces.projects.backlinks.watchlist.index');
+        Route::post('/workspaces/{workspace}/projects/{project}/backlinks/watchlist', [BacklinkWatchlistController::class, 'store'])->name('workspaces.projects.backlinks.watchlist.store');
+        Route::post('/workspaces/{workspace}/projects/{project}/backlinks/watchlist/verify', [BacklinkWatchlistController::class, 'verifyAll'])->name('workspaces.projects.backlinks.watchlist.verify-all');
+        Route::post('/workspaces/{workspace}/projects/{project}/backlinks/watchlist/{monitoredBacklink}/verify', [BacklinkWatchlistController::class, 'verifySingle'])->name('workspaces.projects.backlinks.watchlist.verify-single');
+        Route::post('/workspaces/{workspace}/projects/{project}/backlinks/watchlist/import-dfs', [BacklinkWatchlistController::class, 'importDfs'])->name('workspaces.projects.backlinks.watchlist.import-dfs');
+        Route::post('/workspaces/{workspace}/projects/{project}/backlinks/watchlist/import-csv', [BacklinkWatchlistController::class, 'importCsv'])->name('workspaces.projects.backlinks.watchlist.import-csv');
+        Route::delete('/workspaces/{workspace}/projects/{project}/backlinks/watchlist/{monitoredBacklink}', [BacklinkWatchlistController::class, 'destroy'])->name('workspaces.projects.backlinks.watchlist.destroy');
 
-    Route::get('/workspaces/{workspace}/projects/{project}/backlinks/intersect', [BacklinkIntersectController::class, 'index'])->name('workspaces.projects.backlinks.intersect.index');
-    Route::post('/workspaces/{workspace}/projects/{project}/backlinks/intersect/refresh', [BacklinkIntersectController::class, 'refresh'])->name('workspaces.projects.backlinks.intersect.refresh');
+        Route::get('/workspaces/{workspace}/projects/{project}/backlinks/intersect', [BacklinkIntersectController::class, 'index'])->name('workspaces.projects.backlinks.intersect.index');
+        Route::post('/workspaces/{workspace}/projects/{project}/backlinks/intersect/refresh', [BacklinkIntersectController::class, 'refresh'])->name('workspaces.projects.backlinks.intersect.refresh');
+    });
 
     Route::get('/workspaces/{workspace}/projects/{project}/integrations', [ProjectIntegrationController::class, 'index'])->name('workspaces.projects.integrations.index');
-    Route::get('/workspaces/{workspace}/projects/{project}/integrations/google/connect', [ProjectIntegrationController::class, 'connectGoogle'])->name('workspaces.projects.integrations.google.connect');
+    Route::get('/workspaces/{workspace}/projects/{project}/integrations/google/connect', [ProjectIntegrationController::class, 'connectGoogle'])->name('workspaces.projects.integrations.google.connect')
+        ->middleware('feature:traffic-attribution');
     // One fixed callback for every project: Google only accepts pre-registered redirect URIs.
     Route::get('/integrations/google/callback', [ProjectIntegrationController::class, 'callbackGoogle'])->name('integrations.google.callback');
-    Route::post('/workspaces/{workspace}/projects/{project}/integrations/bing/connect', [ProjectIntegrationController::class, 'connectBing'])->name('workspaces.projects.integrations.bing.connect');
-    Route::post('/workspaces/{workspace}/projects/{project}/integrations/ga4/connect', [ProjectIntegrationController::class, 'connectGa4'])->name('workspaces.projects.integrations.ga4.connect');
-    Route::post('/workspaces/{workspace}/projects/{project}/integrations/plausible/connect', [ProjectIntegrationController::class, 'connectPlausible'])->name('workspaces.projects.integrations.plausible.connect');
+    Route::post('/workspaces/{workspace}/projects/{project}/integrations/bing/connect', [ProjectIntegrationController::class, 'connectBing'])->name('workspaces.projects.integrations.bing.connect')
+        ->middleware('feature:traffic-attribution');
+    Route::post('/workspaces/{workspace}/projects/{project}/integrations/ga4/connect', [ProjectIntegrationController::class, 'connectGa4'])->name('workspaces.projects.integrations.ga4.connect')
+        ->middleware('feature:traffic-attribution');
+    Route::post('/workspaces/{workspace}/projects/{project}/integrations/plausible/connect', [ProjectIntegrationController::class, 'connectPlausible'])->name('workspaces.projects.integrations.plausible.connect')
+        ->middleware('feature:traffic-attribution');
     Route::post('/workspaces/{workspace}/projects/{project}/integrations/runnr/connect', [ProjectIntegrationController::class, 'connectRunnr'])->name('workspaces.projects.integrations.runnr.connect');
     Route::delete('/workspaces/{workspace}/projects/{project}/integrations/runnr/disconnect', [ProjectIntegrationController::class, 'disconnectRunnr'])->name('workspaces.projects.integrations.runnr.disconnect');
-    Route::post('/workspaces/{workspace}/projects/{project}/integrations/{integration}/sync', [ProjectIntegrationController::class, 'sync'])->name('workspaces.projects.integrations.sync');
+    Route::post('/workspaces/{workspace}/projects/{project}/integrations/{integration}/sync', [ProjectIntegrationController::class, 'sync'])->name('workspaces.projects.integrations.sync')
+        ->middleware('feature:traffic-attribution');
     Route::delete('/workspaces/{workspace}/projects/{project}/integrations/{integration}', [ProjectIntegrationController::class, 'destroy'])->name('workspaces.projects.integrations.destroy');
 
-    Route::get('/workspaces/{workspace}/projects/{project}/analytics/performance', [TrafficAttributionController::class, 'index'])->name('workspaces.projects.analytics.performance');
-    Route::post('/workspaces/{workspace}/projects/{project}/analytics/sync', [TrafficAttributionController::class, 'sync'])->name('workspaces.projects.analytics.sync');
+    // Traffic attribution reports.
+    Route::middleware('feature:traffic-attribution')->group(function (): void {
+        Route::get('/workspaces/{workspace}/projects/{project}/analytics/performance', [TrafficAttributionController::class, 'index'])->name('workspaces.projects.analytics.performance');
+        Route::post('/workspaces/{workspace}/projects/{project}/analytics/sync', [TrafficAttributionController::class, 'sync'])->name('workspaces.projects.analytics.sync');
+    });
 
-    Route::get('/workspaces/{workspace}/projects/{project}/bot-logs', [BotTelemetryController::class, 'index'])->name('workspaces.projects.bot-logs.index');
-    Route::post('/workspaces/{workspace}/projects/{project}/bot-logs/remediate', [BotTelemetryController::class, 'remediate'])->name('workspaces.projects.bot-logs.remediate');
+    // Bot crawler telemetry.
+    Route::middleware('feature:bot-telemetry')->group(function (): void {
+        Route::get('/workspaces/{workspace}/projects/{project}/bot-logs', [BotTelemetryController::class, 'index'])->name('workspaces.projects.bot-logs.index');
+        Route::post('/workspaces/{workspace}/projects/{project}/bot-logs/remediate', [BotTelemetryController::class, 'remediate'])->name('workspaces.projects.bot-logs.remediate');
+    });
 
     Route::get('/workspaces/{workspace}/projects/{project}/crawls/compare', [CrawlCompareController::class, 'show'])->name('workspaces.projects.crawls.compare');
-    Route::post('/workspaces/{workspace}/projects/{project}/crawls/compare/share', [CrawlCompareController::class, 'share'])->name('workspaces.projects.crawls.compare.share');
+    Route::post('/workspaces/{workspace}/projects/{project}/crawls/compare/share', [CrawlCompareController::class, 'share'])->name('workspaces.projects.crawls.compare.share')
+        ->middleware('feature:white-label-reports');
     Route::post('/workspaces/{workspace}/projects/{project}/crawls/dispatch', [CloudCrawlController::class, 'dispatch'])->name('workspaces.projects.crawls.dispatch');
 });
 

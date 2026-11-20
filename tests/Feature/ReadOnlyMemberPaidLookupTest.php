@@ -47,6 +47,7 @@ class ReadOnlyMemberPaidLookupTest extends TestCase
         $this->editor = User::factory()->create();
 
         $this->workspace = Workspace::query()->create([
+            'plan_tier' => 'pro',
             'name' => 'SEO Agency',
             'slug' => 'seo-agency',
             'owner_id' => $this->owner->id,

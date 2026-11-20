@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Domains\Billing\PlanFeature;
 use App\Domains\Integrations\Jobs\SyncBingWebmasterJob;
 use App\Domains\Integrations\Jobs\SyncGoogleSearchConsoleJob;
 use App\Domains\Integrations\Models\ProjectIntegration;
@@ -94,6 +95,9 @@ class ProjectIntegrationController extends Controller
         $project = Project::query()->findOrFail((int) ($pending['project_id'] ?? 0));
         abort_if($project->workspace_id !== $workspace->id, 404);
         Gate::authorize('update', $project);
+        // The callback has no workspace in its URL, so the route middleware can't
+        // see it; check here so a plan change mid-OAuth can't connect anyway.
+        $workspace->ensureFeature(PlanFeature::TrafficAttribution);
 
         $code = $request->query('code');
         if (! is_string($code) || $code === '') {

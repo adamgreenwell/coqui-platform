@@ -23,6 +23,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
+use Laravel\Pennant\Feature;
 
 /**
  * @property int $id
@@ -46,6 +47,19 @@ class Project extends Model
 {
     use HasPublicUuid;
     use SoftDeletes;
+
+    protected static function booted(): void
+    {
+        // A Runnr-linked project grants its workspace the Runnr entitlement, so
+        // plan features resolved earlier in this request may now be wrong.
+        static::saved(function (Project $project): void {
+            if ($project->wasRecentlyCreated || $project->wasChanged('runnr_site_id')) {
+                Feature::flushCache();
+            }
+        });
+        static::deleted(fn () => Feature::flushCache());
+        static::restored(fn () => Feature::flushCache());
+    }
 
     /**
      * Unguessable token used in the public deploy-smoke badge URL (generated on first use).
