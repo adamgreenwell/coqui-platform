@@ -125,6 +125,19 @@ class ResetWorkspaceBillingCommandTest extends TestCase
         $this->assertSame(2, WorkspaceSubscription::query()->where('workspace_id', $this->workspace->id)->count());
     }
 
+    public function test_an_id_that_is_also_another_workspaces_slug_is_refused(): void
+    {
+        $this->other->update(['slug' => (string) $this->workspace->id]);
+
+        $this->artisan('billing:reset', ['workspace' => (string) $this->workspace->id, '--force' => true])
+            ->expectsOutputToContain('more than one workspace')
+            ->assertFailed();
+
+        $this->assertSame('agency', $this->workspace->refresh()->plan_tier);
+        $this->assertSame('agency', $this->other->refresh()->plan_tier);
+        $this->assertSame(1, BillingInvoice::query()->where('workspace_id', $this->other->id)->count());
+    }
+
     public function test_an_unknown_workspace_fails(): void
     {
         $this->artisan('billing:reset', ['workspace' => 'no-such-workspace', '--force' => true])

@@ -30,15 +30,25 @@ class ResetWorkspaceBillingCommand extends Command
     public function handle(): int
     {
         $identifier = trim((string) $this->argument('workspace'));
-        $workspace = Workspace::query()
+        $matches = Workspace::query()
             ->where(function ($query) use ($identifier): void {
                 $query->where('slug', $identifier)->orWhere('uuid', $identifier);
                 if (ctype_digit($identifier)) {
                     $query->orWhere('id', (int) $identifier);
                 }
             })
-            ->first();
+            ->limit(2)
+            ->get();
 
+        // A numeric slug can equal another workspace's ID. This command
+        // deletes billing data, so it never guesses between them.
+        if ($matches->count() > 1) {
+            $this->error("[{$identifier}] matches more than one workspace (an ID and a slug). Use the workspace UUID instead.");
+
+            return self::FAILURE;
+        }
+
+        $workspace = $matches->first();
         if (! $workspace instanceof Workspace) {
             $this->error("Workspace [{$identifier}] not found.");
 
