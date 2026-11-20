@@ -154,7 +154,18 @@ class RankFallbackTest extends TestCase
         $this->assertEqualsWithDelta(0.0015, (float) $check->cost_usd, 0.000001);
         $this->assertEqualsWithDelta(0.0, (float) $check->reserved_usd, 0.000001);
         $this->assertSame('superseded', DB::table('dataforseo_tasks')->where('id', $taskId)->value('status'));
-        $this->assertNotNull($keyword->fresh()?->last_checked_at);
+        // Dated to when the primary task was sent, not when the fallback ran.
+        $this->assertTrue($keyword->fresh()?->last_checked_at?->equalTo($check->reference_at));
+
+        // So it is still due in the next morning's batch (20h after sending).
+        $this->travel(14)->hours();
+        config()->set('coqui.dataforseo.scheduled_spend', true);
+        Http::fake(['sandbox.dataforseo.com/*' => Http::response([
+            'status_code' => 20000,
+            'tasks' => [['id' => (string) Str::uuid(), 'status_code' => 20100, 'data' => ['tag' => "kw:{$keyword->id}"]]],
+        ])]);
+        $this->artisan('dataforseo:run-rank-batches')->assertSuccessful();
+        $this->assertSame(1, DB::table('dataforseo_tasks')->where('status', 'pending')->count());
     }
 
     public function test_job_records_unranked_domains_after_the_last_page(): void

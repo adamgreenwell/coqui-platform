@@ -153,6 +153,11 @@ class FetchFallbackRankJob implements ShouldQueue
             // and never stands in for the next day's result.
             $recorder->handle($fresh, $items, $check->checked_on);
 
+            // The recorder stamps last_checked_at with now. Date it to when
+            // the scheduled check was sent instead, so a fallback that lands
+            // hours later doesn't push the keyword out of the next daily batch.
+            TrackedKeyword::query()->whereKey($fresh->id)->update(['last_checked_at' => $check->reference_at]);
+
             if ($check->dataforseo_task_id !== null) {
                 // A late primary result must not overwrite this check.
                 DB::table('dataforseo_tasks')
