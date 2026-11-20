@@ -137,7 +137,8 @@ class UmamiIntegrationTest extends TestCase
 
         $this->assertSame([['id' => self::WEBSITE_ID, 'name' => 'Guard Dog', 'domain' => 'guarddog.cc']], $websites);
         Http::assertSent(fn (Request $request): bool => $request->hasHeader('Authorization', 'Bearer umami_test')
-            && str_starts_with($request->url(), self::BASE.'/api/websites?'));
+            && str_starts_with($request->url(), self::BASE.'/api/websites?')
+            && str_contains($request->url(), 'includeTeams=true'));
     }
 
     public function test_client_fetches_each_day_with_millisecond_bounds(): void
@@ -306,6 +307,30 @@ class UmamiIntegrationTest extends TestCase
         $this->assertCount(20, $expanded);
         $this->assertSame(31 * 4, PageTrafficSnapshot::query()->where('provider', 'umami')->count());
         $this->assertSame('2026-11-20', $integration->fresh()?->last_synced_at?->format('Y-m-d'));
+    }
+
+    public function test_a_first_sync_runs_as_a_chain_of_week_long_jobs(): void
+    {
+        Carbon::setTestNow('2026-11-20 12:00:00');
+        $this->fakeUmami();
+        $integration = $this->umamiIntegration();
+        Queue::fake();
+
+        (new SyncTrafficAnalyticsJob($integration))->handle(app(TrafficAttributionService::class));
+
+        // Oct 21-27 stored, the rest queued for the next job.
+        $this->assertSame('2026-10-27', $integration->fresh()?->last_synced_at?->format('Y-m-d'));
+        $this->assertSame(7 * 4, PageTrafficSnapshot::query()->where('provider', 'umami')->count());
+        Queue::assertPushed(SyncTrafficAnalyticsJob::class, fn (SyncTrafficAnalyticsJob $job): bool => $job->integration->is($integration));
+
+        // Run the chain to the end.
+        for ($run = 0; $run < 10 && app(TrafficAttributionService::class)->umamiSyncPending($integration); $run++) {
+            (new SyncTrafficAnalyticsJob($integration->fresh() ?? $integration))->handle(app(TrafficAttributionService::class));
+        }
+
+        $this->assertSame(31 * 4, PageTrafficSnapshot::query()->where('provider', 'umami')->count());
+        $this->assertSame('2026-11-20', $integration->fresh()?->last_synced_at?->format('Y-m-d'));
+        $this->assertFalse(app(TrafficAttributionService::class)->umamiSyncPending($integration));
     }
 
     public function test_full_metric_pages_are_followed_by_offset(): void

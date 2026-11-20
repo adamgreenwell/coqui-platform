@@ -145,12 +145,16 @@ class TrafficAttributionService
      * @throws SearchConsoleAuthException when the provider rejects the credentials
      * @throws RuntimeException when the provider request fails
      */
-    public function syncIntegration(ProjectIntegration $integration, int $days = 30): int
+    /**
+     * @param  int|null  $maxDays  Umami only: stop after this many days and
+     *                             leave the rest for another run.
+     */
+    public function syncIntegration(ProjectIntegration $integration, int $days = 30, ?int $maxDays = null): int
     {
         return match (TrafficProvider::tryFrom($integration->provider)) {
             TrafficProvider::Ga4 => $this->syncGa4($integration, $days),
             TrafficProvider::Plausible => $this->syncPlausible($integration, $days),
-            TrafficProvider::Umami => $this->syncUmami($integration, $days),
+            TrafficProvider::Umami => $this->syncUmami($integration, $days, $maxDays),
             null => throw new RuntimeException("{$integration->provider} is not an analytics provider."),
         };
     }
@@ -427,8 +431,11 @@ class TrafficAttributionService
     /**
      * Sync landing page metrics from Umami. Search and AI visits are counted
      * per page from referrer-filtered metrics rather than estimated.
+     *
+     * With $maxDays, a long backfill stops early. last_synced_at then sits
+     * before today (see umamiSyncPending) and the next run carries on.
      */
-    public function syncUmami(ProjectIntegration $integration, int $days = 30): int
+    public function syncUmami(ProjectIntegration $integration, int $days = 30, ?int $maxDays = null): int
     {
         $project = $integration->project;
         if ($project === null) {
@@ -441,8 +448,13 @@ class TrafficAttributionService
         // limited), so each week is stored as soon as it's fetched. If the
         // job is cut short, the next run resumes after the last stored week.
         $count = 0;
+        $daysDone = 0;
         $chunkStart = $startDate->copy();
         while ($chunkStart->lte($endDate)) {
+            if ($maxDays !== null && $daysDone >= $maxDays) {
+                return $count;
+            }
+
             $chunkEnd = $chunkStart->copy()->addDays(self::UMAMI_DAYS_PER_CHUNK - 1);
             if ($chunkEnd->gt($endDate)) {
                 $chunkEnd = $endDate->copy();
@@ -457,12 +469,25 @@ class TrafficAttributionService
                 $integration->update(['status' => 'connected', 'last_synced_at' => $chunkEnd->copy()]);
             }
 
+            $daysDone += (int) $chunkStart->diffInDays($chunkEnd) + 1;
             $chunkStart = $chunkEnd->copy()->addDay();
         }
 
         $this->markSynced($integration, $project, TrafficProvider::Umami, $startDate, $endDate, $count, Carbon::now());
 
         return $count;
+    }
+
+    /**
+     * Whether an Umami sync stopped before reaching today.
+     */
+    public function umamiSyncPending(ProjectIntegration $integration): bool
+    {
+        $lastSynced = $integration->fresh()?->last_synced_at;
+
+        return $integration->provider === TrafficProvider::Umami->value
+            && $lastSynced instanceof CarbonInterface
+            && $lastSynced->lt(Carbon::today());
     }
 
     /**

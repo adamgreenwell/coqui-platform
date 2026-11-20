@@ -55,7 +55,7 @@ class UmamiAnalyticsClient
     ) {}
 
     /**
-     * Websites the API key can read.
+     * Websites the API key can read, including team websites.
      *
      * @return list<array{id: string, name: string, domain: string}>
      */
@@ -64,7 +64,7 @@ class UmamiAnalyticsClient
         $target = $this->guard->check($baseUrl);
 
         $this->throttle($target, 1);
-        $response = $this->request($target, $apiKey)->get($this->apiRoot($target).'/websites', ['pageSize' => 200]);
+        $response = $this->request($target, $apiKey)->get($this->apiRoot($target).'/websites', ['pageSize' => 200, 'includeTeams' => 'true']);
 
         $body = $this->decode(null, $response, 'website list');
         $rows = is_array($body['data'] ?? null) ? $body['data'] : [];

@@ -30,6 +30,13 @@ class SyncTrafficAnalyticsJob implements ShouldQueue
     /** @var list<int> */
     public array $backoff = [60, 300];
 
+    /**
+     * Days of Umami traffic one job fetches. A first sync of a busy Umami
+     * Cloud site needs hundreds of rate-limited requests, so it runs as a
+     * chain of short jobs instead of one that could outlive its timeout.
+     */
+    public const int UMAMI_DAYS_PER_JOB = 7;
+
     public function __construct(
         public readonly ProjectIntegration $integration,
         public readonly int $days = 30,
@@ -59,11 +66,15 @@ class SyncTrafficAnalyticsJob implements ShouldQueue
         }
 
         try {
-            $trafficService->syncIntegration($this->integration, $this->days);
+            $trafficService->syncIntegration($this->integration, $this->days, self::UMAMI_DAYS_PER_JOB);
         } catch (SearchConsoleAuthException) {
             // The integration is marked as needing a reconnect; retrying with
             // the same credentials can't succeed.
             return;
+        }
+
+        if ($trafficService->umamiSyncPending($this->integration)) {
+            self::dispatch($this->integration, $this->days);
         }
     }
 }
