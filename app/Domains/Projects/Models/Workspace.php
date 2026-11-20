@@ -226,6 +226,18 @@ class Workspace extends Model
     }
 
     /**
+     * Lock the workspace for the rest of the current transaction and return
+     * how many more keywords it can track. Concurrent bulk adds wait on the
+     * lock, so they can't both fill the same remaining slots.
+     */
+    public function lockKeywordAllowance(): int
+    {
+        static::query()->whereKey($this->id)->lockForUpdate()->first();
+
+        return max(0, $this->tracked_keyword_limit - $this->trackedKeywordsCount());
+    }
+
+    /**
      * Assert that the requested crawl URL limit does not exceed plan limits.
      */
     public function assertCanCrawlUrls(int $requestedUrls): void

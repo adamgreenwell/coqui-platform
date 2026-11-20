@@ -160,6 +160,7 @@ class KeywordGapController extends Controller
 
         DB::transaction(function () use (
             $rawKeywords,
+            $workspace,
             $project,
             $device,
             $cadence,
@@ -168,6 +169,10 @@ class KeywordGapController extends Controller
             $cacheRepo,
             &$trackedKeywords,
         ): void {
+            // Only new keywords use up the plan's limit; re-adding or
+            // reactivating an existing one doesn't.
+            $remaining = $workspace->lockKeywordAllowance();
+
             foreach ($rawKeywords as $item) {
                 if (is_string($item)) {
                     $kw = trim($item);
@@ -222,6 +227,12 @@ class KeywordGapController extends Controller
                         $existing->update($updates);
                     }
                 } else {
+                    if ($remaining <= 0) {
+                        // Throws the plan-limit message and rolls back the batch.
+                        $workspace->assertCanTrackKeywords(1);
+                    }
+                    $remaining--;
+
                     TrackedKeyword::query()->create([
                         'project_id' => $project->id,
                         'keyword' => $kw,
