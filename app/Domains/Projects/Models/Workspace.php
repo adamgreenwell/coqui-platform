@@ -40,6 +40,18 @@ class Workspace extends Model
 {
     use HasPublicUuid;
 
+    /**
+     * Base plans a workspace can pay for, cheapest first. Free is the
+     * absence of one, and the Runnr add-on is billed on top of any of them.
+     */
+    public const PAID_PLAN_TIERS = ['personal', 'pro', 'agency'];
+
+    /**
+     * Base plans that unlock the Pro feature set (briefs, backlinks,
+     * attribution, bot telemetry). Personal has them with smaller limits.
+     */
+    public const PRO_FEATURE_TIERS = ['personal', 'pro', 'agency'];
+
     /** @var list<string> */
     protected $fillable = [
         'name',
@@ -206,6 +218,11 @@ class Workspace extends Model
                 'cloud_crawl_url_limit' => 25000,
                 'monthly_dfs_budget_usd' => '150.0000',
             ],
+            'personal' => [
+                'tracked_keyword_limit' => 300,
+                'cloud_crawl_url_limit' => 5000,
+                'monthly_dfs_budget_usd' => '8.0000',
+            ],
             default => [
                 'tracked_keyword_limit' => 100,
                 'cloud_crawl_url_limit' => 1000,
@@ -214,7 +231,7 @@ class Workspace extends Model
         };
 
         $this->update([
-            'plan_tier' => in_array($tier, ['pro', 'agency'], true) ? $tier : 'free',
+            'plan_tier' => in_array($tier, self::PAID_PLAN_TIERS, true) ? $tier : 'free',
             'tracked_keyword_limit' => $limits['tracked_keyword_limit'],
             'cloud_crawl_url_limit' => $limits['cloud_crawl_url_limit'],
             'monthly_dfs_budget_usd' => $limits['monthly_dfs_budget_usd'],

@@ -272,7 +272,7 @@ export default function WorkspaceBilling({
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
             {/* Free Tier */}
             <div className={`rounded-xl border p-6 flex flex-col justify-between gap-6 transition ${
               workspace.plan_tier === 'free'
@@ -320,6 +320,70 @@ export default function WorkspaceBilling({
                     onClick={handlePortal}
                     disabled={processingTier !== null || !canEdit}
                     title="Cancel or change your subscription in the Stripe customer portal"
+                    className="w-full py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs transition cursor-pointer"
+                  >
+                    Downgrade via Billing Portal
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Personal Tier */}
+            <div className={`rounded-xl border p-6 flex flex-col justify-between gap-6 transition ${
+              workspace.plan_tier === 'personal'
+                ? 'border-sky-500/60 bg-slate-900/90 ring-2 ring-sky-500/40'
+                : 'border-slate-800 bg-slate-900/50'
+            }`}>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-lg font-bold text-white">Personal</h3>
+                  {workspace.plan_tier === 'personal' && (
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                      Current Plan
+                    </span>
+                  )}
+                </div>
+                <div>
+                  <span className="text-3xl font-extrabold text-white">${plans.personal?.price_usd ?? 19}</span>
+                  <span className="text-xs text-slate-400 ml-1">/ month</span>
+                </div>
+                <p className="text-xs text-slate-400">
+                  For bloggers and individual site owners: the full Pro toolset, sized for one site.
+                </p>
+                <ul className="space-y-2 text-xs text-slate-300 pt-2 border-t border-slate-800">
+                  {plans.personal?.features.map((f) => (
+                    <li key={f} className="flex items-start gap-2">
+                      <Check className="h-3.5 w-3.5 text-sky-400 shrink-0 mt-0.5" />
+                      <span>{f}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              <div>
+                {workspace.plan_tier === 'personal' ? (
+                  <button
+                    type="button"
+                    disabled
+                    className="w-full py-2 rounded-lg bg-sky-600/30 text-sky-300 font-medium text-xs cursor-default border border-sky-500/30"
+                  >
+                    Active Plan
+                  </button>
+                ) : workspace.plan_tier === 'free' ? (
+                  <button
+                    type="button"
+                    onClick={() => handleUpgrade('personal')}
+                    disabled={processingTier !== null}
+                    className="w-full py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-semibold text-xs transition cursor-pointer shadow-md shadow-sky-500/20"
+                  >
+                    {processingTier === 'personal' ? 'Redirecting to Stripe...' : 'Upgrade to Personal'}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handlePortal}
+                    disabled={processingTier !== null || !canEdit}
+                    title="Change your subscription in the Stripe customer portal"
                     className="w-full py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium text-xs transition cursor-pointer"
                   >
                     Downgrade via Billing Portal

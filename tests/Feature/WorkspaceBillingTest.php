@@ -222,6 +222,17 @@ class WorkspaceBillingTest extends TestCase
         $this->assertFalse(Feature::for($this->workspace)->active('white-label-reports'));
         $this->assertFalse(Feature::for($this->workspace)->active('runnr-smoke-tests'));
 
+        // Personal tier: the Pro feature set, without the Agency extras
+        Feature::flushCache();
+        $this->workspace->applyPlanTier('personal');
+        $this->assertTrue(Feature::for($this->workspace)->active('content-briefs'));
+        $this->assertTrue(Feature::for($this->workspace)->active('backlink-intelligence'));
+        $this->assertTrue(Feature::for($this->workspace)->active('traffic-attribution'));
+        $this->assertTrue(Feature::for($this->workspace)->active('bot-telemetry'));
+        $this->assertFalse(Feature::for($this->workspace)->active('white-label-reports'));
+        $this->assertFalse(Feature::for($this->workspace)->active('priority-queue'));
+        $this->assertFalse(Feature::for($this->workspace)->active('runnr-smoke-tests'));
+
         // Pro tier checks
         Feature::flushCache();
         $this->workspace->applyPlanTier('pro');
@@ -255,6 +266,25 @@ class WorkspaceBillingTest extends TestCase
         $target = (string) $response->headers->get('Location');
         $this->assertStringContainsString('session_id=cs_mock_', $target);
         $this->assertStringContainsString('plan=pro', $target);
+    }
+
+    public function test_the_personal_plan_has_its_own_limits_and_checkout(): void
+    {
+        $this->workspace->applyPlanTier('personal');
+        $this->workspace->refresh();
+        $this->assertSame('personal', $this->workspace->plan_tier);
+        $this->assertSame(300, $this->workspace->tracked_keyword_limit);
+        $this->assertSame(5000, $this->workspace->cloud_crawl_url_limit);
+        $this->assertSame(8.0, (float) $this->workspace->monthly_dfs_budget_usd);
+
+        $this->workspace->applyPlanTier('free');
+        $response = $this->actingAs($this->owner)
+            ->post(route('workspaces.billing.checkout', $this->workspace), [
+                'plan_tier' => 'personal',
+            ]);
+
+        $response->assertRedirect();
+        $this->assertStringContainsString('plan=personal', (string) $response->headers->get('Location'));
     }
 
     public function test_customer_portal_redirect(): void

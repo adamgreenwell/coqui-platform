@@ -78,7 +78,7 @@ class WorkspaceBillingController extends Controller
         Gate::authorize('update', $workspace);
 
         $validated = $request->validate([
-            'plan_tier' => ['required', 'string', 'in:pro,agency,runnr_addon'],
+            'plan_tier' => ['required', 'string', 'in:personal,pro,agency,runnr_addon'],
         ]);
 
         $tier = (string) $validated['plan_tier'];
