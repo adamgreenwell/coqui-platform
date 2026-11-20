@@ -8,10 +8,10 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * One row per keyword per day that the backup rank provider was asked to
- * check, with what it cost. The cost column is also the fallback's spend
- * ledger, so it counts toward the platform caps and workspace allowance.
- * Rows outlive the keyword, project and workspace so deleting one never
- * refunds spend that was already paid.
+ * check, and a spend ledger with one row per paid request, dated when it
+ * was paid. The ledger counts toward the platform caps and the workspace
+ * allowance. Both outlive the keyword, project and workspace, so deleting
+ * one never refunds spend that was already paid.
  */
 return new class extends Migration
 {
@@ -31,8 +31,9 @@ return new class extends Migration
             $table->timestamp('reference_at');
             $table->unsignedTinyInteger('pages_fetched')->default(0);
             $table->decimal('cost_usd', 10, 6)->default(0);
-            // Worst-case cost held while the check runs, so concurrent checks
-            // can't all pass the caps against the same remaining allowance.
+            // Unpaid part of the worst-case cost, held while the check runs so
+            // concurrent checks can't all pass the caps against the same
+            // remaining allowance.
             $table->decimal('reserved_usd', 10, 6)->default(0);
             $table->text('error_message')->nullable();
             $table->timestamp('completed_at')->nullable();
@@ -41,10 +42,21 @@ return new class extends Migration
             $table->unique(['tracked_keyword_id', 'checked_on']);
             $table->index(['workspace_id', 'created_at']);
         });
+
+        Schema::create('rank_fallback_spend', function (Blueprint $table): void {
+            $table->id();
+            $table->foreignId('rank_fallback_check_id')->nullable()->constrained('rank_fallback_checks')->nullOnDelete();
+            $table->foreignId('workspace_id')->nullable()->constrained('workspaces')->nullOnDelete();
+            $table->decimal('cost_usd', 10, 6);
+            $table->timestamp('recorded_at')->index();
+
+            $table->index(['workspace_id', 'recorded_at']);
+        });
     }
 
     public function down(): void
     {
+        Schema::dropIfExists('rank_fallback_spend');
         Schema::dropIfExists('rank_fallback_checks');
     }
 };

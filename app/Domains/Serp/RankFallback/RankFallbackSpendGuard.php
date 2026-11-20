@@ -66,8 +66,8 @@ class RankFallbackSpendGuard
     /**
      * Check the caps and hold the worst-case cost on the check in one step,
      * under a lock, so checks running at the same time see each other's
-     * holds. The hold is the cost already paid on earlier attempts plus
-     * $estimatedCostUsd, and it is released when the check finishes.
+     * holds. The hold shrinks as pages are paid and is released when the
+     * check finishes.
      *
      * @throws RankFallbackBudgetException
      */
@@ -79,22 +79,47 @@ class RankFallbackSpendGuard
 
             $this->assertCanSpend($estimatedCostUsd, $workspace);
 
-            $check->update(['reserved_usd' => (float) $check->cost_usd + $estimatedCostUsd]);
+            $check->update(['reserved_usd' => $estimatedCostUsd]);
         });
     }
 
     /**
-     * Fallback spend since a time: what each check paid, or its hold while
-     * it is still running, whichever is larger.
+     * Record one paid request: a ledger row dated now, moved out of the
+     * check's hold so it isn't counted twice.
+     */
+    public function recordCharge(RankFallbackCheck $check, float $costUsd): void
+    {
+        DB::transaction(function () use ($check, $costUsd): void {
+            DB::table('rank_fallback_spend')->insert([
+                'rank_fallback_check_id' => $check->id,
+                'workspace_id' => $check->workspace_id,
+                'cost_usd' => $costUsd,
+                'recorded_at' => now(),
+            ]);
+
+            $check->update([
+                'pages_fetched' => $check->pages_fetched + 1,
+                'cost_usd' => (float) $check->cost_usd + $costUsd,
+                'reserved_usd' => max(0.0, (float) $check->reserved_usd - $costUsd),
+            ]);
+        });
+    }
+
+    /**
+     * Fallback spend since a time: paid requests recorded since then, plus
+     * every hold on a check that is still running. Holds count toward any
+     * period, so a check that crosses midnight is never left out.
      */
     public static function spendSince(DateTimeInterface $since, ?int $workspaceId = null): float
     {
-        $query = DB::table('rank_fallback_checks')->where('created_at', '>=', $since);
+        $paid = DB::table('rank_fallback_spend')->where('recorded_at', '>=', $since);
+        $held = DB::table('rank_fallback_checks')->where('reserved_usd', '>', 0);
 
         if ($workspaceId !== null) {
-            $query->where('workspace_id', $workspaceId);
+            $paid->where('workspace_id', $workspaceId);
+            $held->where('workspace_id', $workspaceId);
         }
 
-        return (float) $query->sum(DB::raw('CASE WHEN reserved_usd > cost_usd THEN reserved_usd ELSE cost_usd END'));
+        return (float) $paid->sum('cost_usd') + (float) $held->sum('reserved_usd');
     }
 }

@@ -14,6 +14,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\RateLimited;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Facades\DB;
 use Throwable;
 
@@ -31,7 +32,11 @@ class FetchFallbackRankJob implements ShouldQueue
      */
     public int $maxExceptions = 3;
 
-    public int $timeout = 180;
+    /**
+     * Below the queue's retry_after (90s), so a running check is never
+     * handed to a second worker. Pages already fetched are kept on retry.
+     */
+    public int $timeout = 75;
 
     /** @var list<int> */
     public array $backoff = [60, 300];
@@ -54,7 +59,11 @@ class FetchFallbackRankJob implements ShouldQueue
     {
         // A check makes up to max_pages requests, so this keeps the request
         // rate under SERPHouse's 60 per minute.
-        return [new RateLimited('rank-fallback')];
+        return [
+            new RateLimited('rank-fallback'),
+            // Never two runs of the same check at once.
+            (new WithoutOverlapping("rank-fallback-check:{$this->checkId}"))->releaseAfter(30)->expireAfter(120),
+        ];
     }
 
     public function handle(
@@ -109,8 +118,7 @@ class FetchFallbackRankJob implements ShouldQueue
             $pages[] = $response;
 
             // Only successful requests are billed.
-            $check->increment('pages_fetched');
-            $check->increment('cost_usd', $pageCost);
+            $guard->recordCharge($check, $pageCost);
 
             if ($adapter->organicCount($response) === 0) {
                 break;

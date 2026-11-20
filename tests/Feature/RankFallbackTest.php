@@ -11,10 +11,12 @@ use App\Domains\Serp\Models\KeywordRankSnapshot;
 use App\Domains\Serp\Models\RankFallbackCheck;
 use App\Domains\Serp\Models\TrackedKeyword;
 use App\Domains\Serp\RankFallback\FetchFallbackRankJob;
+use App\Domains\Serp\RankFallback\RankFallbackSpendGuard;
 use App\Domains\Serp\RankFallback\SerphouseResultAdapter;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -269,7 +271,7 @@ class RankFallbackTest extends TestCase
     {
         $keyword = $this->keyword('voice generator');
         $check = $this->check($keyword, null, now());
-        $check->update(['cost_usd' => 0.5]);
+        app(RankFallbackSpendGuard::class)->recordCharge($check, 0.5);
 
         $keyword->delete();
 
@@ -284,12 +286,31 @@ class RankFallbackTest extends TestCase
         $this->assertFalse(property_exists($job, 'tries'));
         $this->assertSame(3, $job->maxExceptions);
         $this->assertTrue($job->retryUntil() > now()->addHours(5));
+
+        // A running check must not be handed to a second worker.
+        $this->assertLessThan((int) config('queue.connections.redis.retry_after'), $job->timeout);
+        $this->assertContains(WithoutOverlapping::class, array_map(get_class(...), $job->middleware()));
+    }
+
+    public function test_spend_counts_in_the_period_it_was_paid_and_holds_count_in_every_period(): void
+    {
+        $guard = app(RankFallbackSpendGuard::class);
+        $check = $this->check($this->keyword('voice generator'), null, now()->subDay());
+        $check->update(['reserved_usd' => 0.0075]);
+
+        // Created yesterday, paid today: the charge lands in today's total,
+        // and the rest of the hold still counts.
+        $guard->recordCharge($check, 0.00075);
+
+        $this->assertEqualsWithDelta(0.0075, RankFallbackSpendGuard::spendSince(now()->startOfDay()), 0.000001);
+        $this->assertEqualsWithDelta(0.00675, (float) $check->fresh()?->reserved_usd, 0.000001);
+        $this->assertSame(1, $check->fresh()?->pages_fetched);
     }
 
     public function test_fallback_spend_counts_toward_the_workspace_allowance(): void
     {
         $check = $this->check($this->keyword('voice generator'), null, now());
-        $check->update(['cost_usd' => 1.25]);
+        app(RankFallbackSpendGuard::class)->recordCharge($check, 1.25);
 
         $this->assertEqualsWithDelta(1.25, $this->workspace->fresh()?->currentMonthDfsSpend(), 0.000001);
         $this->assertEqualsWithDelta(23.75, $this->workspace->fresh()?->remainingDfsBudget(), 0.000001);
