@@ -45,7 +45,7 @@ class TrafficAttributionController extends Controller
                 'provider' => $integration->provider,
                 'label' => TrafficProvider::from($integration->provider)->shortLabel(),
                 'status' => $integration->status,
-                'externalId' => $integration->external_identifier,
+                'site' => $integration->site_url ?? $integration->external_identifier,
                 'lastSyncedAt' => $integration->last_synced_at instanceof CarbonInterface ? $integration->last_synced_at->toIso8601String() : null,
             ])
             ->values()
@@ -81,11 +81,14 @@ class TrafficAttributionController extends Controller
         Gate::authorize('update', $project);
 
         $result = $this->trafficService->syncProjectTraffic($project, 30);
+        $queued = $result['queued'] === []
+            ? ''
+            : ' '.implode(', ', $result['queued']).' is syncing in the background.';
 
         if ($result['success']) {
             return redirect()
                 ->back()
-                ->with('success', "Traffic attribution synchronized: {$result['records_synced']} snapshots updated.");
+                ->with('success', "Traffic attribution synchronized: {$result['records_synced']} snapshots updated.{$queued}");
         }
 
         $errorMsg = implode(', ', $result['errors']);

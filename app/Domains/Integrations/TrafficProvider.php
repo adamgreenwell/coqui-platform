@@ -12,17 +12,19 @@ enum TrafficProvider: string
 {
     case Ga4 = 'ga4';
     case Plausible = 'plausible';
+    case Umami = 'umami';
 
     /**
      * Providers in the order the traffic report prefers them when a project
-     * has more than one. GA4 reports sources per page; Plausible's are
-     * estimated from daily site-wide shares.
+     * has more than one. GA4 reports sources per page and Umami counts
+     * search and AI referrers per page; Plausible's are estimated from daily
+     * site-wide shares.
      *
      * @return list<self>
      */
     public static function byPriority(): array
     {
-        return [self::Ga4, self::Plausible];
+        return [self::Ga4, self::Umami, self::Plausible];
     }
 
     /**
@@ -41,6 +43,7 @@ enum TrafficProvider: string
         return match ($this) {
             self::Ga4 => 'Google Analytics 4',
             self::Plausible => 'Plausible Analytics',
+            self::Umami => 'Umami Analytics',
         };
     }
 
@@ -49,6 +52,7 @@ enum TrafficProvider: string
         return match ($this) {
             self::Ga4 => 'GA4',
             self::Plausible => 'Plausible',
+            self::Umami => 'Umami',
         };
     }
 }

@@ -114,6 +114,8 @@ Route::middleware(['auth'])->group(function (): void {
         ->middleware('feature:traffic-attribution');
     Route::post('/workspaces/{workspace}/projects/{project}/integrations/plausible/connect', [ProjectIntegrationController::class, 'connectPlausible'])->name('workspaces.projects.integrations.plausible.connect')
         ->middleware('feature:traffic-attribution');
+    Route::post('/workspaces/{workspace}/projects/{project}/integrations/umami/connect', [ProjectIntegrationController::class, 'connectUmami'])->name('workspaces.projects.integrations.umami.connect')
+        ->middleware('feature:traffic-attribution');
     Route::post('/workspaces/{workspace}/projects/{project}/integrations/runnr/connect', [ProjectIntegrationController::class, 'connectRunnr'])->name('workspaces.projects.integrations.runnr.connect');
     Route::delete('/workspaces/{workspace}/projects/{project}/integrations/runnr/disconnect', [ProjectIntegrationController::class, 'disconnectRunnr'])->name('workspaces.projects.integrations.runnr.disconnect');
     Route::post('/workspaces/{workspace}/projects/{project}/integrations/{integration}/sync', [ProjectIntegrationController::class, 'sync'])->name('workspaces.projects.integrations.sync')

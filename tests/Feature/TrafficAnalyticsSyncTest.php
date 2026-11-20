@@ -146,14 +146,14 @@ class TrafficAnalyticsSyncTest extends TestCase
                 ->where('integrations.0.provider', 'ga4')
                 ->where('integrations.0.label', 'GA4')
                 ->where('integrations.1.provider', 'plausible')
-                ->where('integrations.1.externalId', 'paid.example')
-                ->where('trafficProviderLabels', ['ga4' => 'GA4', 'plausible' => 'Plausible'])
+                ->where('integrations.1.site', 'paid.example')
+                ->where('trafficProviderLabels', ['ga4' => 'GA4', 'umami' => 'Umami', 'plausible' => 'Plausible'])
             );
     }
 
     public function test_provider_values_follow_report_priority(): void
     {
-        $this->assertSame(['ga4', 'plausible'], TrafficProvider::values());
+        $this->assertSame(['ga4', 'umami', 'plausible'], TrafficProvider::values());
         $this->assertSame('Plausible Analytics', TrafficProvider::Plausible->label());
     }
 

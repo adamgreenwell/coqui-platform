@@ -7,15 +7,19 @@ namespace App\Http\Controllers;
 use App\Domains\Billing\PlanFeature;
 use App\Domains\Integrations\Jobs\SyncBingWebmasterJob;
 use App\Domains\Integrations\Jobs\SyncGoogleSearchConsoleJob;
+use App\Domains\Integrations\Jobs\SyncTrafficAnalyticsJob;
 use App\Domains\Integrations\Models\ProjectIntegration;
 use App\Domains\Integrations\Services\GoogleSearchConsoleClient;
+use App\Domains\Integrations\Services\SearchConsoleAuthException;
 use App\Domains\Integrations\Services\TrafficAttributionService;
+use App\Domains\Integrations\Services\UmamiAnalyticsClient;
 use App\Domains\Integrations\TrafficProvider;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\Workspace;
 use App\Features\RunnrIntegration;
 use App\Http\Middleware\EnsureRunnrIntegrationEnabled;
+use App\Support\Http\UnsafeUrlException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -26,6 +30,7 @@ use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Throwable;
 
 class ProjectIntegrationController extends Controller implements HasMiddleware
@@ -297,6 +302,107 @@ class ProjectIntegrationController extends Controller implements HasMiddleware
             ->with('success', 'Google Analytics 4 connected successfully.');
     }
 
+    /**
+     * Connect a self-hosted or cloud Umami instance. The website is matched to
+     * the project's domain unless a website ID is given, and the first sync
+     * runs in the background.
+     */
+    public function connectUmami(
+        Request $request,
+        Workspace $workspace,
+        Project $project,
+        UmamiAnalyticsClient $umami,
+    ): RedirectResponse {
+        abort_if($project->workspace_id !== $workspace->id, 404);
+        Gate::authorize('update', $project);
+
+        $validated = $request->validate([
+            'base_url' => ['required', 'string', 'max:255'],
+            'api_key' => ['required', 'string', 'max:255'],
+            'website_id' => ['nullable', 'uuid'],
+        ]);
+
+        $baseUrl = rtrim(trim((string) $validated['base_url']), '/');
+        $apiKey = trim((string) $validated['api_key']);
+
+        try {
+            $websites = $umami->listWebsites($baseUrl, $apiKey);
+        } catch (UnsafeUrlException $e) {
+            throw ValidationException::withMessages(['base_url' => $e->getMessage()]);
+        } catch (SearchConsoleAuthException) {
+            throw ValidationException::withMessages(['api_key' => 'Umami rejected this API key.']);
+        } catch (Throwable $e) {
+            Log::warning("Umami connect failed for project {$project->id}: {$e->getMessage()}");
+
+            throw ValidationException::withMessages(['base_url' => 'Couldn\'t reach Umami at that address. Check the URL and that the instance is online.']);
+        }
+
+        $website = $this->matchUmamiWebsite($websites, $project->domain, $validated['website_id'] ?? null);
+
+        if ($website === null) {
+            $available = collect($websites)
+                ->take(10)
+                ->map(fn (array $site): string => "{$site['name']} ({$site['domain']}): {$site['id']}")
+                ->implode('; ');
+
+            throw ValidationException::withMessages(['website_id' => $websites === []
+                ? 'This API key can\'t see any Umami websites.'
+                : "No Umami website matches {$project->domain}. Enter its website ID. Available: {$available}"]);
+        }
+
+        /** @var ProjectIntegration $integration */
+        $integration = ProjectIntegration::query()->updateOrCreate(
+            [
+                'project_id' => $project->id,
+                'provider' => 'umami',
+            ],
+            [
+                'site_url' => $website['domain'] !== '' ? $website['domain'] : $website['name'],
+                'external_identifier' => $website['id'],
+                'status' => 'connected',
+                'credentials_encrypted' => [
+                    'base_url' => $baseUrl,
+                    'api_key' => $apiKey,
+                ],
+                // A new or changed website starts with a full sync.
+                'last_synced_at' => null,
+            ]
+        );
+
+        ProjectActivity::log(
+            project: $project,
+            eventType: 'integration.connected',
+            title: 'Umami Analytics Connected',
+            description: "Umami website {$integration->site_url} connected for per-page organic and AI referral tracking.",
+            properties: [
+                'provider' => 'umami',
+                'website_id' => $website['id'],
+            ],
+        );
+
+        SyncTrafficAnalyticsJob::dispatch($integration);
+
+        return redirect()
+            ->back()
+            ->with('success', 'Umami connected. The last 30 days of traffic are syncing in the background.');
+    }
+
+    /**
+     * @param  list<array{id: string, name: string, domain: string}>  $websites
+     * @return array{id: string, name: string, domain: string}|null
+     */
+    private function matchUmamiWebsite(array $websites, string $projectDomain, ?string $websiteId): ?array
+    {
+        if ($websiteId !== null && $websiteId !== '') {
+            return collect($websites)->first(fn (array $site): bool => strcasecmp($site['id'], $websiteId) === 0);
+        }
+
+        $bare = fn (string $domain): string => preg_replace('/^www\./', '', strtolower(trim($domain))) ?? '';
+        $target = $bare($projectDomain);
+
+        return collect($websites)->first(fn (array $site): bool => $target !== '' && $bare($site['domain']) === $target);
+    }
+
     public function connectPlausible(
         Request $request,
         Workspace $workspace,
@@ -367,6 +473,14 @@ class ProjectIntegrationController extends Controller implements HasMiddleware
             SyncGoogleSearchConsoleJob::dispatch($integration);
         } elseif ($integration->provider === 'bing') {
             SyncBingWebmasterJob::dispatch($integration);
+        } elseif ($integration->provider === TrafficProvider::Umami->value) {
+            // A backfill can take minutes (Umami Cloud is rate limited), longer
+            // than a web request may run, so it goes to the queue in week-long jobs.
+            SyncTrafficAnalyticsJob::dispatch($integration);
+
+            return redirect()
+                ->back()
+                ->with('success', 'Umami sync queued. New traffic appears once it finishes.');
         } elseif (TrafficProvider::tryFrom($integration->provider) !== null) {
             try {
                 $trafficService->syncIntegration($integration);
