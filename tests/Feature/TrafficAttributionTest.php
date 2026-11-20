@@ -383,6 +383,34 @@ class TrafficAttributionTest extends TestCase
         $this->assertSame(40, $report['kpis']['total_organic_sessions']);
     }
 
+    public function test_the_report_ignores_snapshots_from_a_removed_ga4_integration(): void
+    {
+        $this->plausibleIntegration();
+
+        foreach (['ga4' => 120, 'plausible' => 100] as $provider => $sessions) {
+            PageTrafficSnapshot::query()->create([
+                'project_id' => $this->project->id,
+                'provider' => $provider,
+                'path' => '/pricing',
+                'path_hash' => hash('sha256', '/pricing'),
+                'date' => Carbon::today()->subDay()->format('Y-m-d'),
+                'organic_sessions' => $sessions,
+                'ai_referral_sessions' => 0,
+                'direct_sessions' => 0,
+                'total_sessions' => $sessions,
+                'bounce_rate' => 0,
+                'avg_engagement_time_sec' => 0,
+                'ai_referrals_breakdown' => [],
+            ]);
+        }
+
+        // GA4's integration was removed, but its snapshots are still stored.
+        $report = $this->trafficService->getPagePerformanceReport($this->project, 30);
+
+        $this->assertSame('plausible', $report['kpis']['traffic_provider']);
+        $this->assertSame(100, $report['kpis']['total_organic_sessions']);
+    }
+
     public function test_ga4_uses_the_configured_api_base_url(): void
     {
         config()->set('services.google.ga4_base_url', 'https://ga4-proxy.test');

@@ -757,7 +757,9 @@ class TrafficAttributionService
 
     /**
      * The analytics provider whose snapshots the report uses: the preferred
-     * one that has data in the window.
+     * one that has data in the window. Providers still connected to the
+     * project come first, because removing an integration keeps its old
+     * snapshots; those are only used when no connected provider has data.
      */
     public function trafficProviderFor(Project $project, CarbonInterface $since): ?string
     {
@@ -767,9 +769,16 @@ class TrafficAttributionService
             ->pluck('provider')
             ->all();
 
-        foreach (self::TRAFFIC_PROVIDER_PRIORITY as $provider) {
-            if (in_array($provider, $available, true)) {
-                return $provider;
+        $connected = $project->integrations()
+            ->whereIn('provider', self::TRAFFIC_PROVIDER_PRIORITY)
+            ->pluck('provider')
+            ->all();
+
+        foreach ([$connected, self::TRAFFIC_PROVIDER_PRIORITY] as $candidates) {
+            foreach (self::TRAFFIC_PROVIDER_PRIORITY as $provider) {
+                if (in_array($provider, $candidates, true) && in_array($provider, $available, true)) {
+                    return $provider;
+                }
             }
         }
 
