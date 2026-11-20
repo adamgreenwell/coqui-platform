@@ -9,6 +9,7 @@ use App\Domains\Crawls\Models\CrawlUrl;
 use App\Domains\Integrations\Models\PageTrafficSnapshot;
 use App\Domains\Integrations\Models\ProjectIntegration;
 use App\Domains\Integrations\Models\SearchPerformancePage;
+use App\Domains\Integrations\TrafficProvider;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use Carbon\CarbonInterface;
@@ -16,17 +17,11 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use RuntimeException;
 use Throwable;
 
 class TrafficAttributionService
 {
-    /**
-     * Providers in order of preference when a project has more than one.
-     * GA4 reports sources per page; Plausible's are estimated from daily
-     * site-wide shares.
-     */
-    public const TRAFFIC_PROVIDER_PRIORITY = ['ga4', 'plausible'];
-
     public function __construct(
         private readonly Ga4AnalyticsClient $ga4Client,
         private readonly PlausibleAnalyticsClient $plausibleClient,
@@ -141,14 +136,29 @@ class TrafficAttributionService
     }
 
     /**
-     * Synchronize traffic snapshots for all configured GA4 and Plausible integrations.
+     * Sync one analytics integration's snapshots, returning how many were stored.
+     *
+     * @throws SearchConsoleAuthException when the provider rejects the credentials
+     * @throws RuntimeException when the provider request fails
+     */
+    public function syncIntegration(ProjectIntegration $integration, int $days = 30): int
+    {
+        return match (TrafficProvider::tryFrom($integration->provider)) {
+            TrafficProvider::Ga4 => $this->syncGa4($integration, $days),
+            TrafficProvider::Plausible => $this->syncPlausible($integration, $days),
+            null => throw new RuntimeException("{$integration->provider} is not an analytics provider."),
+        };
+    }
+
+    /**
+     * Synchronize traffic snapshots for every analytics integration on the project.
      *
      * @return array{success: bool, records_synced: int, errors: list<string>}
      */
     public function syncProjectTraffic(Project $project, int $days = 30): array
     {
         $integrations = $project->integrations()
-            ->whereIn('provider', ['ga4', 'plausible'])
+            ->whereIn('provider', TrafficProvider::values())
             ->get();
 
         $totalSynced = 0;
@@ -156,11 +166,7 @@ class TrafficAttributionService
 
         foreach ($integrations as $integration) {
             try {
-                if ($integration->provider === 'ga4') {
-                    $totalSynced += $this->syncGa4($integration, $days);
-                } elseif ($integration->provider === 'plausible') {
-                    $totalSynced += $this->syncPlausible($integration, $days);
-                }
+                $totalSynced += $this->syncIntegration($integration, $days);
             } catch (Throwable $e) {
                 Log::error("Failed to sync {$integration->provider} for project {$project->id}: ".$e->getMessage());
                 $errors[] = "{$integration->provider}: ".$e->getMessage();
@@ -770,12 +776,14 @@ class TrafficAttributionService
             ->all();
 
         $connected = $project->integrations()
-            ->whereIn('provider', self::TRAFFIC_PROVIDER_PRIORITY)
+            ->whereIn('provider', TrafficProvider::values())
             ->pluck('provider')
             ->all();
 
-        foreach ([$connected, self::TRAFFIC_PROVIDER_PRIORITY] as $candidates) {
-            foreach (self::TRAFFIC_PROVIDER_PRIORITY as $provider) {
+        $priority = TrafficProvider::values();
+
+        foreach ([$connected, $priority] as $candidates) {
+            foreach ($priority as $provider) {
                 if (in_array($provider, $candidates, true) && in_array($provider, $available, true)) {
                     return $provider;
                 }
