@@ -333,9 +333,9 @@ export default function ProjectShow({
         </div>
 
         {/* Project Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 border-b border-slate-800 pb-6">
+        <div className="flex flex-col gap-4 border-b border-slate-800 pb-6">
           <div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
               <h1 className="text-2xl font-bold tracking-tight text-white">{project.name}</h1>
               <a
                 href={project.canonical_url}
@@ -355,10 +355,10 @@ export default function ProjectShow({
             </p>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Link
               href={`/workspaces/${workspace.id}/projects/${project.id}/keywords`}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-medium transition cursor-pointer"
+              className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 text-xs font-medium transition cursor-pointer"
             >
               <Search className="h-3.5 w-3.5 text-emerald-400" />
               <span>Rank Tracker</span>
@@ -366,7 +366,7 @@ export default function ProjectShow({
 
             <Link
               href={`/workspaces/${workspace.id}/projects/${project.id}/keyword-explorer`}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-300 text-xs font-medium transition cursor-pointer"
+              className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-sky-300 text-xs font-medium transition cursor-pointer"
             >
               <Sparkles className="h-3.5 w-3.5 text-sky-400" />
               <span>Keyword Explorer</span>
@@ -374,7 +374,7 @@ export default function ProjectShow({
 
             <Link
               href={`/workspaces/${workspace.id}/projects/${project.id}/keyword-gap`}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-medium transition cursor-pointer"
+              className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-medium transition cursor-pointer"
             >
               <Users className="h-3.5 w-3.5 text-indigo-400" />
               <span>Keyword Gap</span>
@@ -382,7 +382,7 @@ export default function ProjectShow({
 
             <Link
               href={`/workspaces/${workspace.id}/projects/${project.id}/backlinks`}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 text-xs font-medium transition cursor-pointer"
+              className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 text-xs font-medium transition cursor-pointer"
             >
               <Link2 className="h-3.5 w-3.5 text-purple-400" />
               <span>Backlinks</span>
@@ -390,7 +390,7 @@ export default function ProjectShow({
 
             <Link
               href={`/workspaces/${workspace.id}/projects/${project.id}/bot-logs`}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-medium transition cursor-pointer"
+              className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 text-xs font-medium transition cursor-pointer"
             >
               <Server className="h-3.5 w-3.5 text-indigo-400" />
               <span>Bot Telemetry</span>
@@ -398,7 +398,7 @@ export default function ProjectShow({
 
             <Link
               href={`/workspaces/${workspace.id}/projects/${project.id}/analytics/performance`}
-              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-300 text-xs font-medium transition cursor-pointer"
+              className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-300 text-xs font-medium transition cursor-pointer"
             >
               <LineChart className="h-3.5 w-3.5 text-teal-400" />
               <span>Traffic &amp; Performance</span>
@@ -413,7 +413,7 @@ export default function ProjectShow({
                   }
                 }}
                 disabled={liveCrawl?.status === 'running' || liveCrawl?.status === 'pending'}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-300 text-xs font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 rounded-lg bg-teal-500/10 hover:bg-teal-500/20 border border-teal-500/30 text-teal-300 text-xs font-medium transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Activity className={`h-3.5 w-3.5 text-teal-400 ${liveCrawl?.status === 'running' ? 'animate-spin' : ''}`} />
                 <span>{liveCrawl?.status === 'running' ? 'Crawling...' : 'Run Cloud Audit'}</span>
@@ -423,7 +423,7 @@ export default function ProjectShow({
             {canEdit && (
               <Link
                 href={`/workspaces/${workspace.id}/projects/${project.id}/settings`}
-                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium transition cursor-pointer"
+                className="inline-flex items-center gap-1.5 whitespace-nowrap px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium transition cursor-pointer"
               >
                 <Settings className="h-3.5 w-3.5 text-slate-400" />
                 <span>Settings</span>
