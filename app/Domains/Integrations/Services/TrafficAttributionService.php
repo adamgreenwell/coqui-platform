@@ -189,6 +189,10 @@ class TrafficAttributionService
         $endDate = Carbon::now();
         $startDate = Carbon::now()->subDays($days);
 
+        // The property this report is for; the user may switch property while
+        // the report is being fetched.
+        $propertyId = $this->ga4Client->resolvePropertyId($integration);
+
         $metrics = $this->ga4Client->fetchLandingPageMetrics($integration, $startDate, $endDate);
         if ($metrics === []) {
             $integration->update([
@@ -293,22 +297,42 @@ class TrafficAttributionService
             ];
         }
 
-        foreach (array_chunk($recordsToUpsert, 500) as $chunk) {
-            PageTrafficSnapshot::query()->upsert(
-                $chunk,
-                ['project_id', 'provider', 'path_hash', 'date'],
-                [
-                    'path',
-                    'organic_sessions',
-                    'ai_referral_sessions',
-                    'direct_sessions',
-                    'total_sessions',
-                    'bounce_rate',
-                    'avg_engagement_time_sec',
-                    'ai_referrals_breakdown',
-                    'updated_at',
-                ]
-            );
+        // Store only if the integration still points at the same property.
+        // Switching property locks the same row while it deletes the old
+        // property's snapshots, so a report fetched before a switch can't be
+        // written after it.
+        $stored = DB::transaction(function () use ($integration, $propertyId, $recordsToUpsert): bool {
+            $current = ProjectIntegration::query()->whereKey($integration->id)->lockForUpdate()->value('external_identifier');
+            $current = is_string($current) ? trim($current) : '';
+            if ($current === '' || (str_starts_with($current, 'properties/') ? $current : 'properties/'.$current) !== $propertyId) {
+                return false;
+            }
+
+            foreach (array_chunk($recordsToUpsert, 500) as $chunk) {
+                PageTrafficSnapshot::query()->upsert(
+                    $chunk,
+                    ['project_id', 'provider', 'path_hash', 'date'],
+                    [
+                        'path',
+                        'organic_sessions',
+                        'ai_referral_sessions',
+                        'direct_sessions',
+                        'total_sessions',
+                        'bounce_rate',
+                        'avg_engagement_time_sec',
+                        'ai_referrals_breakdown',
+                        'updated_at',
+                    ]
+                );
+            }
+
+            return true;
+        });
+
+        if (! $stored) {
+            Log::info("Discarded a GA4 report for {$propertyId}: integration {$integration->id} switched property during the sync.");
+
+            return 0;
         }
 
         $count = count($recordsToUpsert);

@@ -6,6 +6,7 @@ namespace App\Domains\Integrations\Services;
 
 use App\Domains\Integrations\Models\ProjectIntegration;
 use Carbon\CarbonInterface;
+use Illuminate\Http\Client\Pool;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
@@ -135,6 +136,136 @@ class Ga4AnalyticsClient
         }
 
         return $results;
+    }
+
+    /**
+     * Most properties whose website is looked up for domain matching. Each
+     * needs its own request; past this the picker still lists them all.
+     */
+    private const MAX_WEBSITE_LOOKUPS = 50;
+
+    /**
+     * GA4 properties the connected Google account can read, from the
+     * Analytics Admin API, with each property's website when it has a web
+     * data stream (and $withWebsites is on).
+     *
+     * `websites` holds every web stream's URL; `website` is the first, for
+     * display.
+     *
+     * @return list<array{id: string, name: string, account: string, website: string|null, websites: list<string>}>
+     */
+    public function listProperties(ProjectIntegration $integration, bool $withWebsites = true): array
+    {
+        $baseUrl = rtrim((string) config('services.google.ga4_admin_base_url', 'https://analyticsadmin.googleapis.com'), '/');
+        $token = $this->google->getValidAccessToken($integration);
+        $refreshed = false;
+        $pageToken = null;
+        $pages = 0;
+        $properties = [];
+
+        while (true) {
+            $query = ['pageSize' => 200];
+            if ($pageToken !== null) {
+                $query['pageToken'] = $pageToken;
+            }
+
+            $response = Http::withToken($token)->get($baseUrl.'/v1beta/accountSummaries', $query);
+
+            if ($response->status() === 401 && ! $refreshed) {
+                $token = $this->google->refreshToken($integration);
+                $refreshed = true;
+
+                continue;
+            }
+
+            if ($response->status() === 401) {
+                $integration->markNeedsReconnect('GA4 authorization expired or was revoked.');
+                throw new SearchConsoleAuthException('Google Analytics authorization expired or was revoked.');
+            }
+
+            if (! $response->successful()) {
+                // Usually the Admin API isn't enabled in the Google Cloud
+                // project; Google's message says so.
+                $message = $response->json('error.message');
+                throw new RuntimeException('Could not list GA4 properties: '.(is_string($message) && $message !== '' ? $message : 'HTTP '.$response->status()));
+            }
+
+            /** @var list<array<string, mixed>> $accounts */
+            $accounts = is_array($response->json('accountSummaries')) ? $response->json('accountSummaries') : [];
+            foreach ($accounts as $account) {
+                $accountName = is_string($account['displayName'] ?? null) ? $account['displayName'] : '';
+                $summaries = is_array($account['propertySummaries'] ?? null) ? $account['propertySummaries'] : [];
+                foreach ($summaries as $summary) {
+                    $id = is_array($summary) && is_string($summary['property'] ?? null) ? $summary['property'] : '';
+                    if (preg_match('/^properties\/\d+$/', $id) !== 1) {
+                        continue;
+                    }
+
+                    $properties[$id] = [
+                        'id' => $id,
+                        'name' => is_string($summary['displayName'] ?? null) ? $summary['displayName'] : $id,
+                        'account' => $accountName,
+                        'website' => null,
+                        'websites' => [],
+                    ];
+                }
+            }
+
+            $next = $response->json('nextPageToken');
+            $pageToken = is_string($next) && $next !== '' ? $next : null;
+            $pages++;
+
+            if ($pageToken === null || $pages >= 10) {
+                break;
+            }
+        }
+
+        if ($withWebsites && $properties !== []) {
+            $lookup = array_slice(array_keys($properties), 0, self::MAX_WEBSITE_LOOKUPS);
+            $responses = Http::pool(fn (Pool $pool): array => array_map(
+                fn (string $id) => $pool->as($id)->withToken($token)->get($baseUrl.'/v1beta/'.$id.'/dataStreams', ['pageSize' => 50]),
+                $lookup,
+            ));
+
+            foreach ($responses as $id => $streamResponse) {
+                if (! $streamResponse instanceof Response || ! $streamResponse->successful()) {
+                    continue;
+                }
+
+                $streams = $streamResponse->json('dataStreams');
+                foreach (is_array($streams) ? $streams : [] as $stream) {
+                    $uri = is_array($stream) ? data_get($stream, 'webStreamData.defaultUri') : null;
+                    // A property can have a web stream per site; keep them all
+                    // so any of them can match the project.
+                    if (is_string($uri) && $uri !== '') {
+                        $properties[(string) $id]['websites'][] = $uri;
+                        $properties[(string) $id]['website'] ??= $uri;
+                    }
+                }
+            }
+        }
+
+        return array_values($properties);
+    }
+
+    /**
+     * Whether a GA4 web stream's URL is the project's site, ignoring scheme,
+     * "www." and path.
+     */
+    public static function websiteMatchesDomain(?string $website, string $domain): bool
+    {
+        if ($website === null || $website === '') {
+            return false;
+        }
+
+        $host = parse_url(str_contains($website, '://') ? $website : 'https://'.$website, PHP_URL_HOST);
+        if (! is_string($host)) {
+            return false;
+        }
+
+        $strip = fn (string $value): string => preg_replace('/^www\./', '', strtolower(trim($value))) ?? '';
+
+        return $strip($host) !== '' && $strip($host) === $strip($domain);
     }
 
     /**

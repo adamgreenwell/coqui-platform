@@ -145,7 +145,9 @@ class ProjectIntegration extends Model
 
         $this->update([
             'credentials_encrypted' => $creds,
-            'status' => 'connected',
+            // A working token clears a reconnect, but a GA4 integration still
+            // waiting for its property isn't connected until one is chosen.
+            'status' => $this->status === 'needs_property' ? 'needs_property' : 'connected',
         ]);
     }
 }

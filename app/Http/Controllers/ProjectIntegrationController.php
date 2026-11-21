@@ -8,7 +8,9 @@ use App\Domains\Billing\PlanFeature;
 use App\Domains\Integrations\Jobs\SyncBingWebmasterJob;
 use App\Domains\Integrations\Jobs\SyncGoogleSearchConsoleJob;
 use App\Domains\Integrations\Jobs\SyncTrafficAnalyticsJob;
+use App\Domains\Integrations\Models\PageTrafficSnapshot;
 use App\Domains\Integrations\Models\ProjectIntegration;
+use App\Domains\Integrations\Services\Ga4AnalyticsClient;
 use App\Domains\Integrations\Services\GoogleSearchConsoleClient;
 use App\Domains\Integrations\Services\SearchConsoleAuthException;
 use App\Domains\Integrations\Services\TrafficAttributionService;
@@ -26,6 +28,7 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -141,7 +144,7 @@ class ProjectIntegrationController extends Controller implements HasMiddleware
         }
 
         if ($isGa4) {
-            return $this->finishGa4Connect($project, $gscClient, $code, (string) ($pending['property_id'] ?? ''), $returnTo);
+            return $this->finishGa4Connect($project, $gscClient, app(Ga4AnalyticsClient::class), $code, $returnTo);
         }
 
         try {
@@ -259,9 +262,9 @@ class ProjectIntegrationController extends Controller implements HasMiddleware
     }
 
     /**
-     * Start connecting a GA4 property: remember the property, then send the
-     * user to Google to grant read-only Analytics access. The fixed Google
-     * callback finishes the connection.
+     * Start connecting GA4: send the user to Google to grant read-only
+     * Analytics access. The fixed Google callback finishes the connection and
+     * picks the property (or asks the user to choose one).
      */
     public function connectGa4(
         Request $request,
@@ -271,15 +274,6 @@ class ProjectIntegrationController extends Controller implements HasMiddleware
     ): SymfonyResponse {
         abort_if($project->workspace_id !== $workspace->id, 404);
         Gate::authorize('update', $project);
-
-        $validated = $request->validate([
-            'property_id' => ['required', 'string', 'max:100', 'regex:/^\s*(properties\/)?\d{1,20}\s*$/'],
-        ], [
-            'property_id.regex' => 'Enter the numeric GA4 property ID, like 123456789.',
-        ]);
-
-        $digits = preg_replace('/\D/', '', str_replace('properties/', '', (string) $validated['property_id']));
-        $propertyId = 'properties/'.$digits;
 
         $state = Str::random(40);
 
@@ -291,32 +285,96 @@ class ProjectIntegrationController extends Controller implements HasMiddleware
 
         $request->session()->put(self::GOOGLE_OAUTH_SESSION_PREFIX.$state, [
             'provider' => 'ga4',
-            'property_id' => $propertyId,
             'workspace_id' => $workspace->id,
             'project_id' => $project->id,
             'issued_at' => now()->getTimestamp(),
         ]);
 
-        // The form posts through Inertia, which can't follow a redirect to
+        // The button posts through Inertia, which can't follow a redirect to
         // another site; Inertia::location makes the browser navigate there.
         return Inertia::location($authUrl);
     }
 
     /**
+     * GA4 properties the connected Google account can read, for the picker.
+     * Properties whose website matches the project's domain come first.
+     */
+    public function ga4Properties(Workspace $workspace, Project $project, Ga4AnalyticsClient $ga4): JsonResponse
+    {
+        abort_if($project->workspace_id !== $workspace->id, 404);
+        Gate::authorize('update', $project);
+
+        /** @var ProjectIntegration|null $integration */
+        $integration = $project->integrations()->where('provider', 'ga4')->first();
+        abort_if($integration === null, 404);
+
+        // Saved before Google sign-in (API key only): sign in first.
+        if ($integration->getRefreshToken() === null || $integration->getRefreshToken() === '') {
+            return response()->json(['message' => 'Reconnect GA4 with Google to choose a property.', 'reconnect' => true], 409);
+        }
+
+        try {
+            $properties = $this->rankGa4Properties($ga4->listProperties($integration), $project);
+        } catch (SearchConsoleAuthException $e) {
+            return response()->json(['message' => $e->getMessage(), 'reconnect' => true], 409);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 502);
+        }
+
+        return response()->json([
+            'properties' => $properties,
+            'current' => $integration->external_identifier,
+        ]);
+    }
+
+    /**
+     * Use the GA4 property the user picked.
+     */
+    public function selectGa4Property(Request $request, Workspace $workspace, Project $project, Ga4AnalyticsClient $ga4): RedirectResponse
+    {
+        abort_if($project->workspace_id !== $workspace->id, 404);
+        Gate::authorize('update', $project);
+
+        $validated = $request->validate([
+            'property_id' => ['required', 'string', 'regex:/^properties\/\d{1,20}$/'],
+        ]);
+
+        $integration = $this->ga4Integration($project);
+
+        try {
+            $properties = $ga4->listProperties($integration, withWebsites: false);
+        } catch (Throwable $e) {
+            return redirect()->back()->with('error', $e->getMessage());
+        }
+
+        // Only properties this Google account can actually read.
+        $chosen = collect($properties)->firstWhere('id', $validated['property_id']);
+        if ($chosen === null) {
+            throw ValidationException::withMessages([
+                'property_id' => 'That GA4 property isn\'t available to the connected Google account.',
+            ]);
+        }
+
+        $this->useGa4Property($integration, $chosen);
+
+        return redirect()->back()->with('success', "Using GA4 property {$chosen['name']}. Traffic sync has started in the background.");
+    }
+
+    /**
      * Second half of the GA4 connection, after Google redirects back: store
-     * the tokens with the property and start the first sync.
+     * the tokens, then pick the property. A reconnect keeps the property it
+     * had if this account can still read it; otherwise the property whose
+     * website matches the project's
+     * domain, or the account's only property, is used. Anything else waits
+     * for the user to choose in the picker.
      */
     private function finishGa4Connect(
         Project $project,
         GoogleSearchConsoleClient $google,
+        Ga4AnalyticsClient $ga4,
         string $code,
-        string $propertyId,
         string $returnTo,
     ): RedirectResponse {
-        if (preg_match('/^properties\/\d{1,20}$/', $propertyId) !== 1) {
-            return redirect($returnTo)->with('error', 'The GA4 property was lost during sign-in. Please try connecting again.');
-        }
-
         try {
             $tokens = $google->exchangeCodeForTokens($code, $this->googleRedirectUri());
         } catch (Throwable $e) {
@@ -341,31 +399,146 @@ class ProjectIntegrationController extends Controller implements HasMiddleware
         // one when reconnecting.
         $refreshToken = $tokens['refresh_token'] !== '' ? $tokens['refresh_token'] : ($integration->getRefreshToken() ?? '');
 
-        $integration->site_url = $propertyId;
-        $integration->external_identifier = $propertyId;
-        $integration->status = 'connected';
         $integration->credentials_encrypted = [
             'access_token' => $tokens['access_token'],
             'refresh_token' => $refreshToken,
             'token_type' => $tokens['token_type'],
             'expires_at' => Carbon::now()->addSeconds($tokens['expires_in'])->toIso8601String(),
         ];
+
+        $currentProperty = (string) $integration->external_identifier;
+        $hasProperty = preg_match('/^properties\/\d+$/', $currentProperty) === 1;
+
+        $integration->status = $hasProperty ? 'connected' : 'needs_property';
         $integration->save();
 
-        ProjectActivity::log(
-            project: $project,
-            eventType: 'integration.connected',
-            title: 'Google Analytics 4 Connected',
-            description: "GA4 Property {$propertyId} connected for landing-page organic and AI traffic attribution.",
-            properties: [
-                'provider' => 'ga4',
-                'property_id' => $propertyId,
-            ],
-        );
+        $pickerUrl = $returnTo.(str_contains($returnTo, '?') ? '&' : '?').'ga4_picker=1';
+
+        try {
+            $properties = $this->rankGa4Properties($ga4->listProperties($integration), $project);
+        } catch (Throwable $e) {
+            Log::warning("Listing GA4 properties failed for project {$project->id}: {$e->getMessage()}");
+
+            if ($hasProperty) {
+                // Can't check the property, so keep it; the sync will say if
+                // it's unreadable.
+                SyncTrafficAnalyticsJob::dispatch($integration);
+
+                return redirect($returnTo)->with('success', 'Google Analytics 4 reconnected. Traffic sync has started in the background.');
+            }
+
+            return redirect($returnTo)->with('error', 'Signed in to Google, but '.lcfirst($e->getMessage()));
+        }
+
+        // A reconnect keeps its property while this account can still read it.
+        if ($hasProperty && in_array($currentProperty, array_column($properties, 'id'), true)) {
+            SyncTrafficAnalyticsJob::dispatch($integration);
+
+            return redirect($returnTo)->with('success', 'Google Analytics 4 reconnected. Traffic sync has started in the background.');
+        }
+
+        if ($hasProperty) {
+            // This account can't read the old property: choose another.
+            $integration->update(['status' => 'needs_property']);
+        }
+
+        if ($properties === []) {
+            return redirect($returnTo)->with('error', 'This Google account can\'t see any GA4 properties. Connect again with an account that can view the property.');
+        }
+
+        $matches = array_values(array_filter($properties, fn (array $property): bool => $property['matches']));
+        $chosen = count($matches) === 1 ? $matches[0] : (count($properties) === 1 ? $properties[0] : null);
+
+        if ($chosen === null) {
+            return redirect($pickerUrl)->with('success', 'Signed in to Google. Choose the GA4 property for this project.');
+        }
+
+        $this->useGa4Property($integration, $chosen);
+
+        return redirect($returnTo)->with('success', "Google Analytics 4 connected to {$chosen['name']}. Traffic sync has started in the background.");
+    }
+
+    /**
+     * The project's GA4 integration, once Google sign-in has stored a token.
+     */
+    private function ga4Integration(Project $project): ProjectIntegration
+    {
+        /** @var ProjectIntegration|null $integration */
+        $integration = $project->integrations()->where('provider', 'ga4')->first();
+        abort_if($integration === null || $integration->getRefreshToken() === null || $integration->getRefreshToken() === '', 404);
+
+        return $integration;
+    }
+
+    /**
+     * Mark which properties belong to the project's site and list them first.
+     *
+     * A property matches when any of its web streams is the project's site,
+     * and then shows that stream's URL.
+     *
+     * @param  list<array{id: string, name: string, account: string, website: string|null, websites: list<string>}>  $properties
+     * @return list<array{id: string, name: string, account: string, website: string|null, websites: list<string>, matches: bool}>
+     */
+    private function rankGa4Properties(array $properties, Project $project): array
+    {
+        $ranked = array_map(function (array $property) use ($project): array {
+            $matching = array_values(array_filter(
+                $property['websites'],
+                fn (string $website): bool => Ga4AnalyticsClient::websiteMatchesDomain($website, $project->domain),
+            ));
+
+            return array_merge($property, [
+                'website' => $matching[0] ?? $property['website'],
+                'matches' => $matching !== [],
+            ]);
+        }, $properties);
+
+        usort($ranked, fn (array $a, array $b): int => [$b['matches'], strtolower($a['name'])] <=> [$a['matches'], strtolower($b['name'])]);
+
+        return $ranked;
+    }
+
+    /**
+     * Point the integration at a property and start syncing it. Snapshots
+     * from a different property are removed so two sites' traffic isn't mixed.
+     *
+     * @param  array{id: string, name: string}  $property
+     */
+    private function useGa4Property(ProjectIntegration $integration, array $property): void
+    {
+        // Locks the integration row, as a GA4 sync does before storing its
+        // report, so a sync of the old property can't write after the delete.
+        DB::transaction(function () use ($integration, $property): void {
+            $previous = (string) ProjectIntegration::query()->whereKey($integration->id)->lockForUpdate()->value('external_identifier');
+            if ($previous !== '' && $previous !== $property['id']) {
+                PageTrafficSnapshot::query()
+                    ->where('project_id', $integration->project_id)
+                    ->where('provider', 'ga4')
+                    ->delete();
+            }
+
+            $integration->update([
+                'site_url' => $property['name'],
+                'external_identifier' => $property['id'],
+                'status' => 'connected',
+            ]);
+        });
+
+        $project = $integration->project;
+        if ($project !== null) {
+            ProjectActivity::log(
+                project: $project,
+                eventType: 'integration.connected',
+                title: 'Google Analytics 4 Connected',
+                description: "GA4 property {$property['name']} ({$property['id']}) connected for landing-page organic and AI traffic attribution.",
+                properties: [
+                    'provider' => 'ga4',
+                    'property_id' => $property['id'],
+                ],
+            );
+        }
 
         SyncTrafficAnalyticsJob::dispatch($integration);
-
-        return redirect($returnTo)->with('success', 'Google Analytics 4 connected. Traffic sync has started in the background.');
     }
 
     /**
