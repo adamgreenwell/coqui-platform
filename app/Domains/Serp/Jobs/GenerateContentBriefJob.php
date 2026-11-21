@@ -56,7 +56,9 @@ class GenerateContentBriefJob implements ShouldQueue
         $project = $brief->project;
 
         try {
-            $brief = $service->buildBrief($project, $brief->keyword, $brief->location_code, $brief->language_code);
+            // The project's current market and language, so a refresh after
+            // the project's targeting changed doesn't buy the old market's SERP.
+            $brief = $service->buildBrief($project, $brief->keyword);
         } catch (Throwable $e) {
             $this->markFailed($brief, $e);
 

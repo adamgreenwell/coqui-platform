@@ -141,7 +141,12 @@ class SafeHttpClient
                     continue;
                 }
 
-                $next[$key] = (string) UriResolver::resolve(new Uri($url), new Uri($location));
+                // A malformed Location fails only this URL, not the batch.
+                try {
+                    $next[$key] = (string) UriResolver::resolve(new Uri($url), new Uri($location));
+                } catch (Throwable $e) {
+                    $results[$key] = $e;
+                }
             }
 
             $pending = $next;

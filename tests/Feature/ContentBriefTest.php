@@ -15,6 +15,7 @@ use App\Domains\Serp\SpendRefusedException;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -446,6 +447,31 @@ HTML;
         $this->assertFalse($brief->data['incomplete']);
         $this->assertNotNull($brief->recommended_words_min);
         Event::assertDispatched(ContentBriefUpdated::class, fn (ContentBriefUpdated $e): bool => $e->briefId === $brief->id && $e->status === 'completed');
+    }
+
+    public function test_a_refresh_uses_the_projects_current_market_and_language(): void
+    {
+        Http::fake([
+            'https://sandbox.dataforseo.com/v3/serp/google/organic/live/advanced' => Http::response($this->serpResponse([
+                ['working.com', 'https://working.com/page'],
+            ]), 200),
+            'https://working.com/*' => Http::response('<html><body><h1>Guide</h1><p>'.str_repeat('word ', 800).'</p></body></html>', 200),
+        ]);
+
+        $this->actingAs($this->user)->post($this->briefUrl(), ['keyword' => 'market keyword'])->assertRedirect();
+
+        $this->project->update(['location_code' => 2826, 'language_code' => 'de']);
+
+        $this->actingAs($this->user)->post($this->briefUrl(), ['keyword' => 'market keyword'])->assertRedirect();
+
+        $brief = ContentBrief::query()->where('project_id', $this->project->id)->firstOrFail();
+        $this->assertSame(2826, (int) $brief->location_code);
+        $this->assertSame('de', $brief->language_code);
+        Http::assertSent(function (Request $request): bool {
+            $task = $request->data()[0] ?? [];
+
+            return str_contains($request->url(), '/v3/serp/') && ($task['location_code'] ?? null) === 2826 && ($task['language_code'] ?? null) === 'de';
+        });
     }
 
     public function test_a_brief_with_no_fetched_pages_says_so_instead_of_inventing_a_target(): void

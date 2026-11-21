@@ -105,6 +105,23 @@ class SafeHttpClientTest extends TestCase
             || str_contains($request->url(), 'rebind.example'));
     }
 
+    public function test_get_many_isolates_a_malformed_redirect_to_its_own_url(): void
+    {
+        Http::fake([
+            'http://public.example/bad' => Http::response('', 302, ['Location' => 'http://public.example:bad/']),
+            'http://public.example/good' => Http::response('ok', 200),
+        ]);
+
+        $results = $this->client->getMany([
+            'bad' => 'http://public.example/bad',
+            'good' => 'http://public.example/good',
+        ]);
+
+        $this->assertInstanceOf(\Throwable::class, $results['bad']);
+        $this->assertInstanceOf(Response::class, $results['good']);
+        $this->assertSame('ok', $results['good']->body());
+    }
+
     public function test_get_many_caps_redirects_and_size_per_url(): void
     {
         Http::fake([
