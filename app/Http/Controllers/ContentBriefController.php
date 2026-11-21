@@ -8,6 +8,7 @@ use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\Workspace;
 use App\Domains\Serp\Models\ContentBrief;
+use App\Domains\Serp\ProviderNotConfiguredException;
 use App\Domains\Serp\Services\ContentBriefService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -86,6 +87,7 @@ class ContentBriefController extends Controller
     public function generate(Request $request, Workspace $workspace, Project $project): JsonResponse|RedirectResponse
     {
         Gate::authorize('update', $project);
+        ProviderNotConfiguredException::throwUnlessSeoDataConfigured();
 
         /** @var array<string, mixed> $validated */
         $validated = $request->validate([

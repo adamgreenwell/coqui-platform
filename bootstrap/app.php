@@ -2,12 +2,14 @@
 
 declare(strict_types=1);
 
+use App\Domains\Serp\ProviderNotConfiguredException;
 use App\Http\Middleware\EnsureWorkspaceHasFeature;
 use App\Http\Middleware\ForceHttpsScheme;
 use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
+use Illuminate\Http\Request;
 use Laravel\Sanctum\Http\Middleware\CheckAbilities;
 use Laravel\Sanctum\Http\Middleware\CheckForAnyAbility;
 
@@ -39,5 +41,17 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        //
+        // Missing provider credentials are a setup problem, not a crash: say
+        // so instead of a 500, and keep it out of the error log.
+        $exceptions->dontReport(ProviderNotConfiguredException::class);
+        $exceptions->render(function (ProviderNotConfiguredException $e, Request $request) {
+            if ($request->expectsJson() && ! $request->header('X-Inertia')) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'provider_not_configured' => true,
+                ], 503);
+            }
+
+            return redirect()->back()->with('error', $e->getMessage());
+        });
     })->create();

@@ -9,6 +9,7 @@ use App\Domains\Projects\Models\Project;
 use App\Domains\Serp\DataForSeo\DataForSeoCacheRepository;
 use App\Domains\Serp\DataForSeo\DataForSeoClient;
 use App\Domains\Serp\Models\ContentBrief;
+use App\Domains\Serp\ProviderNotConfiguredException;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -202,6 +203,9 @@ class ContentBriefService
     {
         try {
             return $this->dataForSeo->serpLive($keyword, $project, $locationCode, $languageCode);
+        } catch (ProviderNotConfiguredException $e) {
+            // Not a lookup failure: a brief without SERP data would be empty.
+            throw $e;
         } catch (Throwable) {
             return [];
         }

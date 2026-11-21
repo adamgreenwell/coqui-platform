@@ -11,6 +11,7 @@ use App\Domains\Serp\DataForSeo\DataForSeoBudgetException;
 use App\Domains\Serp\DataForSeo\DataForSeoCacheRepository;
 use App\Domains\Serp\DataForSeo\DataForSeoReadOnlyException;
 use App\Domains\Serp\Models\TrackedKeyword;
+use App\Domains\Serp\ProviderNotConfiguredException;
 use App\Domains\Serp\ReadOnlySpendScope;
 use App\Domains\Serp\Services\KeywordGapService;
 use App\Models\User;
@@ -121,6 +122,11 @@ class KeywordGapController extends Controller
                 'message' => $e->publicMessage(),
                 'error' => 'budget_exceeded',
             ], 422);
+        } catch (ProviderNotConfiguredException $e) {
+            return response()->json([
+                'message' => $e->getMessage(),
+                'provider_not_configured' => true,
+            ], 503);
         } catch (\Throwable $e) {
             Log::warning("Keyword gap analysis failed for project {$project->id}: {$e->getMessage()}");
 

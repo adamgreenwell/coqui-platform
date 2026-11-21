@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp\Tools;
 
 use App\Domains\Projects\Models\Project;
+use App\Domains\Serp\ProviderNotConfiguredException;
 use App\Domains\Serp\Services\KeywordResearchService;
 use App\Domains\Serp\Services\SeoProviderRouter;
 use App\Domains\Serp\SpendRefusedException;
@@ -82,6 +83,8 @@ class LookupKeywordMetricsTool extends Tool
             );
         } catch (SpendRefusedException $e) {
             return Response::error($e->publicMessage());
+        } catch (ProviderNotConfiguredException $e) {
+            return Response::error($e->getMessage());
         }
 
         $metrics = $this->metrics($result['providers'], $locationCode, $languageCode);

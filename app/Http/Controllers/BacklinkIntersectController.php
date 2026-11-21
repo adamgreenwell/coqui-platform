@@ -8,6 +8,7 @@ use App\Domains\Backlinks\Services\BacklinkIntersectService;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\Workspace;
+use App\Domains\Serp\ProviderNotConfiguredException;
 use App\Domains\Serp\ReadOnlySpendScope;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -91,6 +92,7 @@ class BacklinkIntersectController extends Controller
     public function refresh(Request $request, Workspace $workspace, Project $project): RedirectResponse
     {
         Gate::authorize('update', $project);
+        ProviderNotConfiguredException::throwUnlessSeoDataConfigured();
 
         $rawCompetitors = $request->input('competitors');
         /** @var list<string> $competitors */

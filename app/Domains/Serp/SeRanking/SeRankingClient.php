@@ -6,6 +6,7 @@ namespace App\Domains\Serp\SeRanking;
 
 use App\Domains\Projects\Models\Project;
 use App\Domains\Serp\DataForSeo\DataForSeoCacheRepository;
+use App\Domains\Serp\ProviderNotConfiguredException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\DB;
@@ -262,7 +263,7 @@ class SeRankingClient
     {
         $apiKey = trim((string) config('coqui.seranking.api_key'));
         if ($apiKey === '') {
-            throw new RuntimeException('SE Ranking API key is not configured.');
+            throw new ProviderNotConfiguredException('seranking');
         }
 
         return Http::withHeaders([

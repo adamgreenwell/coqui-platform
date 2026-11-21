@@ -9,6 +9,7 @@ use App\Domains\Backlinks\Services\BacklinkTimelineService;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\Workspace;
+use App\Domains\Serp\ProviderNotConfiguredException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -64,6 +65,7 @@ class BacklinkController extends Controller
     public function refresh(Request $request, Workspace $workspace, Project $project): RedirectResponse
     {
         Gate::authorize('update', $project);
+        ProviderNotConfiguredException::throwUnlessSeoDataConfigured();
 
         $days = (int) $request->input('days', 90);
         if ($days <= 0) {

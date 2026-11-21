@@ -6,6 +6,7 @@ namespace App\Domains\Serp\Services;
 
 use App\Domains\Projects\Models\Project;
 use App\Domains\Serp\DataForSeo\DataForSeoClient;
+use App\Domains\Serp\ProviderNotConfiguredException;
 use App\Domains\Serp\SeRanking\SeRankingAcceptanceRule;
 use App\Domains\Serp\SeRanking\SeRankingClient;
 
@@ -15,7 +16,9 @@ use App\Domains\Serp\SeRanking\SeRankingClient;
  *
  * - Keyword bulk screening: SE Ranking flat-batch (`/v1/keywords/export`) for
  *   accepted ASCII keywords, falling back to DataForSEO `keyword_overview` for
- *   non-ASCII, numeric-only, or unconfigured setups.
+ *   non-ASCII, numeric-only, or unconfigured setups. With only SE Ranking
+ *   configured, keywords it can't take are skipped instead of failing.
+ *   Neither configured throws ProviderNotConfiguredException.
  * - Backlinks & SERP Rank Tracking: always DataForSEO (SE Ranking's standalone
  *   Data API does not expose backlink endpoints without a regular plan).
  */
@@ -41,12 +44,18 @@ class SeoProviderRouter
         string $languageCode = 'en',
         string $seRankingSource = 'us',
     ): array {
+        $seRankingConfigured = $this->seRanking->isConfigured();
+        $dataForSeoConfigured = $this->dataForSeo->isConfigured();
+        if (! $seRankingConfigured && ! $dataForSeoConfigured) {
+            throw new ProviderNotConfiguredException('seranking,dataforseo');
+        }
+
         $partition = $this->acceptanceRule->partition($keywords, $seRankingSource);
 
         $seRankingRows = [];
         $dataForSeoKeywords = $partition['rejected'];
 
-        if ($this->seRanking->isConfigured() && $partition['accepted'] !== []) {
+        if ($seRankingConfigured && $partition['accepted'] !== []) {
             $seRankingRows = $this->seRanking->exportKeywords(
                 keywords: $partition['accepted'],
                 source: $seRankingSource,
@@ -60,7 +69,7 @@ class SeoProviderRouter
         }
 
         $dataForSeoPayload = [];
-        if ($dataForSeoKeywords !== []) {
+        if ($dataForSeoKeywords !== [] && $dataForSeoConfigured) {
             $dataForSeoPayload = $this->dataForSeo->keywordOverview(
                 keywords: $dataForSeoKeywords,
                 project: $project,

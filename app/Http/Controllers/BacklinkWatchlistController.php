@@ -9,6 +9,7 @@ use App\Domains\Backlinks\Services\BacklinkVerificationService;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\Workspace;
+use App\Domains\Serp\ProviderNotConfiguredException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -144,6 +145,7 @@ class BacklinkWatchlistController extends Controller
     public function importDfs(Request $request, Workspace $workspace, Project $project): RedirectResponse
     {
         Gate::authorize('update', $project);
+        ProviderNotConfiguredException::throwUnlessSeoDataConfigured();
 
         $count = $this->verificationService->importFromDataForSeo($project, 100);
 

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domains\Serp\DataForSeo;
 
 use App\Domains\Projects\Models\Project;
+use App\Domains\Serp\ProviderNotConfiguredException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
@@ -15,6 +16,16 @@ class DataForSeoClient
         private readonly DataForSeoCacheRepository $cache,
         private readonly DataForSeoSpendGuard $spendGuard,
     ) {}
+
+    /**
+     * Whether login and password are set. Without them every call throws
+     * ProviderNotConfiguredException.
+     */
+    public function isConfigured(): bool
+    {
+        return trim((string) config('coqui.dataforseo.login')) !== ''
+            && trim((string) config('coqui.dataforseo.password')) !== '';
+    }
 
     /**
      * Free account diagnostics endpoint (`v3/appendix/user_data`).
@@ -705,12 +716,12 @@ class DataForSeoClient
 
     private function http(): PendingRequest
     {
+        if (! $this->isConfigured()) {
+            throw new ProviderNotConfiguredException('dataforseo');
+        }
+
         $login = (string) config('coqui.dataforseo.login');
         $password = (string) config('coqui.dataforseo.password');
-
-        if ($login === '' || $password === '') {
-            throw new RuntimeException('DataForSEO credentials are not configured.');
-        }
 
         return Http::withBasicAuth($login, $password)
             ->acceptJson()
