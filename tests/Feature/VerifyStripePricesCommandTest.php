@@ -104,4 +104,30 @@ class VerifyStripePricesCommandTest extends TestCase
             ->expectsOutputToContain('STRIPE_SECRET is not set')
             ->assertFailed();
     }
+
+    public function test_it_accepts_a_restricted_key(): void
+    {
+        // Production uses a restricted key (rk_) scoped to the bucket of
+        // Stripe permissions the app needs; it authenticates like a secret key.
+        config()->set('services.stripe.secret', 'rk_live_test_key');
+        $this->fakePrices([
+            'price_solo' => 2900,
+            'price_pro' => 7900,
+            'price_agency' => 19900,
+            'price_runnr' => 2900,
+        ]);
+
+        $this->artisan('billing:verify-prices')
+            ->expectsOutputToContain('Every configured Stripe price matches')
+            ->assertSuccessful();
+    }
+
+    public function test_it_rejects_a_publishable_key(): void
+    {
+        config()->set('services.stripe.secret', 'pk_live_test_key');
+
+        $this->artisan('billing:verify-prices')
+            ->expectsOutputToContain('is not a secret key')
+            ->assertFailed();
+    }
 }

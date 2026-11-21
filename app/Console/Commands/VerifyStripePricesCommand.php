@@ -27,8 +27,17 @@ class VerifyStripePricesCommand extends Command
     {
         $secret = (string) config('services.stripe.secret');
 
-        if (! str_starts_with($secret, 'sk_')) {
+        if ($secret === '') {
             $this->error('STRIPE_SECRET is not set, so the Stripe prices cannot be checked.');
+
+            return self::FAILURE;
+        }
+
+        // A restricted key (rk_) is the right thing to use in production and
+        // authenticates exactly like a secret key. Only a publishable key
+        // (pk_) or a mock cannot read prices.
+        if (! str_starts_with($secret, 'sk_') && ! str_starts_with($secret, 'rk_')) {
+            $this->error('STRIPE_SECRET is set but is not a secret key. Use a secret key (sk_) or a restricted key (rk_) with Prices read access.');
 
             return self::FAILURE;
         }
