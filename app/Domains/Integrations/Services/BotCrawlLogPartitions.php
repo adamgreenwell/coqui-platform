@@ -67,14 +67,25 @@ class BotCrawlLogPartitions
         DB::transaction(function () use ($name, $from, $to, $table): void {
             $hasDefault = $this->exists("{$table}_default");
             if ($hasDefault) {
-                DB::statement("CREATE TEMP TABLE bot_crawl_logs_move ON COMMIT DROP AS SELECT * FROM {$table}_default WHERE bucket_hour >= ? AND bucket_hour < ?", [$from, $to]);
-                DB::statement("DELETE FROM {$table}_default WHERE bucket_hour >= ? AND bucket_hour < ?", [$from, $to]);
+                // Block writes (reads still work) until the partition exists,
+                // so no row can land in the default partition mid-move. The
+                // parent lock covers every partition and is taken before the
+                // stronger lock CREATE ... PARTITION OF needs, avoiding a
+                // deadlock with ingestion.
+                DB::statement("LOCK TABLE {$table} IN SHARE ROW EXCLUSIVE MODE");
+                DB::statement("CREATE TEMP TABLE bot_crawl_logs_move (LIKE {$table}) ON COMMIT DROP");
+                // Copy exactly the rows deleted.
+                DB::statement("WITH moved AS (DELETE FROM {$table}_default WHERE bucket_hour >= ? AND bucket_hour < ? RETURNING *) INSERT INTO bot_crawl_logs_move SELECT * FROM moved", [$from, $to]);
             }
 
             DB::statement("CREATE TABLE {$name} PARTITION OF {$table} FOR VALUES FROM ('{$from}') TO ('{$to}')");
 
             if ($hasDefault) {
                 DB::statement("INSERT INTO {$table} SELECT * FROM bot_crawl_logs_move");
+                // ON COMMIT DROP alone isn't enough inside an outer
+                // transaction (migrations, tests): the next month would
+                // find the table still there.
+                DB::statement('DROP TABLE bot_crawl_logs_move');
             }
         });
 

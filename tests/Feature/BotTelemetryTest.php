@@ -13,6 +13,7 @@ use App\Features\RunnrIntegration;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Sanctum\Sanctum;
@@ -276,6 +277,41 @@ class BotTelemetryTest extends TestCase
         $this->assertSame(39, $response->json('kpis.errorHits'));
     }
 
+    public function test_missing_pages_are_ranked_by_404_hits_before_the_list_is_limited(): void
+    {
+        $hour = '2026-11-19T07:00:00Z';
+        $popular = array_map(fn (int $i): string => "/popular-{$i}", range(1, 55));
+        $this->sendBatch([
+            [
+                'botFamily' => 'googlebot',
+                'statusBucket' => 200,
+                'hitCount' => 5500,
+                'bucketHour' => $hour,
+                'topPaths' => array_map(fn (string $p): array => ['path' => $p, 'hits' => 100, 'status' => 200], $popular),
+            ],
+            [
+                // 55 busy paths with one 404 each, and one quiet path with 30.
+                'botFamily' => 'googlebot',
+                'statusBucket' => 404,
+                'hitCount' => 85,
+                'bucketHour' => $hour,
+                'topPaths' => [
+                    ...array_map(fn (string $p): array => ['path' => $p, 'hits' => 1, 'status' => 404], $popular),
+                    ['path' => '/broken', 'hits' => 30, 'status' => 404],
+                ],
+            ],
+        ])->assertStatus(202);
+
+        Sanctum::actingAs($this->user, ['projects:read']);
+        Carbon::setTestNow('2026-11-20 12:00:00');
+        $flagged = $this->getJson("/api/v1/projects/{$this->project->uuid}/telemetry/bot-logs?days=7")->assertOk()->json('flagged404s');
+        Carbon::setTestNow();
+
+        $this->assertCount(50, $flagged);
+        $this->assertSame('/broken', $flagged[0]['path']);
+        $this->assertSame(30, $flagged[0]['hits']);
+    }
+
     public function test_crawl_budget_waste_includes_redirects_and_parameter_urls(): void
     {
         $hour = '2026-11-19T07:00:00Z';
@@ -358,6 +394,36 @@ class BotTelemetryTest extends TestCase
         $this->artisan('telemetry:ensure-partitions')
             ->assertSuccessful()
             ->expectsOutputToContain('need Postgres');
+    }
+
+    public function test_creating_a_month_moves_its_rows_out_of_the_default_partition(): void
+    {
+        $partitions = app(BotCrawlLogPartitions::class);
+        if (! BotCrawlLogPartitions::supported()) {
+            $this->assertSame([], $partitions->ensure());
+
+            return;
+        }
+
+        // Beyond the months the migration created, so it lands in default.
+        $month = now()->startOfMonth()->addMonths(8);
+        BotCrawlLog::query()->create([
+            'project_id' => $this->project->id,
+            'bot_family' => 'googlebot',
+            'status_bucket' => 200,
+            'hit_count' => 7,
+            'bucket_hour' => $month->copy()->addDays(2)->setHour(5),
+        ]);
+        $count = fn (string $table): int => (int) DB::selectOne("SELECT count(*) AS n FROM {$table}")->n;
+        $this->assertSame(1, $count('bot_crawl_logs_default'));
+
+        $created = $partitions->ensure(8);
+
+        $name = BotCrawlLogPartitions::partitionName($month);
+        $this->assertContains($name, $created);
+        $this->assertSame(0, $count('bot_crawl_logs_default'));
+        $this->assertSame(1, $count($name));
+        $this->assertSame(7, (int) BotCrawlLog::query()->where('project_id', $this->project->id)->sum('hit_count'));
     }
 
     public function test_telemetry_dashboard_aggregates_kpis_and_classifies_bots(): void

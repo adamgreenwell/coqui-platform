@@ -460,17 +460,20 @@ class BotTelemetryService
             foreach (self::GONE_STATUSES as $code) {
                 $goneHits += $data['statusHits'][$code] ?? 0;
             }
-            if ($goneHits > 0 && count($flagged404s) < 50) {
-                $flagged404s[] = [
-                    'path' => $path,
-                    'hits' => $goneHits,
-                    'lastHitAt' => $data['lastHitAt']->toIso8601String(),
-                    'bots' => $bots,
-                    'recommendedTarget' => $this->suggestRedirectTarget($path),
-                ];
+            if ($goneHits > 0) {
+                $flagged404s[] = ['path' => $path, 'hits' => $goneHits, 'lastHitAt' => $data['lastHitAt'], 'bots' => $bots];
             }
         }
+        // Rank by missing-page hits before limiting, so a path with many
+        // 404s isn't pushed out by busier paths with only a few.
         usort($flagged404s, fn (array $a, array $b): int => $b['hits'] <=> $a['hits']);
+        $flagged404s = array_map(fn (array $row): array => [
+            'path' => $row['path'],
+            'hits' => $row['hits'],
+            'lastHitAt' => $row['lastHitAt']->toIso8601String(),
+            'bots' => $row['bots'],
+            'recommendedTarget' => $this->suggestRedirectTarget($row['path']),
+        ], array_slice($flagged404s, 0, 50));
 
         return [
             'kpis' => [
