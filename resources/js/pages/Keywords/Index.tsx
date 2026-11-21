@@ -247,7 +247,7 @@ export default function KeywordsIndex({
     channel.listen('.SerpBatchCompleted', (e: { updated_count: number }) => {
       setLivePulse(true);
       setTimeout(() => setLivePulse(false), 2500);
-      router.reload({ only: ['keywords', 'metrics'] });
+      router.reload({ only: ['keywords', 'metrics', 'trend'] });
     });
 
     return () => {
