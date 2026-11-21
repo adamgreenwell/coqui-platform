@@ -256,7 +256,9 @@ export default function ProjectShow({
       }
       const properties: Ga4Property[] = body.properties ?? [];
       setGa4Properties(properties);
-      setGa4Selected(body.current ?? properties.find((p) => p.matches)?.id ?? properties[0]?.id ?? '');
+      // The current property may no longer be readable by this account.
+      const current = properties.find((p) => p.id === body.current);
+      setGa4Selected(current?.id ?? properties.find((p) => p.matches)?.id ?? properties[0]?.id ?? '');
     } catch {
       setGa4Error({ message: 'Could not load your GA4 properties.', reconnect: false });
     }
@@ -1073,7 +1075,7 @@ export default function ProjectShow({
                         <span>Sync Now</span>
                       </button>
                     )}
-                    {(ga4Integration?.status === 'connected' || ga4Integration?.status === 'needs_property') && (
+                    {ga4Integration && ['connected', 'needs_property', 'needs_reconnect'].includes(ga4Integration.status) && (
                       <button
                         type="button"
                         onClick={() => void openGa4Picker()}

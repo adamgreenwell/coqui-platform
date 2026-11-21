@@ -304,7 +304,14 @@ class ProjectIntegrationController extends Controller implements HasMiddleware
         abort_if($project->workspace_id !== $workspace->id, 404);
         Gate::authorize('update', $project);
 
-        $integration = $this->ga4Integration($project);
+        /** @var ProjectIntegration|null $integration */
+        $integration = $project->integrations()->where('provider', 'ga4')->first();
+        abort_if($integration === null, 404);
+
+        // Saved before Google sign-in (API key only): sign in first.
+        if ($integration->getRefreshToken() === null || $integration->getRefreshToken() === '') {
+            return response()->json(['message' => 'Reconnect GA4 with Google to choose a property.', 'reconnect' => true], 409);
+        }
 
         try {
             $properties = $this->rankGa4Properties($ga4->listProperties($integration), $project);
@@ -356,7 +363,8 @@ class ProjectIntegrationController extends Controller implements HasMiddleware
     /**
      * Second half of the GA4 connection, after Google redirects back: store
      * the tokens, then pick the property. A reconnect keeps the property it
-     * had; otherwise the property whose website matches the project's
+     * had if this account can still read it; otherwise the property whose
+     * website matches the project's
      * domain, or the account's only property, is used. Anything else waits
      * for the user to choose in the picker.
      */
@@ -399,15 +407,9 @@ class ProjectIntegrationController extends Controller implements HasMiddleware
         ];
 
         $currentProperty = (string) $integration->external_identifier;
-        if (preg_match('/^properties\/\d+$/', $currentProperty) === 1) {
-            $integration->status = 'connected';
-            $integration->save();
-            SyncTrafficAnalyticsJob::dispatch($integration);
+        $hasProperty = preg_match('/^properties\/\d+$/', $currentProperty) === 1;
 
-            return redirect($returnTo)->with('success', 'Google Analytics 4 reconnected. Traffic sync has started in the background.');
-        }
-
-        $integration->status = 'needs_property';
+        $integration->status = $hasProperty ? 'connected' : 'needs_property';
         $integration->save();
 
         $pickerUrl = $returnTo.(str_contains($returnTo, '?') ? '&' : '?').'ga4_picker=1';
@@ -417,7 +419,27 @@ class ProjectIntegrationController extends Controller implements HasMiddleware
         } catch (Throwable $e) {
             Log::warning("Listing GA4 properties failed for project {$project->id}: {$e->getMessage()}");
 
+            if ($hasProperty) {
+                // Can't check the property, so keep it; the sync will say if
+                // it's unreadable.
+                SyncTrafficAnalyticsJob::dispatch($integration);
+
+                return redirect($returnTo)->with('success', 'Google Analytics 4 reconnected. Traffic sync has started in the background.');
+            }
+
             return redirect($returnTo)->with('error', 'Signed in to Google, but '.lcfirst($e->getMessage()));
+        }
+
+        // A reconnect keeps its property while this account can still read it.
+        if ($hasProperty && in_array($currentProperty, array_column($properties, 'id'), true)) {
+            SyncTrafficAnalyticsJob::dispatch($integration);
+
+            return redirect($returnTo)->with('success', 'Google Analytics 4 reconnected. Traffic sync has started in the background.');
+        }
+
+        if ($hasProperty) {
+            // This account can't read the old property: choose another.
+            $integration->update(['status' => 'needs_property']);
         }
 
         if ($properties === []) {

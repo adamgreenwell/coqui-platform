@@ -171,8 +171,46 @@ class Ga4ConnectionTest extends TestCase
         Queue::fake();
         $this->ga4Integration(expiresAt: now()->subHour()->toIso8601String())->update(['status' => 'needs_reconnect']);
 
+        // Google sends no refresh token on a repeat consent. Registered first,
+        // so it wins over fakeGoogle()'s token response.
+        Http::fake([self::TOKEN_URL => Http::response(['access_token' => 'new-access-token', 'expires_in' => 3600, 'token_type' => 'Bearer'], 200)]);
+        $this->fakeGoogle(['properties/987654321' => ['Traffic Site', null], 'properties/111' => ['Blog', null]]);
+
+        $this->signInCallback()
+            ->assertRedirect(route('workspaces.projects.show', [$this->workspace, $this->project]))
+            ->assertSessionHas('success');
+
+        $integration = ProjectIntegration::query()->where('provider', 'ga4')->sole();
+        $this->assertSame('connected', $integration->status);
+        $this->assertSame('properties/987654321', $integration->external_identifier);
+        $this->assertSame('new-access-token', $integration->getAccessToken());
+        $this->assertSame('ga4-refresh-token', $integration->getRefreshToken());
+        Queue::assertPushed(SyncTrafficAnalyticsJob::class);
+    }
+
+    public function test_reconnecting_with_an_account_that_cant_read_the_property_asks_for_another(): void
+    {
+        Queue::fake();
+        $this->ga4Integration(expiresAt: now()->subHour()->toIso8601String())->update(['status' => 'needs_reconnect']);
+        $this->fakeGoogle([
+            'properties/111' => ['Blog', 'https://blog.example.org'],
+            'properties/333' => ['Shop', null],
+        ]);
+
+        $this->signInCallback()
+            ->assertRedirect(route('workspaces.projects.show', [$this->workspace, $this->project]).'?ga4_picker=1');
+
+        $this->assertSame('needs_property', ProjectIntegration::query()->where('provider', 'ga4')->sole()->status);
+        Queue::assertNothingPushed();
+    }
+
+    public function test_reconnecting_keeps_the_property_when_properties_cant_be_listed(): void
+    {
+        Queue::fake();
+        $this->ga4Integration(expiresAt: now()->subHour()->toIso8601String())->update(['status' => 'needs_reconnect']);
         Http::fake([
-            self::TOKEN_URL => Http::response(['access_token' => 'new-access-token', 'expires_in' => 3600, 'token_type' => 'Bearer'], 200),
+            self::TOKEN_URL => Http::response($this->tokenResponse(), 200),
+            self::ADMIN_URL.'/*' => Http::response(['error' => ['code' => 403, 'message' => 'Admin API disabled']], 403),
         ]);
 
         $this->signInCallback()->assertSessionHas('success');
@@ -180,11 +218,27 @@ class Ga4ConnectionTest extends TestCase
         $integration = ProjectIntegration::query()->where('provider', 'ga4')->sole();
         $this->assertSame('connected', $integration->status);
         $this->assertSame('properties/987654321', $integration->external_identifier);
-        $this->assertSame('new-access-token', $integration->getAccessToken());
-        $this->assertSame('ga4-refresh-token', $integration->getRefreshToken());
-        // No property lookup on a reconnect.
-        Http::assertNotSent(fn (HttpRequest $request): bool => str_starts_with($request->url(), self::ADMIN_URL));
         Queue::assertPushed(SyncTrafficAnalyticsJob::class);
+    }
+
+    public function test_the_picker_asks_an_api_key_integration_to_reconnect(): void
+    {
+        ProjectIntegration::query()->create([
+            'project_id' => $this->project->id,
+            'provider' => 'ga4',
+            'site_url' => 'properties/987654321',
+            'external_identifier' => 'properties/987654321',
+            'status' => 'needs_reconnect',
+            'credentials_encrypted' => ['api_key' => 'legacy-key'],
+        ]);
+        Http::fake();
+
+        $this->actingAs($this->user)
+            ->getJson($this->ga4Url('properties'))
+            ->assertStatus(409)
+            ->assertJsonPath('reconnect', true);
+
+        Http::assertNothingSent();
     }
 
     public function test_the_callback_refuses_a_grant_without_analytics_access(): void
