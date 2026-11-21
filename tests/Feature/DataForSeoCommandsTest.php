@@ -146,7 +146,7 @@ class DataForSeoCommandsTest extends TestCase
         $this->artisan('dataforseo:collect-tasks', ['--threshold' => 5])
             ->assertSuccessful()
             ->expectsOutputToContain("Task [{$readyTaskId}] collected successfully.")
-            ->expectsOutputToContain('Collection summary: 1 collected, 1 still in progress.');
+            ->expectsOutputToContain('Collection summary: 1 collected, 1 still in progress, 0 could not be checked.');
 
         $readyTask = DB::table('dataforseo_tasks')->where('external_task_id', $readyTaskId)->first();
         $this->assertSame('collected', $readyTask->status);

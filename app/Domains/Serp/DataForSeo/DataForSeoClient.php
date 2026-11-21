@@ -714,24 +714,35 @@ class DataForSeoClient
     /**
      * Retrieve completed task results for a Standard-queue task (free read).
      *
-     * @return array<string, mixed>|null Returns decoded response if ready, null if still in progress.
+     * The response's task carries its own status: 40601/40602 while it is
+     * still queued, 20000 with a result once done, or an error code.
+     *
+     * @return array<string, mixed>
+     *
+     * @throws DataForSeoTaskFetchException When the request fails or returns an error status, so a broken check isn't mistaken for a task still in progress.
      */
-    public function getTaskResult(string $externalTaskId, string $endpoint = '/v3/serp/google/organic/task_get/advanced'): ?array
+    public function getTaskResult(string $externalTaskId, string $endpoint = '/v3/serp/google/organic/task_get/advanced'): array
     {
         $path = rtrim($endpoint, '/').'/'.$externalTaskId;
 
         try {
             $response = $this->getFree($path);
-        } catch (Throwable) {
-            return null;
+        } catch (Throwable $e) {
+            throw new DataForSeoTaskFetchException('Fetching the task result failed: '.$e->getMessage(), 0, $e);
         }
 
         $statusCode = (int) ($response['status_code'] ?? 0);
-        if ($statusCode === 20000) {
-            return $response;
+        // 40601 "Task Handed" / 40602 "Task In Queue" can also come back at
+        // the top level; that's still in progress, not an error.
+        if ($statusCode !== 20000 && ! in_array($statusCode, [40601, 40602], true)) {
+            throw new DataForSeoTaskFetchException(sprintf(
+                'Fetching the task result returned status %d: %s',
+                $statusCode,
+                (string) ($response['status_message'] ?? 'unknown error'),
+            ));
         }
 
-        return null;
+        return $response;
     }
 
     /**
