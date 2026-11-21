@@ -19,7 +19,10 @@ return [
         'base_url' => env('DATAFORSEO_API_BASE_URL', 'https://sandbox.dataforseo.com'),
         'timeout' => (int) env('DATAFORSEO_HTTP_TIMEOUT', 60),
         'free_read_retries' => (int) env('DATAFORSEO_FREE_READ_RETRIES', 1),
-        'webhook_secret' => env('DATAFORSEO_WEBHOOK_SECRET'),
+        // Pending standard-queue tasks older than this are failed, so their
+        // keywords are tracked again. Postbacks are authenticated by each
+        // task's own token, so there is no shared webhook secret.
+        'task_max_age_hours' => (int) env('DATAFORSEO_TASK_MAX_AGE_HOURS', 12),
 
         'default_location_code' => (int) env('DATAFORSEO_LOCATION_CODE', 2840),
         'default_language_code' => env('DATAFORSEO_LANGUAGE_CODE', 'en'),
