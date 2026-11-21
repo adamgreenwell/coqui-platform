@@ -17,16 +17,25 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $language_code
  * @property int $search_volume
  * @property float $cpc
- * @property int $recommended_words_min
- * @property int $recommended_words_max
+ * @property int|null $recommended_words_min
+ * @property int|null $recommended_words_max
  * @property array<string, mixed> $data
  * @property string $markdown
+ * @property string $status
+ * @property string|null $error
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
  * @property-read Project $project
  */
 class ContentBrief extends Model
 {
+    /** Queued; generation has not finished. */
+    public const STATUS_PENDING = 'pending';
+
+    public const STATUS_COMPLETED = 'completed';
+
+    public const STATUS_FAILED = 'failed';
+
     /** @var list<string> */
     protected $fillable = [
         'project_id',
@@ -39,6 +48,8 @@ class ContentBrief extends Model
         'recommended_words_max',
         'data',
         'markdown',
+        'status',
+        'error',
     ];
 
     /**
