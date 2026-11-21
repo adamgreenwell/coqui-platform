@@ -43,7 +43,7 @@ class DemoDataSeederTest extends TestCase
         $this->assertSame(2, $project->crawlRuns()->count());
         $this->assertSame(8, $project->trackedKeywords()->count());
         $this->assertSame(90, $project->backlinkHistorySnapshots()->count());
-        $this->assertSame(5, $project->monitoredBacklinks()->count());
+        $this->assertSame(6, $project->monitoredBacklinks()->count());
     }
 
     public function test_project_pages_render_the_seeded_data_without_provider_credentials(): void
@@ -62,7 +62,7 @@ class DemoDataSeederTest extends TestCase
             ->assertOk()
             ->assertInertia(fn ($page) => $page
                 ->where('trackedKeywordsCount', 8)
-                ->where('monitoredBacklinksCount', 5)
+                ->where('monitoredBacklinksCount', 6)
                 ->etc());
 
         $this->actingAs($user)->get("{$base}/keywords")
@@ -73,7 +73,15 @@ class DemoDataSeederTest extends TestCase
             ->assertOk()
             ->assertInertia(fn ($page) => $page->has('timeline', 90)->etc());
 
-        $this->actingAs($user)->get("{$base}/backlinks/watchlist")->assertOk();
+        // Seeded states use the watchlist's own vocabulary, so every metric counts them.
+        $this->actingAs($user)->get("{$base}/backlinks/watchlist")
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('metrics.active', 2)
+                ->where('metrics.rel_changed', 1)
+                ->where('metrics.lost', 2)
+                ->where('metrics.error', 1)
+                ->etc());
         $this->actingAs($user)->get("{$base}/bot-logs")->assertOk();
         $this->actingAs($user)->get("{$base}/crawls/compare")->assertOk();
     }
@@ -85,6 +93,25 @@ class DemoDataSeederTest extends TestCase
 
         $this->assertSame(1, Workspace::query()->where('slug', DemoDataSeeder::WORKSPACE_SLUG)->count());
         $this->assertSame(1, Project::query()->where('domain', DemoDataSeeder::PROJECT_DOMAIN)->count());
+    }
+
+    public function test_an_existing_account_with_the_demo_email_is_left_untouched(): void
+    {
+        /** @var User $existing */
+        $existing = User::factory()->create(['email' => config('coqui.demo.email'), 'name' => 'Real Person']);
+        $originalHash = $existing->password;
+
+        try {
+            $this->seed(DemoDataSeeder::class);
+            $this->fail('The demo seeder reused an existing account.');
+        } catch (RuntimeException $e) {
+            $this->assertStringContainsString('DEMO_USER_EMAIL', $e->getMessage());
+        }
+
+        $existing->refresh();
+        $this->assertSame('Real Person', $existing->name);
+        $this->assertSame($originalHash, $existing->password);
+        $this->assertSame(0, Workspace::query()->where('slug', DemoDataSeeder::WORKSPACE_SLUG)->count());
     }
 
     public function test_the_seeder_refuses_to_run_in_production(): void

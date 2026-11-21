@@ -52,6 +52,11 @@ class DemoDataSeeder extends Seeder
             return;
         }
 
+        // Never take over someone's account: refuse rather than reset it.
+        if (User::query()->where('email', $email)->exists()) {
+            throw new RuntimeException("An account already uses {$email}. Set DEMO_USER_EMAIL to an unused address and seed again.");
+        }
+
         // Same random walk on every run.
         mt_srand(56);
 
@@ -71,10 +76,10 @@ class DemoDataSeeder extends Seeder
 
     private function seedUser(string $email, string $password): User
     {
-        /** @var User $user */
-        $user = User::query()->firstOrNew(['email' => $email]);
+        $user = new User;
         $user->forceFill([
             'name' => 'Demo User',
+            'email' => $email,
             'password' => Hash::make($password),
             'email_verified_at' => now(),
         ])->save();
@@ -308,12 +313,15 @@ class DemoDataSeeder extends Seeder
         }
 
         $target = 'https://'.self::PROJECT_DOMAIN.'/';
+        // Same states the verifier assigns: a rel mismatch is rel_changed, a
+        // removed link or noindexed page is lost, and an HTTP error is error.
         $watchlist = [
             ['https://coffee-blog.test/best-roasters-2026', 'Demo Roastery', 'dofollow', 'active', 200, 'dofollow', false],
             ['https://brew-forum.test/threads/pour-over-tips', 'pour-over guide', 'dofollow', 'active', 200, 'dofollow', false],
-            ['https://city-guide.test/coffee-shops', 'Demo Roastery', 'dofollow', 'nofollow', 200, 'nofollow', false],
-            ['https://old-directory.test/listing/demo-roastery', 'Demo Roastery', 'dofollow', 'lost', 404, null, false],
-            ['https://partner-cafe.test/our-beans', 'our beans', 'dofollow', 'noindex', 200, 'dofollow', true],
+            ['https://city-guide.test/coffee-shops', 'Demo Roastery', 'dofollow', 'rel_changed', 200, 'nofollow', false],
+            ['https://gift-guide.test/coffee-lovers', 'Demo Roastery', 'dofollow', 'lost', 200, null, false],
+            ['https://partner-cafe.test/our-beans', 'our beans', 'dofollow', 'lost', 200, 'dofollow', true],
+            ['https://old-directory.test/listing/demo-roastery', 'Demo Roastery', 'dofollow', 'error', 404, null, false],
         ];
 
         foreach ($watchlist as $i => [$source, $anchor, $expectedRel, $state, $status, $observedRel, $noindex]) {
