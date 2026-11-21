@@ -17,9 +17,15 @@ class MeApiController extends Controller
         /** @var User $user */
         $user = $request->user();
 
+        $tokenWorkspaceId = $user->tokenWorkspaceId();
+
         $workspaces = Workspace::query()
-            ->where('owner_id', $user->id)
-            ->orWhereHas('members', fn ($q) => $q->where('users.id', $user->id))
+            ->where(function ($query) use ($user): void {
+                $query->where('owner_id', $user->id)
+                    ->orWhereHas('members', fn ($q) => $q->where('users.id', $user->id));
+            })
+            // A workspace-scoped token only sees its own workspace.
+            ->when($tokenWorkspaceId !== null, fn ($query) => $query->whereKey($tokenWorkspaceId))
             ->orderBy('name')
             ->get(['id', 'uuid', 'name', 'slug', 'plan_tier', 'owner_id'])
             ->map(function (Workspace $ws) use ($user): array {
