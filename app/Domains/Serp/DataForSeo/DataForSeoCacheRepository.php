@@ -71,6 +71,9 @@ class DataForSeoCacheRepository
             }
         }
 
+        $hits = count($results);
+        $this->recordLookup(self::KEYWORD_ENDPOINT, $hits, count(array_unique($keyMap)) - $hits);
+
         return $results;
     }
 
@@ -155,14 +158,47 @@ class DataForSeoCacheRepository
             ->where('expires_at', '>', now())
             ->first(['payload']);
 
-        if ($row === null) {
-            return null;
+        /** @var array<string, mixed>|null $decoded */
+        $decoded = $row === null ? null : json_decode((string) $row->payload, true);
+        $decoded = is_array($decoded) ? $decoded : null;
+
+        $this->recordLookup($endpoint, $decoded !== null ? 1 : 0, $decoded === null ? 1 : 0);
+
+        return $decoded;
+    }
+
+    /**
+     * Hit/miss counts per endpoint per day, for `dataforseo:status`.
+     */
+    private function recordLookup(string $endpoint, int $hits, int $misses): void
+    {
+        if ($hits <= 0 && $misses <= 0) {
+            return;
         }
 
-        /** @var array<string, mixed>|null $decoded */
-        $decoded = json_decode((string) $row->payload, true);
-
-        return is_array($decoded) ? $decoded : null;
+        try {
+            $date = now()->toDateString();
+            $now = now();
+            DB::table('dataforseo_cache_stats')->insertOrIgnore([
+                'date' => $date,
+                'endpoint' => mb_substr($endpoint, 0, 120),
+                'hits' => 0,
+                'misses' => 0,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+            DB::table('dataforseo_cache_stats')
+                ->where('date', $date)
+                ->where('endpoint', mb_substr($endpoint, 0, 120))
+                ->update([
+                    'hits' => DB::raw('hits + '.max(0, $hits)),
+                    'misses' => DB::raw('misses + '.max(0, $misses)),
+                    'updated_at' => $now,
+                ]);
+        } catch (\Throwable $e) {
+            // Telemetry must never break a lookup.
+            report($e);
+        }
     }
 
     /**

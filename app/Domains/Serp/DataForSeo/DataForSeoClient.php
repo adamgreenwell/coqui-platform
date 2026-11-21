@@ -9,12 +9,14 @@ use App\Domains\Serp\ProviderNotConfiguredException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
+use Throwable;
 
 class DataForSeoClient
 {
     public function __construct(
         private readonly DataForSeoCacheRepository $cache,
         private readonly DataForSeoSpendGuard $spendGuard,
+        private readonly DataForSeoResponseArchive $archive,
     ) {}
 
     /**
@@ -72,8 +74,6 @@ class DataForSeoClient
         $estimatedCost = (float) config('coqui.dataforseo.prices.labs_keyword_overview_task', 0.012)
             + (count($normalizedKeywords) * (float) config('coqui.dataforseo.prices.labs_keyword_overview_item', 0.00012));
 
-        $this->spendGuard->assertCanSpend($estimatedCost, $project?->workspace);
-
         $payload = [[
             'keywords' => $normalizedKeywords,
             'location_code' => $locationCode,
@@ -118,8 +118,6 @@ class DataForSeoClient
 
         $estimatedCost = (float) config('coqui.dataforseo.prices.labs_keyword_overview_task', 0.012)
             + (count($normalizedKeywords) * (float) config('coqui.dataforseo.prices.labs_keyword_overview_item', 0.00012));
-
-        $this->spendGuard->assertCanSpend($estimatedCost, $project?->workspace);
 
         $payload = [[
             'keywords' => $normalizedKeywords,
@@ -170,8 +168,6 @@ class DataForSeoClient
 
         $estimatedCost = (float) config('coqui.dataforseo.prices.labs_related_keywords_task', 0.012)
             + ($limit * (float) config('coqui.dataforseo.prices.labs_related_keywords_item', 0.00012));
-
-        $this->spendGuard->assertCanSpend($estimatedCost, $project?->workspace);
 
         $payload = [[
             'keyword' => $normalizedKeyword,
@@ -236,8 +232,6 @@ class DataForSeoClient
         $estimatedCost = (float) config('coqui.dataforseo.prices.labs_domain_intersection_task', 0.012)
             + ($limit * (float) config('coqui.dataforseo.prices.labs_domain_intersection_item', 0.00012));
 
-        $this->spendGuard->assertCanSpend($estimatedCost, $project?->workspace);
-
         $payload = [[
             'target1' => $normTarget1,
             'target2' => $normTarget2,
@@ -274,7 +268,9 @@ class DataForSeoClient
     }
 
     /**
-     * Fetch live Google organic SERP advanced results.
+     * Fetch live Google organic SERP advanced results. Cached across projects
+     * for `cache_ttl_hours.serp_snapshot`; rank tracking uses the standard
+     * queue, not this.
      *
      * @return array<string, mixed>
      */
@@ -283,11 +279,23 @@ class DataForSeoClient
         Project $project,
         int $locationCode = 2840,
         string $languageCode = 'en',
+        bool $bypassCache = false,
     ): array {
         $endpoint = '/v3/serp/google/organic/live/advanced';
-        $estimatedCost = (float) config('coqui.dataforseo.prices.serp_live_task', 0.002);
+        $signature = [
+            'keyword' => strtolower(trim($keyword)),
+            'location_code' => $locationCode,
+            'language_code' => strtolower(trim($languageCode)),
+        ];
 
-        $this->spendGuard->assertCanSpend($estimatedCost, $project->workspace, false);
+        if (! $bypassCache) {
+            $cached = $this->cache->get($endpoint, $signature);
+            if ($cached !== null) {
+                return $cached;
+            }
+        }
+
+        $estimatedCost = (float) config('coqui.dataforseo.prices.serp_live_task', 0.002);
 
         $payload = [
             [
@@ -297,13 +305,20 @@ class DataForSeoClient
             ],
         ];
 
-        return $this->postPaid(
+        $response = $this->postPaid(
             endpoint: $endpoint,
             payload: $payload,
             mode: 'live',
             estimatedCostUsd: $estimatedCost,
             project: $project,
         );
+
+        if ($this->tasksSucceeded($response)) {
+            $ttl = (int) config('coqui.dataforseo.cache_ttl_hours.serp_snapshot', 24 * 7);
+            $this->cache->put($endpoint, $signature, $response, $ttl);
+        }
+
+        return $response;
     }
 
     /**
@@ -317,8 +332,6 @@ class DataForSeoClient
     ): array {
         $endpoint = '/v3/backlinks/summary/live';
         $estimatedCost = (float) config('coqui.dataforseo.prices.backlinks_task', 0.024);
-
-        $this->spendGuard->assertCanSpend($estimatedCost, $project->workspace, false);
 
         $payload = [
             [
@@ -349,8 +362,6 @@ class DataForSeoClient
     ): array {
         $endpoint = '/v3/backlinks/referring_domains/live';
         $estimatedCost = (float) config('coqui.dataforseo.prices.backlinks_task', 0.024);
-
-        $this->spendGuard->assertCanSpend($estimatedCost, $project->workspace, false);
 
         $payload = [
             [
@@ -384,8 +395,6 @@ class DataForSeoClient
         $endpoint = '/v3/backlinks/anchors/live';
         $estimatedCost = (float) config('coqui.dataforseo.prices.backlinks_task', 0.024);
 
-        $this->spendGuard->assertCanSpend($estimatedCost, $project->workspace, false);
-
         $payload = [
             [
                 'target' => $target,
@@ -416,8 +425,6 @@ class DataForSeoClient
     ): array {
         $endpoint = '/v3/backlinks/pages/live';
         $estimatedCost = (float) config('coqui.dataforseo.prices.backlinks_task', 0.024);
-
-        $this->spendGuard->assertCanSpend($estimatedCost, $project->workspace, false);
 
         $payload = [
             [
@@ -450,8 +457,6 @@ class DataForSeoClient
         $endpoint = '/v3/backlinks/history/live';
         $estimatedCost = (float) config('coqui.dataforseo.prices.backlinks_task', 0.024);
 
-        $this->spendGuard->assertCanSpend($estimatedCost, $project->workspace, false);
-
         $payload = [
             [
                 'target' => $target,
@@ -482,8 +487,6 @@ class DataForSeoClient
     ): array {
         $endpoint = '/v3/backlinks/backlinks/live';
         $estimatedCost = (float) config('coqui.dataforseo.prices.backlinks_task', 0.024);
-
-        $this->spendGuard->assertCanSpend($estimatedCost, $project->workspace, false);
 
         $payload = [
             [
@@ -542,8 +545,6 @@ class DataForSeoClient
             }
         }
 
-        $this->spendGuard->assertCanSpend($estimatedCost, $project->workspace, false);
-
         $response = $this->postPaid(
             endpoint: $endpoint,
             payload: $payload,
@@ -593,8 +594,6 @@ class DataForSeoClient
             }
         }
 
-        $this->spendGuard->assertCanSpend($estimatedCost, $project->workspace, false);
-
         $response = $this->postPaid(
             endpoint: $endpoint,
             payload: $payload,
@@ -624,14 +623,13 @@ class DataForSeoClient
         $unitCost = (float) config('coqui.dataforseo.prices.serp_standard_task', 0.0006);
         $estimatedCost = count($tasks) * $unitCost;
 
-        $this->spendGuard->assertCanSpend($estimatedCost, $project->workspace, $isScheduled);
-
         return $this->postPaid(
             endpoint: $endpoint,
             payload: $tasks,
             mode: 'standard',
             estimatedCostUsd: $estimatedCost,
             project: $project,
+            isScheduled: $isScheduled,
         );
     }
 
@@ -666,7 +664,7 @@ class DataForSeoClient
 
         try {
             $response = $this->getFree($path);
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return null;
         }
 
@@ -681,6 +679,11 @@ class DataForSeoClient
     /**
      * Never retry paid POST calls automatically on timeouts to prevent double-billing.
      *
+     * The estimated cost is reserved in the ledger (atomically with the cap
+     * check) before the request goes out and settled from the response's
+     * `cost` afterwards. A request that never gets a response keeps the
+     * estimate, since it may still have been billed.
+     *
      * @param  array<int, array<string, mixed>>  $payload
      * @return array<string, mixed>
      */
@@ -690,28 +693,74 @@ class DataForSeoClient
         string $mode,
         float $estimatedCostUsd,
         ?Project $project = null,
+        bool $isScheduled = false,
     ): array {
-        $response = $this->http()->post($this->url($endpoint), $payload);
+        // Throws when credentials are missing, before anything is reserved.
+        $request = $this->http();
+
+        $ledgerId = $this->spendGuard->reserve(
+            endpoint: $endpoint,
+            mode: $mode,
+            estimatedCostUsd: $estimatedCostUsd,
+            workspace: $project?->workspace,
+            projectId: $project?->id,
+            isScheduled: $isScheduled,
+        );
+
+        try {
+            $response = $request->post($this->url($endpoint), $payload);
+        } catch (Throwable $e) {
+            $this->spendGuard->settle($ledgerId, DataForSeoSpendGuard::STATUS_UNKNOWN);
+            $this->archive->record($ledgerId, $endpoint, $payload, null, null, $project, $e->getMessage());
+
+            throw $e;
+        }
+
         $status = $response->status();
 
         /** @var array<string, mixed> $decoded */
         $decoded = $response->json() ?? [];
         $actualCost = isset($decoded['cost']) ? (float) $decoded['cost'] : $estimatedCostUsd;
+        $taskId = $decoded['tasks'][0]['id'] ?? null;
 
-        $this->spendGuard->recordSpend(
-            endpoint: $endpoint,
-            mode: $mode,
-            estimatedCostUsd: $estimatedCostUsd,
+        $this->spendGuard->settle(
+            ledgerId: $ledgerId,
+            status: DataForSeoSpendGuard::STATUS_SETTLED,
             actualCostUsd: $actualCost,
-            workspaceId: $project?->workspace_id,
-            projectId: $project?->id,
-            externalTaskId: $decoded['tasks'][0]['id'] ?? null,
             httpStatus: $status,
+            externalTaskId: is_string($taskId) ? $taskId : null,
         );
+        $this->archive->record($ledgerId, $endpoint, $payload, $decoded, $status, $project);
 
         $response->throw();
 
         return $decoded;
+    }
+
+    /**
+     * Whether a 200 response's tasks all succeeded (a failed task still comes
+     * back as HTTP 200), so failures aren't cached.
+     *
+     * @param  array<string, mixed>  $response
+     */
+    private function tasksSucceeded(array $response): bool
+    {
+        if ((int) ($response['status_code'] ?? 20000) >= 40000) {
+            return false;
+        }
+
+        $tasks = is_array($response['tasks'] ?? null) ? $response['tasks'] : [];
+        if ($tasks === []) {
+            return false;
+        }
+
+        foreach ($tasks as $task) {
+            if (! is_array($task) || (int) ($task['status_code'] ?? 20000) >= 40000) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private function http(): PendingRequest
