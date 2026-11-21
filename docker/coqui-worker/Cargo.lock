@@ -364,6 +364,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "reqwest",
+ "rusqlite",
  "scraper",
  "serde",
  "serde_json",
