@@ -261,6 +261,24 @@ class BotTelemetryTest extends TestCase
         $this->assertEquals([['path' => '/old', 'hits' => 10, 'status' => 301, 'redirectTarget' => 'https://example.com/new', 'hops' => 3]], $rows[300]->top_paths);
     }
 
+    public function test_a_redirect_chain_shows_even_when_the_path_mostly_returned_200(): void
+    {
+        $this->sendBatch([
+            ['botFamily' => 'googlebot', 'statusBucket' => 200, 'hitCount' => 100, 'bucketHour' => '2026-11-18T05:00:00Z', 'topPaths' => [['path' => '/pricing', 'hits' => 100, 'status' => 200]]],
+            ['botFamily' => 'googlebot', 'statusBucket' => 301, 'hitCount' => 20, 'bucketHour' => '2026-11-19T05:00:00Z', 'topPaths' => [['path' => '/pricing', 'hits' => 20, 'status' => 301, 'redirectTarget' => 'https://example.com/plans', 'hops' => 3]]],
+        ])->assertStatus(202);
+
+        Sanctum::actingAs($this->user, ['projects:read']);
+        Carbon::setTestNow('2026-11-20 12:00:00');
+        $chains = $this->getJson("/api/v1/projects/{$this->project->uuid}/telemetry/bot-logs?days=7")->assertOk()->json('redirectChains');
+        Carbon::setTestNow();
+
+        $this->assertCount(1, $chains);
+        $this->assertSame('/pricing', $chains[0]['path']);
+        $this->assertSame(20, $chains[0]['hits']);
+        $this->assertSame(3, $chains[0]['hops']);
+    }
+
     public function test_different_batches_for_the_same_hour_add_up(): void
     {
         $this->sendBatch([$this->googlebot404s(10)], 'batch-0500-a')->assertStatus(202);

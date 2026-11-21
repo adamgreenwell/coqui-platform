@@ -451,7 +451,10 @@ class BotTelemetryService
                 $parameterPaths[] = ['path' => $path, 'hits' => $data['hits'], 'status' => $mainStatus, 'bots' => $bots];
             }
 
-            if (self::statusClass($mainStatus) === 300) {
+            // Any redirect hits count, even when the path mostly returned
+            // something else in this range (a chain added recently).
+            $pathRedirectHits = $this->redirectHits($data['statusHits']);
+            if ($pathRedirectHits > 0) {
                 // A chain: more than one hop, or a redirect to a path that
                 // itself redirects.
                 $target = $data['target'];
@@ -459,8 +462,8 @@ class BotTelemetryService
                 $targetRedirects = $targetPath !== null && $targetPath !== $path && isset($pathMap[$targetPath])
                     && $this->redirectHits($pathMap[$targetPath]['statusHits']) > 0;
                 $hops = max($data['hops'], $targetRedirects ? 2 : 1);
-                if ($hops >= 2 && count($redirectChains) < 50) {
-                    $redirectChains[] = ['path' => $path, 'hits' => $data['hits'], 'hops' => $hops, 'target' => $target, 'bots' => $bots];
+                if ($hops >= 2) {
+                    $redirectChains[] = ['path' => $path, 'hits' => $pathRedirectHits, 'hops' => $hops, 'target' => $target, 'bots' => $bots];
                 }
             }
 
@@ -475,6 +478,8 @@ class BotTelemetryService
         // Rank by missing-page hits before limiting, so a path with many
         // 404s isn't pushed out by busier paths with only a few.
         usort($flagged404s, fn (array $a, array $b): int => $b['hits'] <=> $a['hits']);
+        usort($redirectChains, fn (array $a, array $b): int => $b['hits'] <=> $a['hits']);
+        $redirectChains = array_slice($redirectChains, 0, 50);
         $flagged404s = array_map(fn (array $row): array => [
             'path' => $row['path'],
             'hits' => $row['hits'],
