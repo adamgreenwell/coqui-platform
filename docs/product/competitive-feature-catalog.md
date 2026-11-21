@@ -8,28 +8,84 @@
 
 ---
 
-## 1. The strategy in one page
+## 1. Positioning: the crawler is the wedge
 
-We are not competing with Ahrefs on data depth. We cannot: their index is the product, and it costs them eight figures a year to maintain. We compete on **the 80% of the workflow a small team or agency actually uses, at a fifth of the price, with two things they cannot buy** — a hosting platform's view of the origin server, and a desktop crawler that makes deep technical audits free.
+### 1.1 The hole in the market
 
-Three kinds of feature, three cost behaviours:
+| | Deep desktop crawl | Cloud history across crawls | Ongoing rank / link monitoring | First-party hosting signals |
+|---|---|---|---|---|
+| Ahrefs / Semrush / Moz | — | ✓ | ✓ | — |
+| Screaming Frog | ✓ ($279/yr per seat) | — (local SQLite file) | — | — |
+| **Coqui** | **✓ free with every plan** | **✓** | **✓** | **✓ (Runnr)** |
+
+Screaming Frog owns the deep-crawl job and stops at a local database. The SaaS platforms own the ongoing-monitoring job and meter every page they crawl. Nobody sells both halves, because a SaaS company has no reason to give away a desktop app and a desktop company has no cloud.
+
+That is the opening: **the crawler is the acquisition channel, the platform is the business.** A Screaming Frog user gets a well-funded crawler for free and discovers cloud history; a small team gets the platform at a third of Ahrefs and finds a real crawler in the box.
+
+### 1.2 The flywheel
+
+1. Crawl locally — unlimited pages, the customer's CPU, our $0.
+2. One-click sync — the crawl becomes history, not a file.
+3. Diff over time — what broke, what improved, which deploy did it.
+4. Enrich — join the crawl to GSC queries, GA4 traffic, PSI vitals, Runnr bot logs.
+5. Share — a revocable link or white-label report for the client.
+6. Expand — the client's team needs seats, and the next site gets crawled.
+
+Each loop makes leaving more expensive, because the value is accumulated history rather than a one-off file. That is the thing Screaming Frog structurally cannot copy without becoming a SaaS company.
+
+### 1.3 What has to be true before we say it out loud
+
+The desktop crawler is real but pre-1.0. Measured against the Screaming Frog 25.1 inventory in the [Coqui repository](https://github.com/adamgreenwell/coqui):
+
+| Claim we want to make | State today | Gate before it is public |
+|---|---|---|
+| "full-featured standalone crawler" | Chromium rendering, screenshots, Web Vitals, axe accessibility, custom extraction and JS, 50 static audit rules, 15 export families, 15 HTML/PDF reports, CLI, HTTP API, MCP server, scheduler, crawl comparison, Screaming Frog DB import, parity harness with CI gate, benchmarks at 10k/50k/1M | Unsigned installers, no bundled Chromium, no licence file, single-grid workspace vs 34 tabs, 15 of 97 reports, 50 of 344 rules, 0 of 7 locales |
+| "free with every plan" | Runs on the customer's machine; $0 marginal cost to us | Licence decision, code-signing certificates, auto-update channel, support runbook for three operating systems |
+| "better than Screaming Frog" | Exact-scope parity on one real site: 156/156 URLs, status/title/depth exact, word-count ratio 1.000, social meta 1,152/1,152 | Publish the parity diff and close the 20 rules and 10 reports people actually use before inviting the comparison |
+
+**Recommendation:** launch the story as *"the crawler that remembers, and it imports your Screaming Frog files"* — both are true today and both are things no competitor offers. Hold *"better than Screaming Frog"* until 1.0 is signed and the parity harness is published. The audience for that claim is the one audience that will test it.
+
+The import is the single most valuable switching feature we have. A prospect can bring five years of Screaming Frog database files, see them in the cloud, and diff them against a fresh crawl on day one. No incumbent can match that offer.
+
+### 1.4 The packaging rule
+
+**Never meter the desktop crawler.** It costs approximately nothing, and charging for it would destroy the only structural advantage we have. Meter the cloud instead: stored crawls, workers, rank checks, API calls.
+
+| | Free | Solo $29 | Pro $79 | Agency $199 |
+|---|---|---|---|---|
+| Desktop crawler | **Unlimited** | **Unlimited** | **Unlimited** | **Unlimited** |
+| Stored crawls / history | 1 (latest) | 10, 90 days | 50, 1 year | Unlimited, forever |
+| Crawl comparison | — | ✓ | ✓ | ✓ |
+| Cloud crawls (worker) | 1,000 URLs/mo | 5,000/mo | 25,000/mo | 250,000/mo |
+| Rank checks | 100 credits | 3,000 | 10,000 | 45,000 |
+
+A free tier with an unlimited local crawler and one stored crawl is a genuine acquisition engine: useful enough to adopt, and it makes the moment of value — history, diff, share — a paid one.
+
+### 1.5 Three kinds of feature, three cost behaviours
 
 | Class | Source | Marginal cost | Examples |
 |---|---|---|---|
 | **Purchased** | DataForSEO, SE Ranking, SERPHouse | Linear per call — the thing that kills margin | rank checks, keyword volumes, backlink profiles, competitor intersections |
-| **Owned** | `coqui-worker` (Rust) + Coqui Desktop | Flat — a container and some bandwidth | site audits, content-brief page extraction, link-rot verification, deploy smoke tests |
+| **Owned** | Coqui Desktop, coqui-worker | Flat — the customer's CPU, or one container | site audits, content-brief extraction, link-rot checks, deploy smoke tests |
 | **First-party** | GSC, Bing, GA4, Umami, Plausible, Runnr logs | Zero — it is the customer's own data | traffic attribution, query data, bot telemetry, deploy correlation |
 
-The economic spine of the business is therefore: **flat-cost features are the margin; metered features must be sold per unit, never "unlimited", and must be cached across tenants wherever the answer is the same for everyone.**
+Two rules follow, and they govern every feature in this document:
 
-Two rules for the catalog:
+1. Every feature maps to one class, with a measured unit cost.
+2. No feature ships on a tier where its worst-case cost exceeds ~30% of that tier's revenue.
 
-1. Every feature must map to one of the three classes, with a measured unit cost.
-2. No feature may be sold at a tier where its worst-case cost exceeds ~30% of that tier's revenue.
+Rule 2 is currently violated. That is section 2.
 
-Rule 2 is currently violated in four places. That is section 2.
+### 1.6 Risks, named
 
----
+| Risk | Why it is real | Mitigation |
+|---|---|---|
+| **Free-rider** | Screaming Frog buyers are often subscription-averse; they may take the crawler and never pay | Make cloud history, diff and sharing the paid value, not the crawler; keep the free stored-crawl limit tight |
+| **"Not as good as SF"** | That audience knows the product deeply and will find the missing tabs and reports | Do not invite the comparison until 1.0; publish the parity harness as evidence when we do |
+| **Support surface** | Three operating systems, proxies, TLS, enterprise networks, auto-update | doctor, bench, reproducible builds and checksummed updates already exist; budget a support rotation before launch |
+| **Trademark and comparative claims** | "Better than Screaming Frog" in a headline invites trouble | Keep the clean-room disclaimer, avoid comparative advertising, let customers draw the conclusion |
+| **Forkability** | The crawler is described as open source but has no licence file yet | Decide the licence deliberately: a permissive crawler is fine if the moat is the platform, hosting data and accumulated history |
+| **Parity marathon** | Screaming Frog has 20 years of edge cases and 344 rules | Target the 20% of rules and reports used in 80% of audits, measured by the parity harness rather than guessed |
 
 ## 2. Unit economics — the part that decides whether the wedge works
 
@@ -474,3 +530,38 @@ Observed 2026-11-21. Competitor pricing pages render prices with JavaScript, so 
 2. Do we sell checks as a transparent unit, or keep "keywords" as marketing and meter behind the scenes?
 3. Is the Agency tier weekly-only at 10,000 keywords, or daily with top-ups?
 4. Do we publish an "Authority" number sourced from DataForSEO, or avoid a named metric entirely?
+
+---
+
+## 11. Appendix: the crawler against Screaming Frog 25.1
+
+Reference counts are from the [Coqui feature inventory](https://github.com/adamgreenwell/coqui/blob/main/docs/feature-inventory.md), which measured the reference product; Coqui counts are from its [status snapshot](https://github.com/adamgreenwell/coqui/blob/main/docs/status.md) on 2026-11-21.
+
+| Dimension | Screaming Frog 25.1 | Coqui today | Reachable before 1.0? |
+|---|---|---|---|
+| Result tabs | 34 | 1 grid | Yes — UI work, no engine changes |
+| Audit rules | 344 across 9 families | 50 static + one per axe violation | Partly — target the high-traffic rules first |
+| Report catalogue | 97 | 15 HTML/PDF kinds | Yes — reports are templates over existing data |
+| Bulk export families | 42 | 15 families + app catalogue | Yes |
+| CLI options | 57 | ~20 commands | Yes |
+| Locales | 7 | 0 | Later |
+| Desktop crawler | ✓ $279/yr | ✓ free | — |
+| Chromium rendering | ✓ bundled | ✓ via Chrome for Testing installer | Needs bundling |
+| Lighthouse / PSI checks | ✓ | ✓ (JSON, sampled) | — |
+| Screenshots, custom extraction, custom JS | ✓ | ✓ | — |
+| Log-file analyser | ✓ separate $139/yr product | ✗ | No — new subsystem |
+| Cloud sync and cross-crawl history | ✗ | ✓ | — |
+| Crawl comparison in the cloud | ✗ (local file only) | ✓ | — |
+| Team access, share links, white-label | ✗ | ✓ (platform) | — |
+| MCP server | ✗ | ✓ | — |
+| HTTP API | ✗ | ✓ | — |
+| Screaming Frog database import | n/a | ✓ | — |
+| Signed installers | ✓ | ✗ (certificates pending) | **Blocks launch** |
+| Bundled browser | ✓ | ✗ (installer step) | **Blocks launch** |
+| Licence file | ✓ | ✗ (decision pending) | **Blocks launch** |
+
+Read this as the launch gate, not a scoreboard. Three of the last four rows are days of work, not months: signing certificates, bundling Chromium and choosing a licence. The tab count, rule count and report catalogue are the long tail and should be attacked by usage frequency, not by parity completeness.
+
+The honest headline for launch is: **"a crawler that already matches Screaming Frog on the crawl itself — same URLs, same statuses, same titles, same word counts on a 156-page reference crawl — and keeps every crawl in the cloud so you can diff it against last month."**
+
+
