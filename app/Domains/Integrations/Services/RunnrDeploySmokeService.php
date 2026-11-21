@@ -14,7 +14,56 @@ class RunnrDeploySmokeService
 {
     public function __construct(
         private readonly SafeHttpClient $http = new SafeHttpClient,
+        private readonly DeploySiteFilesInspector $files = new DeploySiteFilesInspector,
     ) {}
+
+    /**
+     * Headers for a callback to Runnr, signed the same way Runnr signs its
+     * webhooks to us: HMAC-SHA256 of "{timestamp}.{body}".
+     *
+     * @param  array<string, mixed>  $payload
+     * @return array{X-Runnr-Timestamp: string, X-Runnr-Signature: string}
+     */
+    public static function signedHeaders(array $payload): array
+    {
+        $timestamp = (string) now()->getTimestamp();
+        $body = json_encode($payload, JSON_THROW_ON_ERROR);
+
+        return [
+            'X-Runnr-Timestamp' => $timestamp,
+            'X-Runnr-Signature' => hash_hmac('sha256', $timestamp.'.'.$body, (string) config('services.runnr.webhook_secret')),
+        ];
+    }
+
+    /**
+     * robots.txt and sitemap results from this project's last evaluated
+     * smoke run, to diff against.
+     *
+     * @return array<string, mixed>|null
+     */
+    private function previousChecks(CrawlRun $run, string $environment): ?array
+    {
+        $previous = CrawlRun::query()
+            ->where('project_id', $run->project_id)
+            ->where('source', 'deploy_smoke')
+            ->where('id', '<', $run->id)
+            ->orderByDesc('id')
+            ->limit(25)
+            ->get(['id', 'config']);
+
+        foreach ($previous as $candidate) {
+            // A preview deploy is no baseline for production, or vice versa.
+            if ((string) ($candidate->config['deploy']['environment'] ?? 'production') !== $environment) {
+                continue;
+            }
+            $checks = $candidate->config['smoke_results']['checks'] ?? null;
+            if (is_array($checks) && isset($checks['robots'], $checks['sitemap'])) {
+                return $checks;
+            }
+        }
+
+        return null;
+    }
 
     /**
      * The smoke crawl couldn't run (the worker was unreachable or stopped
@@ -74,10 +123,8 @@ class RunnrDeploySmokeService
         ];
 
         try {
-            $signature = hash_hmac('sha256', json_encode($payload, JSON_THROW_ON_ERROR), (string) config('services.runnr.webhook_secret'));
-            rescue(fn () => $this->http->postJson($callbackUrl, $payload, [
-                'X-Runnr-Signature' => $signature,
-            ], timeoutSeconds: 10), report: true);
+            $headers = self::signedHeaders($payload);
+            rescue(fn () => $this->http->postJson($callbackUrl, $payload, $headers, timeoutSeconds: 10), report: true);
         } catch (Throwable) {
             // The failure is already recorded; the callback is best effort.
         }
@@ -109,30 +156,64 @@ class RunnrDeploySmokeService
 
         $totalUrls = (int) DB::table('crawl_urls')->where('crawl_run_id', $run->id)->count();
 
-        // Check 1: Robots.txt Disallow Regressions
-        $robotsIssues = DB::table('crawl_issues')
-            ->where('crawl_run_id', $run->id)
-            ->whereIn('rule', ['robots_disallowed', 'robots_txt_disallow_all'])
-            ->pluck('url')
-            ->all();
-
         $rootUrls = array_filter([$run->seed, rtrim($run->seed, '/'), rtrim($run->seed, '/').'/']);
 
-        $disallowedRoot = false;
-        foreach ($robotsIssues as $issueUrl) {
-            if (in_array($issueUrl, $rootUrls, true) || $issueUrl === '/' || $issueUrl === '') {
-                $disallowedRoot = true;
-                break;
-            }
+        // robots.txt and the sitemap are fetched directly: a crawl blocked by
+        // robots.txt finds no pages, so its results can't show the block.
+        $checks = $this->files->inspect($run->seed);
+        $previousChecks = $this->previousChecks($run, $environment);
+
+        // Check 0: Nothing crawled. There's nothing to judge, so it can't pass.
+        if ($totalUrls === 0) {
+            $regressions[] = [
+                'rule' => 'no_urls_crawled',
+                'severity' => 'critical',
+                'message' => $checks['robots']['disallow_all']
+                    ? 'The smoke crawl reached no pages: robots.txt blocks all crawling (Disallow: /).'
+                    : 'The smoke crawl reached no pages; the site may be down or refusing crawlers.',
+                'affected_urls' => [$run->seed],
+            ];
         }
 
-        if ($disallowedRoot && $environment === 'production') {
+        // Check 1: Robots.txt Disallow Regressions
+        if ($checks['robots']['disallow_all'] && $environment === 'production') {
             $regressions[] = [
                 'rule' => 'robots_txt_disallow_all',
                 'severity' => 'critical',
                 'message' => 'Robots.txt contains Disallow: / blocking all search engine indexing on production.',
-                'affected_urls' => array_values(array_unique(array_merge([$run->seed], $robotsIssues))),
+                'affected_urls' => [$checks['robots']['url']],
             ];
+        } elseif ($previousChecks !== null
+            && ($previousChecks['robots']['hash'] ?? null) !== null
+            && $checks['robots']['hash'] !== ($previousChecks['robots']['hash'] ?? null)) {
+            $regressions[] = [
+                'rule' => 'robots_txt_changed',
+                'severity' => 'low',
+                'message' => 'Robots.txt changed since the last deploy check.',
+                'affected_urls' => [$checks['robots']['url']],
+            ];
+        }
+
+        // Check 1b: Sitemap missing or shrunk since the last deploy check
+        if ($environment === 'production' && $previousChecks !== null && ($previousChecks['sitemap']['valid'] ?? false) === true) {
+            $previousCount = (int) ($previousChecks['sitemap']['url_count'] ?? 0);
+            $currentCount = (int) ($checks['sitemap']['url_count'] ?? 0);
+
+            if (! $checks['sitemap']['valid']) {
+                $regressions[] = [
+                    'rule' => 'sitemap_missing',
+                    'severity' => 'high',
+                    'message' => 'The XML sitemap is missing or no longer valid (HTTP '.($checks['sitemap']['status'] ?? 'no response').').',
+                    'affected_urls' => array_filter([$checks['sitemap']['url']]),
+                ];
+            } elseif ($previousCount >= 10 && $currentCount < $previousCount / 2) {
+                $regressions[] = [
+                    'rule' => 'sitemap_shrunk',
+                    'severity' => 'medium',
+                    'message' => "The XML sitemap lists {$currentCount} entries, down from {$previousCount} at the last deploy check.",
+                    'affected_urls' => array_filter([$checks['sitemap']['url']]),
+                ];
+            }
         }
 
         // Check 2: Accidental Global Noindex
@@ -240,6 +321,7 @@ class RunnrDeploySmokeService
             'regressions' => $regressions,
             'summary' => $summary,
             'total_urls_checked' => $totalUrls,
+            'checks' => $checks,
             'evaluated_at' => now()->toIso8601String(),
         ];
 
@@ -285,7 +367,6 @@ class RunnrDeploySmokeService
 
         // Post signed callback to Runnr deployment log if callback_url is set
         if ($callbackUrl !== null && $callbackUrl !== '') {
-            $secret = (string) config('services.runnr.webhook_secret');
             $callbackPayload = [
                 'deployId' => $deploy['deploy_id'] ?? null,
                 'siteId' => $project?->runnr_site_id,
@@ -299,14 +380,11 @@ class RunnrDeploySmokeService
             ];
 
             try {
-                $payloadJson = json_encode($callbackPayload, JSON_THROW_ON_ERROR);
-                $signature = hash_hmac('sha256', $payloadJson, $secret);
+                $headers = self::signedHeaders($callbackPayload);
 
                 // The callback URL comes from the webhook payload, so it goes
                 // through the SSRF-safe client (no redirects, pinned DNS).
-                rescue(fn () => $this->http->postJson($callbackUrl, $callbackPayload, [
-                    'X-Runnr-Signature' => $signature,
-                ], timeoutSeconds: 10), report: true);
+                rescue(fn () => $this->http->postJson($callbackUrl, $callbackPayload, $headers, timeoutSeconds: 10), report: true);
             } catch (Throwable) {
                 // Non-blocking callback logging
             }

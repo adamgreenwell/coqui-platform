@@ -304,6 +304,7 @@ class PlanFeatureGatesTest extends TestCase
     {
         RunnrIntegration::activate();
         Http::fake();
+        $this->freezeTime();
         config()->set('services.runnr.webhook_secret', 'webhook-secret');
         $this->project->update(['runnr_site_id' => 'site_gated_1']);
         $body = json_encode(['site_id' => 'site_gated_1'], JSON_THROW_ON_ERROR);
@@ -311,7 +312,8 @@ class PlanFeatureGatesTest extends TestCase
         $this->call('POST', '/api/webhooks/runnr/deploy', [], [], [], [
             'CONTENT_TYPE' => 'application/json',
             'HTTP_ACCEPT' => 'application/json',
-            'HTTP_X_RUNNR_SIGNATURE' => hash_hmac('sha256', $body, 'webhook-secret'),
+            'HTTP_X_RUNNR_SIGNATURE' => hash_hmac('sha256', now()->getTimestamp().'.'.$body, 'webhook-secret'),
+            'HTTP_X_RUNNR_TIMESTAMP' => (string) now()->getTimestamp(),
         ], $body)
             ->assertStatus(202)
             ->assertJson(['status' => 'ignored', 'reason' => 'feature_not_in_plan']);

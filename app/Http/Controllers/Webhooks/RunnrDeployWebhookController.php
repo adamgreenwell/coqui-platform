@@ -44,9 +44,21 @@ class RunnrDeployWebhookController extends Controller implements HasMiddleware
             return response()->json(['message' => 'Missing webhook signature.'], 401);
         }
 
-        $expected = hash_hmac('sha256', $request->getContent(), $secret);
+        // The signature covers "{timestamp}.{body}", and old deliveries are
+        // refused, so a captured request can't be replayed later.
+        $timestamp = (string) $request->header('X-Runnr-Timestamp', '');
+        if ($timestamp === '' || ! ctype_digit($timestamp)) {
+            return response()->json(['message' => 'Missing webhook timestamp.'], 401);
+        }
+
+        $expected = hash_hmac('sha256', $timestamp.'.'.$request->getContent(), $secret);
         if (! hash_equals($expected, $signature)) {
             return response()->json(['message' => 'Invalid signature.'], 403);
+        }
+
+        $tolerance = max(1, (int) config('services.runnr.webhook_tolerance_seconds', 300));
+        if (abs(now()->getTimestamp() - (int) $timestamp) > $tolerance) {
+            return response()->json(['message' => 'Stale webhook delivery.'], 401);
         }
 
         $validated = $request->validate([
