@@ -358,7 +358,7 @@ class DemoDataSeeder extends Seeder
                     'status_bucket' => 200,
                     'hit_count' => max(1, $typical + mt_rand(-$typical >> 1, $typical >> 1)),
                     'bytes_served' => $typical * 42_000,
-                    'top_error_paths' => [],
+                    'top_paths' => [],
                     'bucket_hour' => $bucket,
                 ]);
             }
@@ -370,7 +370,7 @@ class DemoDataSeeder extends Seeder
                     'status_bucket' => 400,
                     'hit_count' => 3,
                     'bytes_served' => 6_000,
-                    'top_error_paths' => [['path' => '/old-blog/cold-brew', 'hits' => 3]],
+                    'top_paths' => [['path' => '/old-blog/cold-brew', 'hits' => 3, 'status' => 404]],
                     'bucket_hour' => $bucket,
                 ]);
             }

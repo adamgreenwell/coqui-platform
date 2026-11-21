@@ -16,7 +16,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property int $status_bucket
  * @property int $hit_count
  * @property int $bytes_served
- * @property array<string, mixed>|list<array<string, mixed>>|null $top_error_paths
+ * @property string $batch_id
+ * @property int $parameter_hits
+ * @property list<array<string, mixed>>|null $top_paths
  * @property CarbonInterface $bucket_hour
  * @property CarbonInterface $created_at
  * @property CarbonInterface $updated_at
@@ -31,7 +33,9 @@ class BotCrawlLog extends Model
         'status_bucket',
         'hit_count',
         'bytes_served',
-        'top_error_paths',
+        'top_paths',
+        'batch_id',
+        'parameter_hits',
         'bucket_hour',
     ];
 
@@ -44,7 +48,8 @@ class BotCrawlLog extends Model
             'status_bucket' => 'integer',
             'hit_count' => 'integer',
             'bytes_served' => 'integer',
-            'top_error_paths' => 'array',
+            'parameter_hits' => 'integer',
+            'top_paths' => 'array',
             'bucket_hour' => 'datetime',
             'created_at' => 'datetime',
             'updated_at' => 'datetime',

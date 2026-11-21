@@ -40,6 +40,11 @@ Schedule::command('coqui:verify-backlinks')
     ->weeklyOn(1, '03:30')
     ->withoutOverlapping();
 
+// Creates upcoming monthly partitions of the bot telemetry table (Postgres).
+Schedule::command('telemetry:ensure-partitions')
+    ->dailyAt('01:15')
+    ->withoutOverlapping();
+
 // Free: records backlink drop and spam alerts once each from stored data.
 // With DATAFORSEO_SCHEDULED_SPEND it first refreshes week-old histories.
 Schedule::command('backlinks:evaluate-alerts')

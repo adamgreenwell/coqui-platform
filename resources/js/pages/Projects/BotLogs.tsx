@@ -38,6 +38,9 @@ interface TelemetryKpis {
   aiCrawlerHits: number;
   wastedHits: number;
   wastePercentage: number;
+  redirectHits: number;
+  parameterHits: number;
+  errorHits: number;
   bytesServed: number;
   errorRate: number;
 }
@@ -78,6 +81,22 @@ interface Flagged404 {
   recommendedTarget: string;
 }
 
+interface TopPath {
+  path: string;
+  hits: number;
+  status: number;
+  bots: string[];
+  parameterized: boolean;
+}
+
+interface RedirectChain {
+  path: string;
+  hits: number;
+  hops: number;
+  target: string | null;
+  bots: string[];
+}
+
 interface BotLogsProps {
   workspace: WorkspaceSummary;
   project: ProjectSummary;
@@ -86,8 +105,17 @@ interface BotLogsProps {
   dailyTimeseries: DailyRecord[];
   botFamilyBreakdown: BotFamilyRecord[];
   statusBreakdown: StatusBreakdown;
+  topPaths?: TopPath[];
+  redirectChains?: RedirectChain[];
   flagged404s: Flagged404[];
   canEdit: boolean;
+}
+
+function statusTone(status: number): string {
+  if (status >= 500) return 'text-rose-300';
+  if (status >= 400) return 'text-amber-300';
+  if (status >= 300) return 'text-sky-300';
+  return 'text-emerald-300';
 }
 
 function formatBytes(bytes: number): string {
@@ -105,6 +133,8 @@ export default function BotLogs({
   dailyTimeseries,
   botFamilyBreakdown,
   statusBreakdown,
+  topPaths = [],
+  redirectChains = [],
   flagged404s,
   canEdit,
 }: BotLogsProps) {
@@ -235,7 +265,8 @@ export default function BotLogs({
               </span>
             </div>
             <p className="text-[11px] text-slate-500">
-              {statusBreakdown.status4xx} on 4xx • {statusBreakdown.status5xx} on 5xx errors
+              {kpis.redirectHits.toLocaleString()} on redirects • {kpis.parameterHits.toLocaleString()} on parameter URLs •{' '}
+              {kpis.errorHits.toLocaleString()} on errors
             </p>
           </div>
 
@@ -424,6 +455,88 @@ export default function BotLogs({
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+
+        {/* Top crawled paths and redirect chains */}
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5 space-y-3 lg:col-span-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Compass className="h-4 w-4 text-indigo-400" />
+                <h2 className="text-sm font-semibold text-white">Top Crawled Paths</h2>
+              </div>
+              <span className="text-xs font-mono text-slate-400">{topPaths.length} paths</span>
+            </div>
+            <div className="max-h-80 overflow-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-950/60 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
+                  <tr>
+                    <th className="px-3 py-2">Path</th>
+                    <th className="px-3 py-2 text-right">Status</th>
+                    <th className="px-3 py-2 text-right">Bot Hits</th>
+                    <th className="px-3 py-2">Crawlers</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-800/60 text-slate-300">
+                  {topPaths.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-3 py-6 text-center text-slate-500">
+                        No path detail received yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    topPaths.map((p) => (
+                      <tr key={p.path}>
+                        <td className="px-3 py-2 font-mono max-w-xs truncate" title={p.path}>
+                          {p.path}
+                          {p.parameterized && (
+                            <span className="ml-1.5 rounded border border-amber-500/30 bg-amber-500/10 px-1 py-0.5 text-[9px] uppercase text-amber-300">
+                              params
+                            </span>
+                          )}
+                        </td>
+                        <td className={`px-3 py-2 text-right font-mono ${statusTone(p.status)}`}>{p.status}</td>
+                        <td className="px-3 py-2 text-right font-mono text-white">{p.hits.toLocaleString()}</td>
+                        <td className="px-3 py-2 text-slate-400">{p.bots.join(', ')}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CornerDownRight className="h-4 w-4 text-sky-400" />
+                <h2 className="text-sm font-semibold text-white">Redirect Chains</h2>
+              </div>
+              <span className="text-xs font-mono text-slate-400">{redirectChains.length}</span>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Crawled URLs that take more than one redirect to resolve. Point them straight at the final URL.
+            </p>
+            <ul className="max-h-72 space-y-2 overflow-auto text-xs">
+              {redirectChains.length === 0 ? (
+                <li className="text-slate-500">No redirect chains detected.</li>
+              ) : (
+                redirectChains.map((c) => (
+                  <li key={c.path} className="rounded-lg border border-slate-800 bg-slate-950/40 p-2">
+                    <div className="font-mono text-sky-300 truncate" title={c.path}>{c.path}</div>
+                    {c.target && (
+                      <div className="mt-0.5 font-mono text-slate-400 truncate" title={c.target}>
+                        → {c.target}
+                      </div>
+                    )}
+                    <div className="mt-1 text-[10px] text-slate-500">
+                      {c.hops} hops • {c.hits.toLocaleString()} bot hits
+                    </div>
+                  </li>
+                ))
+              )}
+            </ul>
           </div>
         </div>
 
