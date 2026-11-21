@@ -437,6 +437,7 @@ class BotTelemetryService
         $redirectChains = [];
         $parameterPaths = [];
         $flagged404s = [];
+        $siteHosts = $this->siteHosts($project);
         foreach ($pathMap as $path => $data) {
             arsort($data['statusHits']);
             $mainStatus = (int) array_key_first($data['statusHits']);
@@ -458,7 +459,9 @@ class BotTelemetryService
                 // A chain: more than one hop, or a redirect to a path that
                 // itself redirects.
                 $target = $data['target'];
-                $targetPath = $target !== null ? $this->pathOf($target) : null;
+                // Only a target on this site can be looked up in its own
+                // telemetry; reported hops still count for external ones.
+                $targetPath = $target !== null ? $this->localPathOf($target, $siteHosts) : null;
                 $targetRedirects = $targetPath !== null && $targetPath !== $path && isset($pathMap[$targetPath])
                     && $this->redirectHits($pathMap[$targetPath]['statusHits']) > 0;
                 $hops = max($data['hops'], $targetRedirects ? 2 : 1);
@@ -534,10 +537,42 @@ class BotTelemetryService
     /**
      * The path (and query) of a redirect target, absolute or relative.
      */
-    private function pathOf(string $target): ?string
+    /**
+     * @return list<string> the project's hostnames, without "www."
+     */
+    private function siteHosts(Project $project): array
+    {
+        $hosts = [];
+        foreach ([parse_url((string) $project->canonical_url, PHP_URL_HOST), $project->domain] as $host) {
+            $host = self::bareHost((string) $host);
+            if ($host !== '') {
+                $hosts[] = $host;
+            }
+        }
+
+        return array_values(array_unique($hosts));
+    }
+
+    private static function bareHost(string $host): string
+    {
+        $host = strtolower(trim($host, " \t\n\r\0\x0B."));
+
+        return str_starts_with($host, 'www.') ? substr($host, 4) : $host;
+    }
+
+    /**
+     * The target's path when it points at this site (relative, or one of
+     * $siteHosts); null for external targets.
+     *
+     * @param  list<string>  $siteHosts
+     */
+    private function localPathOf(string $target, array $siteHosts): ?string
     {
         $parts = parse_url($target);
         if ($parts === false) {
+            return null;
+        }
+        if (isset($parts['host']) && ! in_array(self::bareHost($parts['host']), $siteHosts, true)) {
             return null;
         }
 

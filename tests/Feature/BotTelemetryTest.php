@@ -279,6 +279,27 @@ class BotTelemetryTest extends TestCase
         $this->assertSame(3, $chains[0]['hops']);
     }
 
+    public function test_a_redirect_to_another_site_is_not_chained_through_local_paths(): void
+    {
+        $hour = '2026-11-19T05:00:00Z';
+        $this->sendBatch([
+            ['botFamily' => 'googlebot', 'statusBucket' => 301, 'hitCount' => 30, 'bucketHour' => $hour, 'topPaths' => [
+                // Same path on another site: not a second hop.
+                ['path' => '/old', 'hits' => 10, 'status' => 301, 'redirectTarget' => 'https://external.example/new'],
+                // On this site (www. and case ignored): a second hop.
+                ['path' => '/legacy', 'hits' => 10, 'status' => 301, 'redirectTarget' => 'https://WWW.telemetry-site.com/new'],
+                ['path' => '/new', 'hits' => 10, 'status' => 301, 'redirectTarget' => '/final'],
+            ]],
+        ])->assertStatus(202);
+
+        Sanctum::actingAs($this->user, ['projects:read']);
+        Carbon::setTestNow('2026-11-20 12:00:00');
+        $chains = $this->getJson("/api/v1/projects/{$this->project->uuid}/telemetry/bot-logs?days=7")->assertOk()->json('redirectChains');
+        Carbon::setTestNow();
+
+        $this->assertSame(['/legacy'], array_column($chains, 'path'));
+    }
+
     public function test_different_batches_for_the_same_hour_add_up(): void
     {
         $this->sendBatch([$this->googlebot404s(10)], 'batch-0500-a')->assertStatus(202);
