@@ -69,6 +69,14 @@ class TrackedKeyword extends Model
     }
 
     /**
+     * @return HasMany<KeywordAiOverviewCitation, $this>
+     */
+    public function aiOverviewCitations(): HasMany
+    {
+        return $this->hasMany(KeywordAiOverviewCitation::class);
+    }
+
+    /**
      * @return HasMany<KeywordRankSnapshot, $this>
      */
     public function snapshots(): HasMany

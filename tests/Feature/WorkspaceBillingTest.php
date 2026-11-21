@@ -135,6 +135,7 @@ class WorkspaceBillingTest extends TestCase
     public function test_cloud_crawl_controller_enforces_url_limit(): void
     {
         Queue::fake();
+        config()->set('coqui.worker.token', 'worker-token');
 
         // Free tier has 1,000 URL limit - test controller endpoint
         $response = $this->actingAs($this->owner)

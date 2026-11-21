@@ -7,6 +7,8 @@ namespace Tests\Feature;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectCompetitor;
 use App\Domains\Projects\Models\Workspace;
+use App\Domains\Serp\Actions\RecordDataForSeoTaskResult;
+use App\Domains\Serp\Jobs\ProcessDataForSeoPostbackJob;
 use App\Domains\Serp\Models\KeywordRankSnapshot;
 use App\Domains\Serp\Models\RankFallbackCheck;
 use App\Domains\Serp\Models\TrackedKeyword;
@@ -124,6 +126,27 @@ class RankFallbackTest extends TestCase
 
         $this->assertSame(0, RankFallbackCheck::query()->count());
         Queue::assertNothingPushed();
+    }
+
+    public function test_a_completed_fallback_supersedes_a_primary_result_still_waiting_to_be_recorded(): void
+    {
+        $keyword = $this->keyword('voice generator');
+        $taskId = $this->primaryTask($keyword, 'processing', now()->subHours(7));
+        $check = $this->check($keyword, $taskId, now()->subHours(7));
+
+        Http::fake([
+            'api.serphouse.test/*' => Http::sequence()
+                ->push($this->page(['x.com', 'competitor-a.com', 'www.coqui.io', 'competitor-b.org'])),
+        ]);
+
+        FetchFallbackRankJob::dispatchSync($check->id);
+
+        $this->assertSame('superseded', DB::table('dataforseo_tasks')->where('id', $taskId)->value('status'));
+
+        // The queued primary job then finds nothing to record.
+        (new ProcessDataForSeoPostbackJob($taskId))->handle(app(RecordDataForSeoTaskResult::class));
+        $this->assertSame('superseded', DB::table('dataforseo_tasks')->where('id', $taskId)->value('status'));
+        $this->assertSame(3, KeywordRankSnapshot::query()->where('tracked_keyword_id', $keyword->id)->where('domain', 'coqui.io')->value('rank_group'));
     }
 
     public function test_job_records_rankings_stops_once_everyone_is_found_and_supersedes_the_primary_task(): void

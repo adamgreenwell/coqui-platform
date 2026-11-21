@@ -9,7 +9,7 @@ on:
 
 jobs:
   plan:
-    name: Roadmap & contract sync
+    name: Roadmap, compose & frontend
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,16 +30,43 @@ jobs:
         run: |
           npm run types:check
           npm run build
+      - name: Frontend tests (Vitest)
+        run: npm run test:js
 
   laravel:
-    name: Pint + Larastan + PHPUnit
+    name: Pint + Larastan + PHPUnit (Postgres 17)
     runs-on: ubuntu-latest
+    services:
+      # Tests run on the production database engine: migrations use jsonb,
+      # uuid columns and (for bot telemetry) partitioned tables.
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: coqui
+          POSTGRES_PASSWORD: coqui
+          POSTGRES_DB: coqui_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U coqui -d coqui_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Real environment variables take precedence over phpunit.xml's
+      # SQLite defaults (which stay for fast local runs).
+      DB_CONNECTION: pgsql
+      DB_HOST: 127.0.0.1
+      DB_PORT: 5432
+      DB_DATABASE: coqui_test
+      DB_USERNAME: coqui
+      DB_PASSWORD: coqui
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
-          extensions: pdo_sqlite, mbstring, bcmath, intl
+          extensions: pdo_pgsql, pdo_sqlite, mbstring, bcmath, intl
           coverage: none
       - uses: actions/setup-node@v4
         with:
@@ -58,7 +85,26 @@ jobs:
         run: php vendor/bin/pint --test -v
       - name: Static analysis (PHPStan)
         run: php vendor/bin/phpstan analyse --memory-limit=1G
-      - name: Tests (PHPUnit)
+      - name: Migrations roll back cleanly
         run: |
-          php vendor/bin/phpunit --display-warnings --fail-on-warning
-          php artisan test
+          php artisan migrate --force --no-interaction
+          php artisan migrate:rollback --force --no-interaction
+          php artisan migrate --force --no-interaction
+          php artisan db:wipe --force --no-interaction
+      - name: Tests (PHPUnit on Postgres)
+        run: php vendor/bin/phpunit --display-warnings --fail-on-warning
+
+  docker:
+    name: Docker image build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the Coolify stack images
+        env:
+          APP_KEY: base64:ci
+          APP_URL: https://ci.example
+          DB_PASSWORD: ci
+          REVERB_APP_KEY: ci
+          REVERB_APP_SECRET: ci
+          VITE_REVERB_HOST: ci.example
+        run: docker compose -f docker-compose.coolify.yml build

@@ -10,8 +10,11 @@ use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\ProjectCompetitor;
 use App\Domains\Projects\Models\Workspace;
+use App\Domains\Serp\Models\KeywordAiOverviewCitation;
 use App\Domains\Serp\Models\KeywordRankSnapshot;
 use App\Domains\Serp\Models\TrackedKeyword;
+use App\Domains\Serp\Services\RankTrendService;
+use App\Domains\Serp\Support\VisibilityScore;
 use App\Models\User;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
@@ -27,7 +30,7 @@ use Inertia\Response;
 
 class TrackedKeywordController extends Controller
 {
-    public function index(Request $request, Workspace $workspace, Project $project): Response
+    public function index(Request $request, Workspace $workspace, Project $project, RankTrendService $trends): Response
     {
         abort_if($project->workspace_id !== $workspace->id, 404);
         Gate::authorize('view', $project);
@@ -87,22 +90,41 @@ class TrackedKeywordController extends Controller
 
         // The GSC/Bing overlay belongs to the traffic attribution plan feature;
         // without it the columns stay empty and the page shows an upgrade prompt.
+        // Search Console rows are per device; rows synced before the split
+        // cover all devices ("all"), as do Bing's. A complete per-device sync
+        // deletes the older rows in its window, so an "all" row that's still
+        // there means that day's device data may be partial: it stays
+        // authoritative for its query and date, and device rows count only
+        // on dates without one.
         $performanceStats = $workspace->hasFeature(PlanFeature::TrafficAttribution)
-            ? DB::table('search_performance_queries')
-                ->where('project_id', $project->id)
-                ->where('date', '>=', $cutoffDate)
-                ->selectRaw('provider, LOWER(query) as query_lower, SUM(clicks) as total_clicks, SUM(impressions) as total_impressions, CASE WHEN SUM(impressions) > 0 THEN ROUND(SUM(position * impressions) / SUM(impressions), 1) ELSE ROUND(AVG(position), 1) END as avg_position')
-                ->groupBy('provider', 'query_lower')
+            ? DB::table('search_performance_queries as spq')
+                ->where('spq.project_id', $project->id)
+                ->where('spq.date', '>=', $cutoffDate)
+                ->where(function ($query): void {
+                    $query->where('spq.device', 'all')
+                        ->orWhereNotExists(function ($sub): void {
+                            $sub->selectRaw('1')
+                                ->from('search_performance_queries as legacy')
+                                ->whereColumn('legacy.project_id', 'spq.project_id')
+                                ->whereColumn('legacy.provider', 'spq.provider')
+                                ->whereColumn('legacy.query', 'spq.query')
+                                ->whereColumn('legacy.date', 'spq.date')
+                                ->where('legacy.device', 'all');
+                        });
+                })
+                ->selectRaw('spq.provider as provider, spq.device as device, LOWER(spq.query) as query_lower, SUM(spq.clicks) as total_clicks, SUM(spq.impressions) as total_impressions, SUM(spq.position * spq.impressions) as weighted_position, SUM(spq.position) as position_sum, COUNT(*) as row_count')
+                ->groupBy('spq.provider', 'spq.device', 'query_lower')
                 ->get()
             : collect();
 
         $gscStatsByQuery = $performanceStats
             ->where('provider', 'gsc')
-            ->keyBy('query_lower');
+            ->keyBy(fn (object $row): string => $row->device.'|'.$row->query_lower);
 
         $bingStatsByQuery = $performanceStats
             ->where('provider', 'bing')
-            ->keyBy('query_lower');
+            ->keyBy('query_lower')
+            ->map(fn (object $row): object => $this->overlayTotals([$row]));
 
         $items = $trackedKeywords->map(function (TrackedKeyword $kw) use ($snapshotsByKeyword, $project, $competitors, $gscStatsByQuery, $bingStatsByQuery): array {
             $kwSnaps = $snapshotsByKeyword->get((int) $kw->id, collect());
@@ -147,8 +169,14 @@ class TrackedKeywordController extends Controller
 
             $kwKey = strtolower(trim($kw->keyword));
 
+            // This keyword's device on fully synced dates, plus the older
+            // all-device rows on the rest.
+            $gscRows = array_values(array_filter([
+                $gscStatsByQuery->get(strtolower($kw->device).'|'.$kwKey),
+                $gscStatsByQuery->get('all|'.$kwKey),
+            ]));
             /** @var object{total_clicks?: mixed, total_impressions?: mixed, avg_position?: mixed}|null $gsc */
-            $gsc = $gscStatsByQuery->get($kwKey);
+            $gsc = $gscRows !== [] ? $this->overlayTotals($gscRows) : null;
             $gscClicks = ($gsc !== null && isset($gsc->total_clicks)) ? (int) $gsc->total_clicks : null;
             $gscImpressions = ($gsc !== null && isset($gsc->total_impressions)) ? (int) $gsc->total_impressions : null;
             $gscCtr = ($gscClicks !== null && $gscImpressions !== null && $gscImpressions > 0)
@@ -227,24 +255,7 @@ class TrackedKeywordController extends Controller
                     $top100Count++;
                 }
 
-                // CTR weight points
-                if ($r === 1) {
-                    $visibilityPoints += 100;
-                } elseif ($r === 2) {
-                    $visibilityPoints += 70;
-                } elseif ($r === 3) {
-                    $visibilityPoints += 50;
-                } elseif ($r <= 5) {
-                    $visibilityPoints += 35;
-                } elseif ($r <= 10) {
-                    $visibilityPoints += 20;
-                } elseif ($r <= 20) {
-                    $visibilityPoints += 10;
-                } elseif ($r <= 50) {
-                    $visibilityPoints += 5;
-                } else {
-                    $visibilityPoints += 2;
-                }
+                $visibilityPoints += VisibilityScore::points($r);
             }
         }
 
@@ -270,6 +281,7 @@ class TrackedKeywordController extends Controller
             ],
             'competitors' => $competitors,
             'keywords' => $items,
+            'trend' => $trends->daily($project->domain, array_map(intval(...), $keywordIds)),
             'metrics' => [
                 'total_keywords' => $totalCount,
                 'top_3' => $top3Count,
@@ -287,18 +299,15 @@ class TrackedKeywordController extends Controller
                 'status' => $gscIntegration !== null ? $gscIntegration->status : 'not_connected',
                 'site_url' => $gscIntegration?->site_url,
                 'last_synced_at' => $gscIntegration?->last_synced_at instanceof CarbonInterface ? $gscIntegration->last_synced_at->toIso8601String() : null,
-                'error_message' => is_array($gscIntegration?->credentials_encrypted)
-                    ? ($gscIntegration->credentials_encrypted['error'] ?? null)
-                    : null,
+                'error_message' => $gscIntegration?->needsReconnect() === true ? $gscIntegration->status_reason : null,
                 'connect_url' => route('workspaces.projects.integrations.google.connect', [$workspace, $project]),
             ],
             'bingIntegration' => [
                 'status' => $bingIntegration !== null ? $bingIntegration->status : 'not_connected',
                 'site_url' => $bingIntegration?->site_url,
                 'last_synced_at' => $bingIntegration?->last_synced_at instanceof CarbonInterface ? $bingIntegration->last_synced_at->toIso8601String() : null,
-                'error_message' => is_array($bingIntegration?->credentials_encrypted)
-                    ? ($bingIntegration->credentials_encrypted['error'] ?? null)
-                    : null,
+                'error_message' => $bingIntegration?->needsReconnect() === true ? $bingIntegration->status_reason : null,
+                'settings_url' => route('workspaces.projects.show', [$workspace, $project]),
             ],
         ]);
     }
@@ -435,7 +444,7 @@ class TrackedKeywordController extends Controller
         return back()->with('success', "Tracked keyword [{$kwText}] removed.");
     }
 
-    public function snapshots(Workspace $workspace, Project $project, TrackedKeyword $keyword): JsonResponse
+    public function snapshots(Workspace $workspace, Project $project, TrackedKeyword $keyword, RankTrendService $trends): JsonResponse
     {
         abort_if($project->workspace_id !== $workspace->id || $keyword->project_id !== $project->id, 404);
         Gate::authorize('view', $project);
@@ -455,6 +464,33 @@ class TrackedKeywordController extends Controller
                 'checked_on',
             ]);
 
+        $own = $snapshots->where('domain', $project->domain)->values();
+        /** @var KeywordRankSnapshot|null $latest */
+        $latest = $own->last();
+        $features = $latest !== null && is_array($latest->serp_features) ? $latest->serp_features : [];
+
+        // The latest check's AI Overview: its position and sources, in the
+        // order it cited them, whoever it cited. None when that check had no
+        // overview. (Older rows only know whether the project was cited.)
+        $overviewPresent = $latest !== null
+            && (($features['ai_overview_present'] ?? null) === true || $latest->has_ai_overview);
+        $overviewOn = $overviewPresent
+            ? Carbon::parse($latest->checked_on)->toDateString()
+            : null;
+        $citations = $overviewOn === null ? [] : KeywordAiOverviewCitation::query()
+            ->where('tracked_keyword_id', $keyword->id)
+            ->whereDate('checked_on', $overviewOn)
+            ->orderBy('position')
+            ->get(['position', 'domain', 'url', 'title'])
+            ->map(fn (KeywordAiOverviewCitation $c): array => [
+                'position' => $c->position,
+                'domain' => $c->domain,
+                'url' => $c->url,
+                'title' => $c->title,
+                'is_project' => $this->sameSite($c->domain, $project->domain),
+            ])
+            ->all();
+
         return response()->json([
             'keyword' => [
                 'id' => $keyword->uuid,
@@ -463,6 +499,53 @@ class TrackedKeywordController extends Controller
                 'location_code' => $keyword->location_code,
             ],
             'snapshots' => $snapshots,
+            'volatility' => $trends->volatility($own),
+            'ai_overview' => [
+                'checked_on' => $overviewOn,
+                'position' => $overviewOn !== null ? ($features['ai_overview_position'] ?? null) : null,
+                'citations' => $citations,
+            ],
+            'people_also_ask' => is_array($features['people_also_ask'] ?? null) ? $features['people_also_ask'] : [],
+            'local_pack' => is_array($features['local_pack'] ?? null) ? $features['local_pack'] : [],
         ]);
+    }
+
+    private function sameSite(string $domain, string $projectDomain): bool
+    {
+        $strip = static fn (string $d): string => (string) preg_replace('/^www\./', '', strtolower(trim($d)));
+        $a = $strip($domain);
+        $b = $strip($projectDomain);
+
+        return $a === $b || str_ends_with($a, '.'.$b);
+    }
+
+    /**
+     * Totals across aggregated overlay rows, with impression-weighted
+     * position (a plain average when there were no impressions).
+     *
+     * @param  list<object>  $rows
+     */
+    private function overlayTotals(array $rows): object
+    {
+        $clicks = 0;
+        $impressions = 0;
+        $weighted = 0.0;
+        $positionSum = 0.0;
+        $count = 0;
+        foreach ($rows as $row) {
+            $clicks += (int) $row->total_clicks;
+            $impressions += (int) $row->total_impressions;
+            $weighted += (float) $row->weighted_position;
+            $positionSum += (float) $row->position_sum;
+            $count += (int) $row->row_count;
+        }
+
+        return (object) [
+            'total_clicks' => $clicks,
+            'total_impressions' => $impressions,
+            'avg_position' => $impressions > 0
+                ? round($weighted / $impressions, 1)
+                : ($count > 0 ? round($positionSum / $count, 1) : null),
+        ];
     }
 }

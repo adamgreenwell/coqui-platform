@@ -35,26 +35,35 @@ interface ProjectDetails {
   canonicalUrl: string;
 }
 
+// Figures are null when unknown: the summary couldn't be fetched
+// (`unavailable`), or the provider gave no dofollow/nofollow breakdown.
 interface BacklinkSummary {
-  rank: number;
-  backlinks: number;
-  referring_domains: number;
-  referring_main_domains: number;
-  referring_pages: number;
-  dofollow: number;
-  nofollow: number;
-  dofollow_ratio: number;
+  rank: number | null;
+  backlinks: number | null;
+  referring_domains: number | null;
+  referring_main_domains: number | null;
+  referring_pages: number | null;
+  dofollow: number | null;
+  nofollow: number | null;
+  dofollow_ratio: number | null;
+  unavailable?: boolean;
   cached: boolean;
   fetched_at?: string | null;
 }
+
+const formatCount = (value: number | null | undefined): string =>
+  value === null || value === undefined ? '—' : value.toLocaleString();
+
+const formatRatio = (value: number | null | undefined): string =>
+  value === null || value === undefined ? 'Unknown' : `${value}%`;
 
 interface ReferringDomainItem {
   domain: string;
   rank: number;
   backlinks: number;
-  dofollow: number;
-  nofollow: number;
-  dofollow_ratio: number;
+  dofollow: number | null;
+  nofollow: number | null;
+  dofollow_ratio: number | null;
   spam_score: number;
   first_seen?: string | null;
   last_seen?: string | null;
@@ -64,9 +73,9 @@ interface AnchorItem {
   anchor: string;
   backlinks: number;
   referring_domains: number;
-  dofollow: number;
-  nofollow: number;
-  dofollow_ratio: number;
+  dofollow: number | null;
+  nofollow: number | null;
+  dofollow_ratio: number | null;
 }
 
 interface TopPageItem {
@@ -75,8 +84,8 @@ interface TopPageItem {
   rank: number;
   backlinks: number;
   referring_domains: number;
-  dofollow: number;
-  nofollow: number;
+  dofollow: number | null;
+  nofollow: number | null;
   crawl_status?: number | null;
   is_broken: boolean;
   redirect_priority?: string | null;
@@ -538,6 +547,12 @@ export default function BacklinksIndex({
           </div>
         )}
 
+        {summary.unavailable && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+            The backlink profile for {project.domain} couldn't be fetched just now, so these figures are unknown rather than zero. Use Refresh to try again in a few minutes.
+          </div>
+        )}
+
         {/* Core KPI Metrics Grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {/* Domain Authority Rank */}
@@ -548,7 +563,7 @@ export default function BacklinksIndex({
             </span>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-2xl font-bold font-mono text-white">
-                {summary.rank > 0 ? summary.rank : '—'}
+                {summary.rank !== null && summary.rank > 0 ? summary.rank : '—'}
               </span>
               <span className="text-xs text-slate-500 font-mono">/ 1,000</span>
             </div>
@@ -556,11 +571,11 @@ export default function BacklinksIndex({
               <div className="flex-1 bg-slate-800 h-1.5 rounded-full overflow-hidden">
                 <div
                   className="bg-purple-500 h-full rounded-full"
-                  style={{ width: `${Math.min(100, Math.max(5, (summary.rank / 1000) * 100))}%` }}
+                  style={{ width: `${Math.min(100, Math.max(5, ((summary.rank ?? 0) / 1000) * 100))}%` }}
                 />
               </div>
               <span className="text-[10px] text-purple-400 font-mono font-medium">
-                {summary.rank > 500 ? 'High' : summary.rank > 200 ? 'Moderate' : 'Building'}
+                {summary.rank === null ? 'Unknown' : summary.rank > 500 ? 'High' : summary.rank > 200 ? 'Moderate' : 'Building'}
               </span>
             </div>
           </div>
@@ -572,13 +587,19 @@ export default function BacklinksIndex({
               <span>Total Backlinks</span>
             </span>
             <div className="mt-2 text-2xl font-bold font-mono text-white">
-              {summary.backlinks.toLocaleString()}
+              {formatCount(summary.backlinks)}
             </div>
             <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
-              <span className="text-emerald-400">{summary.dofollow_ratio}% Dofollow</span>
-              <span className="text-slate-500 font-mono">
-                {summary.dofollow.toLocaleString()} dofollow / {summary.nofollow.toLocaleString()} nofollow
-              </span>
+              {summary.dofollow_ratio !== null ? (
+                <>
+                  <span className="text-emerald-400">{summary.dofollow_ratio}% Dofollow</span>
+                  <span className="text-slate-500 font-mono">
+                    {formatCount(summary.dofollow)} dofollow / {formatCount(summary.nofollow)} nofollow
+                  </span>
+                </>
+              ) : (
+                <span className="text-slate-500">Dofollow split unknown</span>
+              )}
             </div>
           </div>
 
@@ -589,12 +610,12 @@ export default function BacklinksIndex({
               <span>Referring Domains</span>
             </span>
             <div className="mt-2 text-2xl font-bold font-mono text-emerald-400">
-              {summary.referring_domains.toLocaleString()}
+              {formatCount(summary.referring_domains)}
             </div>
             <div className="mt-2 flex items-center justify-between text-[11px] text-slate-400">
               <span>Main Root Domains</span>
               <span className="font-mono text-slate-200">
-                {summary.referring_main_domains.toLocaleString()}
+                {formatCount(summary.referring_main_domains)}
               </span>
             </div>
           </div>
@@ -851,7 +872,7 @@ export default function BacklinksIndex({
                           {/* Dofollow % */}
                           <td className="py-3 px-3 text-center">
                             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                              {d.dofollow_ratio}%
+                              {formatRatio(d.dofollow_ratio)}
                             </span>
                           </td>
 
@@ -1147,7 +1168,7 @@ export default function BacklinksIndex({
                           </td>
 
                           <td className="py-3 px-3 text-right font-mono text-emerald-400">
-                            {item.dofollow_ratio}%
+                            {formatRatio(item.dofollow_ratio)}
                           </td>
 
                           <td className="py-3 px-4 text-center">
@@ -1385,7 +1406,7 @@ export default function BacklinksIndex({
                           </td>
                           <td className="py-3 px-3 text-center">
                             <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                              {a.dofollow_ratio}%
+                              {formatRatio(a.dofollow_ratio)}
                             </span>
                           </td>
                         </tr>

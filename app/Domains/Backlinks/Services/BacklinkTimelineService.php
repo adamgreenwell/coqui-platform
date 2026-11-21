@@ -9,6 +9,8 @@ use App\Domains\Backlinks\Models\BacklinkAlert;
 use App\Domains\Backlinks\Models\BacklinkHistorySnapshot;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Serp\DataForSeo\DataForSeoClient;
+use App\Domains\Serp\ProviderNotConfiguredException;
+use App\Domains\Serp\SpendRefusedException;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -125,6 +127,7 @@ class BacklinkTimelineService
             // Errors can arrive with HTTP 200. Write nothing unless both
             // series succeeded, so one failure can't zero stored days.
             if (! $this->succeeded($totalsResponse) || ! $this->succeeded($changesResponse)) {
+                $this->markHistoryChecked($project);
                 Log::warning('Backlink history fetch returned a task error; stored history left as is.', [
                     'project_id' => $project->id,
                     'summary_status' => $totalsResponse['tasks'][0]['status_code'] ?? $totalsResponse['status_code'] ?? null,
@@ -136,13 +139,17 @@ class BacklinkTimelineService
 
             $totals = $this->itemsByDate($totalsResponse);
             $changes = $this->itemsByDate($changesResponse);
+        } catch (SpendRefusedException|ProviderNotConfiguredException) {
+            // A spend cap or missing credentials, not a provider failure:
+            // don't mark history checked, so it's fetched once that's fixed.
+            return 0;
         } catch (Throwable $e) {
             report($e);
+            $this->markHistoryChecked($project);
 
             return 0;
-        } finally {
-            $project->forceFill(['backlink_history_checked_at' => now()])->save();
         }
+        $this->markHistoryChecked($project);
 
         $count = 0;
         foreach (array_unique(array_merge(array_keys($totals), array_keys($changes))) as $date) {
@@ -169,6 +176,11 @@ class BacklinkTimelineService
         }
 
         return $count;
+    }
+
+    private function markHistoryChecked(Project $project): void
+    {
+        $project->forceFill(['backlink_history_checked_at' => now()])->save();
     }
 
     /**

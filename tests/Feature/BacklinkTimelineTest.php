@@ -255,6 +255,18 @@ class BacklinkTimelineTest extends TestCase
         $this->assertNotNull($this->project->fresh()?->backlink_history_checked_at);
     }
 
+    public function test_missing_credentials_do_not_count_as_a_checked_history(): void
+    {
+        config()->set('coqui.dataforseo.login', '');
+        Http::fake();
+
+        $this->assertSame(0, app(BacklinkTimelineService::class)->syncHistorySnapshots($this->project));
+
+        Http::assertNothingSent();
+        // Not a provider failure: the next view fetches once credentials exist.
+        $this->assertNull($this->project->fresh()?->backlink_history_checked_at);
+    }
+
     public function test_read_only_members_never_trigger_a_history_fetch(): void
     {
         $viewer = User::factory()->create();

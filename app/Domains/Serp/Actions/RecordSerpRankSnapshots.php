@@ -6,6 +6,7 @@ namespace App\Domains\Serp\Actions;
 
 use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Serp\Events\SerpBatchCompleted;
+use App\Domains\Serp\Models\KeywordAiOverviewCitation;
 use App\Domains\Serp\Models\KeywordRankSnapshot;
 use App\Domains\Serp\Models\TrackedKeyword;
 use App\Domains\Serp\Services\SerpResultParser;
@@ -44,6 +45,19 @@ class RecordSerpRankSnapshots
         $savedSnapshots = [];
 
         foreach ($parsed['domain_snapshots'] as $domain => $data) {
+            $features = $data['serp_features'];
+            if ($domain === $projectDomain) {
+                // The rest of the page, kept once per keyword and day on the
+                // project's own snapshot.
+                // Whether the page had an overview at all; has_ai_overview
+                // is only set when the project itself is cited.
+                $features['ai_overview_present'] = $parsed['ai_overview']['present'];
+                $features['ai_overview_position'] = $parsed['ai_overview']['position'];
+                $features['ai_overview_citation_count'] = count($parsed['ai_overview']['citations']);
+                $features['people_also_ask'] = $parsed['people_also_ask'];
+                $features['local_pack'] = $parsed['local_pack'];
+            }
+
             /** @var KeywordRankSnapshot $snapshot */
             $snapshot = KeywordRankSnapshot::query()->updateOrCreate(
                 [
@@ -59,12 +73,14 @@ class RecordSerpRankSnapshots
                     'ranking_title' => $data['ranking_title'] !== null ? Str::limit((string) $data['ranking_title'], 255, '') : null,
                     'has_ai_overview' => $data['has_ai_overview'],
                     'has_featured_snippet' => $data['has_featured_snippet'],
-                    'serp_features' => $data['serp_features'],
+                    'serp_features' => $features,
                 ]
             );
 
             $savedSnapshots[] = $snapshot;
         }
+
+        $this->recordCitations($keyword, $project->id, $date, $parsed['ai_overview']['citations']);
 
         $keyword->update(['last_checked_at' => now()]);
 
@@ -101,5 +117,37 @@ class RecordSerpRankSnapshots
         );
 
         return $savedSnapshots;
+    }
+
+    /**
+     * Replace the day's AI Overview citations for this keyword.
+     *
+     * @param  list<array{position: int, domain: string, url: string|null, title: string|null}>  $citations
+     */
+    private function recordCitations(TrackedKeyword $keyword, int $projectId, string $date, array $citations): void
+    {
+        DB::transaction(function () use ($keyword, $projectId, $date, $citations): void {
+            KeywordAiOverviewCitation::query()
+                ->where('tracked_keyword_id', $keyword->id)
+                ->whereDate('checked_on', $date)
+                ->delete();
+
+            if ($citations === []) {
+                return;
+            }
+
+            $now = now();
+            KeywordAiOverviewCitation::query()->insert(array_map(fn (array $citation): array => [
+                'tracked_keyword_id' => $keyword->id,
+                'project_id' => $projectId,
+                'checked_on' => $date,
+                'position' => $citation['position'],
+                'domain' => Str::limit($citation['domain'], 255, ''),
+                'url' => $citation['url'],
+                'title' => $citation['title'],
+                'created_at' => $now,
+                'updated_at' => $now,
+            ], $citations));
+        });
     }
 }

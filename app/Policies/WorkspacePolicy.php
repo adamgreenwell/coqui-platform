@@ -6,9 +6,12 @@ namespace App\Policies;
 
 use App\Domains\Projects\Models\Workspace;
 use App\Models\User;
+use App\Policies\Concerns\RespectsTokenWorkspace;
 
 class WorkspacePolicy
 {
+    use RespectsTokenWorkspace;
+
     public function view(User $user, Workspace $workspace): bool
     {
         return $this->isMember($user, $workspace);

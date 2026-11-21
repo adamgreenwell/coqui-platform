@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domains\Crawls\Models;
 
 use App\Domains\Projects\Models\Project;
+use App\Models\Concerns\HasPublicUuid;
 use App\Models\User;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
@@ -13,6 +14,7 @@ use Illuminate\Support\Str;
 
 /**
  * @property int $id
+ * @property string $uuid
  * @property int $project_id
  * @property int $baseline_run_id
  * @property int $target_run_id
@@ -22,6 +24,8 @@ use Illuminate\Support\Str;
  * @property CarbonInterface|null $expires_at
  * @property int $view_count
  * @property int|null $created_by_user_id
+ * @property CarbonInterface|null $revoked_at
+ * @property int|null $revoked_by_user_id
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
  * @property-read Project $project
@@ -31,6 +35,8 @@ use Illuminate\Support\Str;
  */
 class CrawlDiffReport extends Model
 {
+    use HasPublicUuid;
+
     /** @var list<string> */
     protected $fillable = [
         'project_id',
@@ -42,6 +48,8 @@ class CrawlDiffReport extends Model
         'expires_at',
         'view_count',
         'created_by_user_id',
+        'revoked_at',
+        'revoked_by_user_id',
     ];
 
     /**
@@ -57,6 +65,8 @@ class CrawlDiffReport extends Model
             'expires_at' => 'datetime',
             'view_count' => 'integer',
             'created_by_user_id' => 'integer',
+            'revoked_at' => 'datetime',
+            'revoked_by_user_id' => 'integer',
         ];
     }
 
@@ -95,6 +105,11 @@ class CrawlDiffReport extends Model
     public function isExpired(): bool
     {
         return $this->expires_at !== null && $this->expires_at->isPast();
+    }
+
+    public function isRevoked(): bool
+    {
+        return $this->revoked_at !== null;
     }
 
     public function incrementViews(): void

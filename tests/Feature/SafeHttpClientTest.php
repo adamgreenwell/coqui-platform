@@ -9,6 +9,7 @@ use App\Domains\Crawls\Exceptions\SsrfProtectionException;
 use App\Domains\Crawls\Services\SafeHttpClient;
 use App\Domains\Crawls\Services\SsrfProtectionGuard;
 use Illuminate\Http\Client\Request;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -69,6 +70,76 @@ class SafeHttpClientTest extends TestCase
         $this->assertSame(200, $response->status());
         $this->assertSame('<html>ok</html>', $response->body());
         Http::assertSentCount(3);
+    }
+
+    public function test_get_many_fetches_together_with_the_same_per_hop_checks(): void
+    {
+        Http::fake([
+            'http://public.example/start' => Http::response('', 302, ['Location' => 'https://other.example/final']),
+            'https://other.example/final' => Http::response('<html>followed</html>', 200),
+            'http://public.example/plain' => Http::response('<html>plain</html>', 200),
+            'http://public.example/escape' => Http::response('', 302, ['Location' => 'http://169.254.169.254/latest/meta-data/']),
+            'http://public.example/missing' => Http::response('gone', 404),
+            '*' => Http::response('SECRET', 200),
+        ]);
+
+        $results = $this->client->getMany([
+            'a' => 'http://public.example/start',
+            'b' => 'http://public.example/plain',
+            'c' => 'http://public.example/escape',
+            'd' => 'http://rebind.example/admin',
+            'e' => 'http://public.example/missing',
+        ]);
+
+        $this->assertSame(['a', 'b', 'c', 'd', 'e'], array_keys($results));
+        $this->assertInstanceOf(Response::class, $results['a']);
+        $this->assertSame('<html>followed</html>', $results['a']->body());
+        $this->assertInstanceOf(Response::class, $results['b']);
+        $this->assertSame('<html>plain</html>', $results['b']->body());
+        $this->assertInstanceOf(SsrfProtectionException::class, $results['c']);
+        $this->assertInstanceOf(SsrfProtectionException::class, $results['d']);
+        $this->assertInstanceOf(Response::class, $results['e']);
+        $this->assertSame(404, $results['e']->status());
+
+        Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '169.254.169.254')
+            || str_contains($request->url(), 'rebind.example'));
+    }
+
+    public function test_get_many_isolates_a_malformed_redirect_to_its_own_url(): void
+    {
+        Http::fake([
+            'http://public.example/bad' => Http::response('', 302, ['Location' => 'http://public.example:bad/']),
+            'http://public.example/good' => Http::response('ok', 200),
+        ]);
+
+        $results = $this->client->getMany([
+            'bad' => 'http://public.example/bad',
+            'good' => 'http://public.example/good',
+        ]);
+
+        $this->assertInstanceOf(\Throwable::class, $results['bad']);
+        $this->assertInstanceOf(Response::class, $results['good']);
+        $this->assertSame('ok', $results['good']->body());
+    }
+
+    public function test_get_many_caps_redirects_and_size_per_url(): void
+    {
+        Http::fake([
+            'http://public.example/loop' => Http::response('', 302, ['Location' => 'http://public.example/loop']),
+            'http://public.example/big' => Http::response(str_repeat('a', 2048), 200),
+            'http://public.example/small' => Http::response('ok', 200),
+        ]);
+
+        $results = $this->client->getMany([
+            'http://public.example/loop',
+            'http://public.example/big',
+            'http://public.example/small',
+        ], maxRedirects: 2, maxBytes: 1024);
+
+        $this->assertInstanceOf(SsrfProtectionException::class, $results[0]);
+        $this->assertStringContainsString('Exceeded 2 redirects', $results[0]->getMessage());
+        $this->assertInstanceOf(SsrfProtectionException::class, $results[1]);
+        $this->assertInstanceOf(Response::class, $results[2]);
     }
 
     public function test_redirect_loops_are_capped(): void

@@ -9,6 +9,9 @@ use App\Domains\Crawls\Models\CrawlUrl;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Serp\DataForSeo\DataForSeoCacheRepository;
 use App\Domains\Serp\DataForSeo\DataForSeoClient;
+use App\Domains\Serp\ProviderNotConfiguredException;
+use App\Domains\Serp\SpendRefusedException;
+use Illuminate\Support\Facades\Cache;
 use Throwable;
 
 class BacklinkProfileService
@@ -20,6 +23,12 @@ class BacklinkProfileService
     public const ANCHORS_ENDPOINT = '/v3/backlinks/anchors/live';
 
     public const PAGES_ENDPOINT = '/v3/backlinks/pages/live';
+
+    /**
+     * How long a failed paid fetch is remembered, so reloading the page
+     * doesn't retry (and re-bill) it every time. "Refresh" still retries.
+     */
+    private const FAILURE_TTL_MINUTES = 15;
 
     public function __construct(
         private readonly DataForSeoClient $dataForSeo,
@@ -102,6 +111,10 @@ class BacklinkProfileService
 
                 return $cached;
             }
+
+            if ($this->recentlyFailed(self::SUMMARY_ENDPOINT, $signature)) {
+                return $this->unavailableSummary();
+            }
         }
 
         try {
@@ -113,20 +126,88 @@ class BacklinkProfileService
             $this->cache->put(self::SUMMARY_ENDPOINT, $signature, $parsed, $ttlHours);
 
             return $parsed;
-        } catch (Throwable) {
-            return [
-                'rank' => 0,
-                'backlinks' => 0,
-                'referring_domains' => 0,
-                'referring_main_domains' => 0,
-                'referring_pages' => 0,
-                'dofollow' => 0,
-                'nofollow' => 0,
-                'dofollow_ratio' => 0.0,
-                'cached' => false,
-                'fetched_at' => now()->toIso8601String(),
-            ];
+        } catch (Throwable $e) {
+            $this->rememberFailure(self::SUMMARY_ENDPOINT, $signature, $e);
+
+            return $this->unavailableSummary();
         }
+    }
+
+    /**
+     * A summary that couldn't be fetched: every figure unknown, not zero.
+     *
+     * @return array<string, mixed>
+     */
+    private function unavailableSummary(): array
+    {
+        return [
+            'rank' => null,
+            'backlinks' => null,
+            'referring_domains' => null,
+            'referring_main_domains' => null,
+            'referring_pages' => null,
+            'dofollow' => null,
+            'nofollow' => null,
+            'dofollow_ratio' => null,
+            'unavailable' => true,
+            'cached' => false,
+            'fetched_at' => null,
+        ];
+    }
+
+    /**
+     * @param  array<string, mixed>  $signature
+     */
+    private function failureKey(string $endpoint, array $signature): string
+    {
+        return 'backlinks:failed:'.md5($endpoint.'|'.json_encode($signature, JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * @param  array<string, mixed>  $signature
+     */
+    private function recentlyFailed(string $endpoint, array $signature): bool
+    {
+        return Cache::has($this->failureKey($endpoint, $signature));
+    }
+
+    /**
+     * Remember a provider failure for this request. A refusal by the
+     * requesting workspace's own spend limits or a missing provider
+     * configuration isn't remembered: the key is shared by every workspace
+     * looking at the same target, and those aren't failures of the target.
+     *
+     * @param  array<string, mixed>  $signature
+     */
+    private function rememberFailure(string $endpoint, array $signature, Throwable $e): void
+    {
+        if ($e instanceof SpendRefusedException || $e instanceof ProviderNotConfiguredException) {
+            return;
+        }
+
+        Cache::put($this->failureKey($endpoint, $signature), true, now()->addMinutes(self::FAILURE_TTL_MINUTES));
+    }
+
+    /**
+     * Dofollow share of a row, or null when the provider didn't break links
+     * down by follow type.
+     *
+     * @param  array<string, mixed>  $item
+     * @return array{0: int|null, 1: int|null, 2: float|null} [dofollow, nofollow, ratio]
+     */
+    private static function followSplit(array $item): array
+    {
+        $dofollow = $item['dofollow'] ?? null;
+        $nofollow = $item['nofollow'] ?? null;
+        if ($dofollow === null && $nofollow === null) {
+            return [null, null, null];
+        }
+
+        $dofollow = (int) ($dofollow ?? 0);
+        $nofollow = (int) ($nofollow ?? max(0, (int) ($item['backlinks'] ?? 0) - $dofollow));
+        $total = $dofollow + $nofollow;
+
+        return [$dofollow, $nofollow, $total > 0 ? round(($dofollow / $total) * 100, 1) : null];
     }
 
     /**
@@ -144,6 +225,10 @@ class BacklinkProfileService
 
                 return $items;
             }
+
+            if ($this->recentlyFailed(self::DOMAINS_ENDPOINT, $signature)) {
+                return [];
+            }
         }
 
         try {
@@ -153,7 +238,9 @@ class BacklinkProfileService
             $this->cache->put(self::DOMAINS_ENDPOINT, $signature, ['items' => $items], $ttlHours);
 
             return $items;
-        } catch (Throwable) {
+        } catch (Throwable $e) {
+            $this->rememberFailure(self::DOMAINS_ENDPOINT, $signature, $e);
+
             return [];
         }
     }
@@ -173,6 +260,10 @@ class BacklinkProfileService
 
                 return $items;
             }
+
+            if ($this->recentlyFailed(self::ANCHORS_ENDPOINT, $signature)) {
+                return [];
+            }
         }
 
         try {
@@ -182,7 +273,9 @@ class BacklinkProfileService
             $this->cache->put(self::ANCHORS_ENDPOINT, $signature, ['items' => $items], $ttlHours);
 
             return $items;
-        } catch (Throwable) {
+        } catch (Throwable $e) {
+            $this->rememberFailure(self::ANCHORS_ENDPOINT, $signature, $e);
+
             return [];
         }
     }
@@ -202,6 +295,10 @@ class BacklinkProfileService
 
                 return $items;
             }
+
+            if ($this->recentlyFailed(self::PAGES_ENDPOINT, $signature)) {
+                return [];
+            }
         }
 
         try {
@@ -211,7 +308,9 @@ class BacklinkProfileService
             $this->cache->put(self::PAGES_ENDPOINT, $signature, ['items' => $items], $ttlHours);
 
             return $items;
-        } catch (Throwable) {
+        } catch (Throwable $e) {
+            $this->rememberFailure(self::PAGES_ENDPOINT, $signature, $e);
+
             return [];
         }
     }
@@ -233,17 +332,12 @@ class BacklinkProfileService
         $domains = (int) ($res['referring_domains'] ?? 0);
         $mainDomains = (int) ($res['referring_main_domains'] ?? $domains);
 
-        $dofollow = (int) ($res['dofollow'] ?? $res['info']['dofollow'] ?? 0);
-        $nofollow = (int) ($res['nofollow'] ?? $res['info']['nofollow'] ?? 0);
-
-        if ($dofollow === 0 && $nofollow === 0 && $backlinks > 0) {
-            // Estimate standard distribution if split not itemized
-            $dofollow = (int) round($backlinks * 0.78);
-            $nofollow = $backlinks - $dofollow;
-        }
-
-        $totalLinks = $dofollow + $nofollow;
-        $dofollowRatio = $totalLinks > 0 ? round(($dofollow / $totalLinks) * 100, 1) : 0.0;
+        // No follow-type breakdown means it's unknown, not an assumed split.
+        [$dofollow, $nofollow, $dofollowRatio] = self::followSplit([
+            'backlinks' => $backlinks,
+            'dofollow' => $res['dofollow'] ?? $res['info']['dofollow'] ?? null,
+            'nofollow' => $res['nofollow'] ?? $res['info']['nofollow'] ?? null,
+        ]);
 
         return [
             'rank' => $rank,
@@ -280,10 +374,7 @@ class BacklinkProfileService
             }
 
             $backlinks = (int) ($item['backlinks'] ?? 0);
-            $dofollow = (int) ($item['dofollow'] ?? 0);
-            $nofollow = (int) ($item['nofollow'] ?? max(0, $backlinks - $dofollow));
-            $total = $dofollow + $nofollow;
-            $ratio = $total > 0 ? round(($dofollow / $total) * 100, 1) : 0.0;
+            [$dofollow, $nofollow, $ratio] = self::followSplit($item);
 
             $list[] = [
                 'domain' => $domain,
@@ -325,10 +416,7 @@ class BacklinkProfileService
 
             $backlinks = (int) ($item['backlinks'] ?? 0);
             $domains = (int) ($item['referring_domains'] ?? 0);
-            $dofollow = (int) ($item['dofollow'] ?? 0);
-            $nofollow = (int) ($item['nofollow'] ?? max(0, $backlinks - $dofollow));
-            $total = $dofollow + $nofollow;
-            $ratio = $total > 0 ? round(($dofollow / $total) * 100, 1) : 0.0;
+            [$dofollow, $nofollow, $ratio] = self::followSplit($item);
 
             $list[] = [
                 'anchor' => $anchor,
@@ -366,8 +454,7 @@ class BacklinkProfileService
             }
 
             $backlinks = (int) ($item['backlinks'] ?? 0);
-            $dofollow = (int) ($item['dofollow'] ?? 0);
-            $nofollow = (int) ($item['nofollow'] ?? max(0, $backlinks - $dofollow));
+            [$dofollow, $nofollow] = self::followSplit($item);
 
             $list[] = [
                 'url' => $url,

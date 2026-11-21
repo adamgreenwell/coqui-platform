@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Webhooks;
 
-use App\Domains\Serp\Actions\RecordSerpRankSnapshots;
-use App\Domains\Serp\Models\TrackedKeyword;
+use App\Domains\Serp\Actions\LogDataForSeoTaskFailure;
+use App\Domains\Serp\Jobs\ProcessDataForSeoPostbackJob;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -70,7 +70,7 @@ class DataForSeoWebhookController extends Controller
         if (is_array($firstTask)) {
             $taskStatusCode = (int) ($firstTask['status_code'] ?? 20000);
             if ($taskStatusCode >= 40000) {
-                DB::table('dataforseo_tasks')
+                $marked = DB::table('dataforseo_tasks')
                     ->where('id', $task->id)
                     ->where('status', 'pending')
                     ->update([
@@ -79,6 +79,10 @@ class DataForSeoWebhookController extends Controller
                         'updated_at' => now(),
                     ]);
 
+                if ($marked > 0) {
+                    LogDataForSeoTaskFailure::handle($task, $taskStatusCode, (string) ($firstTask['status_message'] ?? ''));
+                }
+
                 return response()->json([
                     'status' => 'failed',
                     'message' => $firstTask['status_message'] ?? 'DataForSEO task failed.',
@@ -86,43 +90,37 @@ class DataForSeoWebhookController extends Controller
             }
         }
 
-        $recorded = DB::transaction(function () use ($task, $payload): bool {
-            // Lock the task and re-read it: a backup check may have
-            // recorded this keyword since it was selected.
+        // Claim the task under a row lock and store the result on it; a job
+        // records it off the request. A duplicate delivery finds the task
+        // already claimed and changes nothing.
+        $claimed = DB::transaction(function () use ($task, $payload): ?string {
             $current = DB::table('dataforseo_tasks')->where('id', $task->id)->lockForUpdate()->first();
-            if ($current === null || in_array($current->status, ['collected', 'superseded'], true)) {
-                return false;
+            if ($current === null) {
+                return 'missing';
             }
-
-            if ($task->task_type === 'serp_rank_tracking' && is_string($task->request_context)) {
-                /** @var array<string, mixed> $context */
-                $context = json_decode($task->request_context, true) ?? [];
-                $trackedKeywordId = isset($context['tracked_keyword_id']) ? (int) $context['tracked_keyword_id'] : null;
-
-                if ($trackedKeywordId !== null) {
-                    $trackedKeyword = TrackedKeyword::query()
-                        ->whereHas('project')
-                        ->with('project')
-                        ->find($trackedKeywordId);
-
-                    if ($trackedKeyword !== null && $trackedKeyword->project !== null) {
-                        app(RecordSerpRankSnapshots::class)->handle($trackedKeyword, $payload);
-                    }
-                }
+            if (! in_array($current->status, ['pending', 'failed'], true)) {
+                return (string) $current->status;
             }
 
             DB::table('dataforseo_tasks')
                 ->where('id', $task->id)
                 ->update([
-                    'status' => 'collected',
+                    'status' => 'processing',
                     'result_payload' => json_encode($payload, JSON_THROW_ON_ERROR),
-                    'collected_at' => now(),
+                    'error_message' => null,
                     'updated_at' => now(),
                 ]);
 
-            return true;
+            ProcessDataForSeoPostbackJob::dispatch((int) $task->id)->afterCommit();
+
+            return null;
         });
 
-        return response()->json(['status' => $recorded ? 'accepted' : 'already_recorded']);
+        return match ($claimed) {
+            null => response()->json(['status' => 'accepted']),
+            'collected' => response()->json(['status' => 'already_collected']),
+            'superseded' => response()->json(['status' => 'superseded']),
+            default => response()->json(['status' => 'already_received']),
+        };
     }
 }

@@ -139,6 +139,16 @@ class BacklinkController extends Controller
         $profile = $this->backlinkService->getBacklinkProfile($project, true);
         $this->timelineService->syncHistorySnapshots($project, $days);
 
+        $redirectParams = [$workspace, $project];
+        if ($request->has('days')) {
+            $redirectParams['days'] = $days;
+        }
+
+        if (($profile['summary']['unavailable'] ?? false) === true) {
+            return redirect()->route('workspaces.projects.backlinks.index', $redirectParams)
+                ->with('error', sprintf('The backlink profile for %s could not be fetched. Try again in a few minutes.', $project->domain));
+        }
+
         ProjectActivity::log(
             project: $project,
             eventType: 'backlinks.refreshed',
@@ -157,11 +167,6 @@ class BacklinkController extends Controller
             ],
             user: $request->user(),
         );
-
-        $redirectParams = [$workspace, $project];
-        if ($request->has('days')) {
-            $redirectParams['days'] = $days;
-        }
 
         return redirect()->route('workspaces.projects.backlinks.index', $redirectParams)
             ->with('success', sprintf('Backlink profile and history timeline for %s successfully refreshed.', $project->domain));
