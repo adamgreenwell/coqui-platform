@@ -8,6 +8,7 @@ use App\Domains\Backlinks\Models\BacklinkHistorySnapshot;
 use App\Domains\Backlinks\Models\MonitoredBacklink;
 use App\Domains\Crawls\Models\CrawlDiffReport;
 use App\Domains\Crawls\Models\CrawlRun;
+use App\Domains\Integrations\Models\BingCrawlStat;
 use App\Domains\Integrations\Models\BotCrawlLog;
 use App\Domains\Integrations\Models\PageTrafficSnapshot;
 use App\Domains\Integrations\Models\ProjectIntegration;
@@ -149,6 +150,14 @@ class Project extends Model
     public function searchPerformanceQueries(): HasMany
     {
         return $this->hasMany(SearchPerformanceQuery::class);
+    }
+
+    /**
+     * @return HasMany<BingCrawlStat, $this>
+     */
+    public function bingCrawlStats(): HasMany
+    {
+        return $this->hasMany(BingCrawlStat::class);
     }
 
     /**

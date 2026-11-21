@@ -91,14 +91,16 @@ class TrackedKeywordController extends Controller
             ? DB::table('search_performance_queries')
                 ->where('project_id', $project->id)
                 ->where('date', '>=', $cutoffDate)
-                ->selectRaw('provider, LOWER(query) as query_lower, SUM(clicks) as total_clicks, SUM(impressions) as total_impressions, CASE WHEN SUM(impressions) > 0 THEN ROUND(SUM(position * impressions) / SUM(impressions), 1) ELSE ROUND(AVG(position), 1) END as avg_position')
-                ->groupBy('provider', 'query_lower')
+                ->selectRaw('provider, device, LOWER(query) as query_lower, SUM(clicks) as total_clicks, SUM(impressions) as total_impressions, CASE WHEN SUM(impressions) > 0 THEN ROUND(SUM(position * impressions) / SUM(impressions), 1) ELSE ROUND(AVG(position), 1) END as avg_position')
+                ->groupBy('provider', 'device', 'query_lower')
                 ->get()
             : collect();
 
+        // Search Console rows are per device ("all" for rows synced before
+        // the split); Bing has no device breakdown.
         $gscStatsByQuery = $performanceStats
             ->where('provider', 'gsc')
-            ->keyBy('query_lower');
+            ->keyBy(fn (object $row): string => $row->device.'|'.$row->query_lower);
 
         $bingStatsByQuery = $performanceStats
             ->where('provider', 'bing')
@@ -148,7 +150,7 @@ class TrackedKeywordController extends Controller
             $kwKey = strtolower(trim($kw->keyword));
 
             /** @var object{total_clicks?: mixed, total_impressions?: mixed, avg_position?: mixed}|null $gsc */
-            $gsc = $gscStatsByQuery->get($kwKey);
+            $gsc = $gscStatsByQuery->get(strtolower($kw->device).'|'.$kwKey) ?? $gscStatsByQuery->get('all|'.$kwKey);
             $gscClicks = ($gsc !== null && isset($gsc->total_clicks)) ? (int) $gsc->total_clicks : null;
             $gscImpressions = ($gsc !== null && isset($gsc->total_impressions)) ? (int) $gsc->total_impressions : null;
             $gscCtr = ($gscClicks !== null && $gscImpressions !== null && $gscImpressions > 0)
@@ -287,18 +289,15 @@ class TrackedKeywordController extends Controller
                 'status' => $gscIntegration !== null ? $gscIntegration->status : 'not_connected',
                 'site_url' => $gscIntegration?->site_url,
                 'last_synced_at' => $gscIntegration?->last_synced_at instanceof CarbonInterface ? $gscIntegration->last_synced_at->toIso8601String() : null,
-                'error_message' => is_array($gscIntegration?->credentials_encrypted)
-                    ? ($gscIntegration->credentials_encrypted['error'] ?? null)
-                    : null,
+                'error_message' => $gscIntegration?->needsReconnect() === true ? $gscIntegration->status_reason : null,
                 'connect_url' => route('workspaces.projects.integrations.google.connect', [$workspace, $project]),
             ],
             'bingIntegration' => [
                 'status' => $bingIntegration !== null ? $bingIntegration->status : 'not_connected',
                 'site_url' => $bingIntegration?->site_url,
                 'last_synced_at' => $bingIntegration?->last_synced_at instanceof CarbonInterface ? $bingIntegration->last_synced_at->toIso8601String() : null,
-                'error_message' => is_array($bingIntegration?->credentials_encrypted)
-                    ? ($bingIntegration->credentials_encrypted['error'] ?? null)
-                    : null,
+                'error_message' => $bingIntegration?->needsReconnect() === true ? $bingIntegration->status_reason : null,
+                'settings_url' => route('workspaces.projects.show', [$workspace, $project]),
             ],
         ]);
     }

@@ -90,7 +90,23 @@ interface IntegrationItem {
   provider: string;
   site_url?: string | null;
   status: string;
+  // Why it needs reconnecting, when it does.
+  status_reason?: string | null;
   last_synced_at?: string | null;
+}
+
+// Bing crawl health over the last 30 days of synced stats.
+interface BingCrawlSummary {
+  days: number;
+  latestDate: string;
+  crawledPages: number;
+  inIndex: number;
+  crawlErrors: number;
+  code4xx: number;
+  code5xx: number;
+  blockedByRobots: number;
+  dnsFailures: number;
+  connectionTimeouts: number;
 }
 
 interface DeploySmokeRegression {
@@ -127,6 +143,7 @@ interface ProjectShowProps {
   monitoredBacklinksCount: number;
   competitors: CompetitorItem[];
   integrations?: IntegrationItem[];
+  bingCrawl?: BingCrawlSummary | null;
   deploySmoke?: DeploySmokeSummary | null;
   runnrWebhookUrl?: string;
   runnrBadgeUrl?: string;
@@ -198,6 +215,7 @@ export default function ProjectShow({
   monitoredBacklinksCount,
   competitors,
   integrations = [],
+  bingCrawl = null,
   deploySmoke,
   runnrWebhookUrl = '/api/webhooks/runnr/deploy',
   runnrBadgeUrl = '',
@@ -770,6 +788,12 @@ export default function ProjectShow({
                 )}
               </div>
 
+              {gscIntegration?.status === 'needs_reconnect' && gscIntegration.status_reason && (
+                <p className="text-[11px] text-amber-300/90">
+                  Reason: {gscIntegration.status_reason}
+                </p>
+              )}
+
               {gscIntegration?.site_url && (
                 <div className="text-xs text-slate-400 flex items-center gap-1 font-mono">
                   <span className="text-slate-500">Property:</span>
@@ -836,6 +860,10 @@ export default function ProjectShow({
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
                     <CheckCircle2 className="h-3 w-3" /> Connected
                   </span>
+                ) : bingIntegration?.status === 'needs_reconnect' ? (
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                    <AlertTriangle className="h-3 w-3" /> Reconnect
+                  </span>
                 ) : (
                   <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-800 text-slate-400 border border-slate-700">
                     Not Connected
@@ -843,10 +871,46 @@ export default function ProjectShow({
                 )}
               </div>
 
+              {bingIntegration?.status === 'needs_reconnect' && bingIntegration.status_reason && (
+                <p className="text-[11px] text-amber-300/90">
+                  Reason: {bingIntegration.status_reason}
+                </p>
+              )}
+
               {bingIntegration?.site_url && (
                 <div className="text-xs text-slate-400 flex items-center gap-1 font-mono">
                   <span className="text-slate-500">Site:</span>
                   <span className="text-slate-200">{bingIntegration.site_url}</span>
+                </div>
+              )}
+
+              {bingIntegration && bingCrawl && (
+                <div className="p-2.5 rounded-lg bg-slate-950/80 border border-slate-800 space-y-1.5 text-[11px]">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 font-medium">Bing crawl, last {bingCrawl.days} days</span>
+                    <span className="text-slate-500">to {bingCrawl.latestDate}</span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 font-mono">
+                    <div>
+                      <div className="text-slate-500">Crawled</div>
+                      <div className="text-slate-200">{bingCrawl.crawledPages.toLocaleString()}</div>
+                    </div>
+                    <div>
+                      <div className="text-slate-500">In index</div>
+                      <div className="text-slate-200">{bingCrawl.inIndex.toLocaleString()}</div>
+                    </div>
+                    <div>
+                      <div className="text-slate-500">Errors</div>
+                      <div className={bingCrawl.crawlErrors > 0 ? 'text-amber-300' : 'text-slate-200'}>
+                        {bingCrawl.crawlErrors.toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                  {bingCrawl.crawlErrors > 0 && (
+                    <div className="text-slate-400">
+                      {bingCrawl.code4xx.toLocaleString()} 4xx · {bingCrawl.code5xx.toLocaleString()} 5xx · {bingCrawl.blockedByRobots.toLocaleString()} blocked by robots.txt · {(bingCrawl.dnsFailures + bingCrawl.connectionTimeouts).toLocaleString()} DNS or timeout
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -885,7 +949,7 @@ export default function ProjectShow({
                       className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-medium text-xs transition cursor-pointer shadow-md shadow-sky-500/10"
                     >
                       <Plus className="h-3.5 w-3.5" />
-                      <span>Connect Bing Webmaster</span>
+                      <span>{bingIntegration?.status === 'needs_reconnect' ? 'Update Bing API Key' : 'Connect Bing Webmaster'}</span>
                     </button>
                   )
                 )}
