@@ -81,6 +81,10 @@ class CoquiWorkerCallbackController extends Controller
             }
             if ($updates !== []) {
                 $run->update($updates);
+            } else {
+                // A heartbeat with no news still shows the worker is alive;
+                // coqui:fail-stalled-crawls goes by updated_at.
+                $run->touch();
             }
 
             if ($urls === [] && $links === [] && $issues === []) {

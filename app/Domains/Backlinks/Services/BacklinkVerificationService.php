@@ -14,6 +14,7 @@ use App\Domains\Serp\DataForSeo\DataForSeoClient;
 use DOMDocument;
 use DOMElement;
 use DOMXPath;
+use RuntimeException;
 use Throwable;
 
 class BacklinkVerificationService
@@ -39,6 +40,9 @@ class BacklinkVerificationService
         /** @var array<string, array<string, mixed>> $observations */
         $observations = [];
         try {
+            if (! $this->worker->isConfigured()) {
+                throw new RuntimeException('Crawl worker is not configured.');
+            }
             $result = $this->worker->inspectUrls($urls, $project->domain);
             foreach (($result['results'] ?? []) as $item) {
                 if (is_array($item) && isset($item['url'])) {
@@ -98,6 +102,9 @@ class BacklinkVerificationService
 
         $obs = null;
         try {
+            if (! $this->worker->isConfigured()) {
+                throw new RuntimeException('Crawl worker is not configured.');
+            }
             $result = $this->worker->inspectUrls([$link->source_url], $project->domain);
             $items = $result['results'] ?? [];
             if (is_array($items) && isset($items[0]) && is_array($items[0])) {

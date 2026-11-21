@@ -1,0 +1,43 @@
+[package]
+name = "coqui-worker"
+description = "Headless crawl and inspection worker for Coqui SEO"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.90"
+publish = false
+
+# The crawler crates come from the public coqui repo, pinned to one commit so
+# a worker build is reproducible. Bump all four revs together (and the
+# COQUI_CORE_REV build arg in the Dockerfile and publish workflow).
+[dependencies]
+coqui-core = { git = "https://github.com/adamgreenwell/coqui", rev = "c5aa6f62da2120fa02b5cd4201759fc6b2599d3d" }
+coqui-store = { git = "https://github.com/adamgreenwell/coqui", rev = "c5aa6f62da2120fa02b5cd4201759fc6b2599d3d" }
+coqui-crawl = { git = "https://github.com/adamgreenwell/coqui", rev = "c5aa6f62da2120fa02b5cd4201759fc6b2599d3d" }
+coqui-audit = { git = "https://github.com/adamgreenwell/coqui", rev = "c5aa6f62da2120fa02b5cd4201759fc6b2599d3d" }
+
+axum = "0.8"
+bytes = "1"
+csv = "1.4"
+futures = "0.3"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "webpki-roots", "charset", "http2", "json"] }
+scraper = "0.29"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "signal"] }
+tokio-util = "0.7"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
