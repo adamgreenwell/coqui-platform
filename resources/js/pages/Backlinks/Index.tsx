@@ -15,6 +15,7 @@ import {
   History,
   Layers,
   Link2,
+  Mail,
   RefreshCw,
   Search,
   Shield,
@@ -141,6 +142,13 @@ interface BacklinkAlert {
   meta: Record<string, any>;
 }
 
+interface DigestSettings {
+  subscribed: boolean;
+  slackConfigured: boolean;
+  canManageSlack: boolean;
+  lastSentAt: string | null;
+}
+
 interface BacklinksPageProps {
   workspace: WorkspaceSummary;
   project: ProjectDetails;
@@ -156,6 +164,7 @@ interface BacklinksPageProps {
   velocity?: VelocitySummary;
   alerts?: BacklinkAlert[];
   selectedDays?: number;
+  digest?: DigestSettings;
 }
 
 export default function BacklinksIndex({
@@ -173,7 +182,38 @@ export default function BacklinksIndex({
   velocity,
   alerts = [],
   selectedDays = 90,
+  digest,
 }: BacklinksPageProps) {
+  const [slackUrl, setSlackUrl] = useState('');
+  const [digestSaving, setDigestSaving] = useState(false);
+  const [digestError, setDigestError] = useState<string | null>(null);
+  const digestBase = `/workspaces/${workspace.id}/projects/${project.id}/backlinks/digest`;
+
+  const toggleDigest = () => {
+    if (!digest) return;
+    setDigestSaving(true);
+    router.post(
+      `${digestBase}/subscription`,
+      { subscribed: !digest.subscribed },
+      { preserveScroll: true, onFinish: () => setDigestSaving(false) },
+    );
+  };
+
+  const saveSlack = (url: string) => {
+    setDigestSaving(true);
+    setDigestError(null);
+    router.put(
+      `${digestBase}/slack`,
+      { webhook_url: url },
+      {
+        preserveScroll: true,
+        onSuccess: () => setSlackUrl(''),
+        onError: (errors) => setDigestError(errors.webhook_url ?? 'Could not save the webhook.'),
+        onFinish: () => setDigestSaving(false),
+      },
+    );
+  };
+
   const [activeTab, setActiveTab] = useState<'domains' | 'timeline' | 'new_lost' | 'pages' | 'anchors' | 'broken'>('domains');
   const [daysWindow, setDaysWindow] = useState<number>(selectedDays);
   const [domainSearch, setDomainSearch] = useState('');
@@ -397,6 +437,80 @@ export default function BacklinksIndex({
                 </div>
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Weekly digest by email and Slack */}
+        {digest && (
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="rounded-lg bg-indigo-500/15 p-2 text-indigo-300 shrink-0">
+                  <Mail className="h-5 w-5" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-semibold text-slate-100">Weekly backlink digest</h4>
+                  <p className="mt-0.5 text-xs text-slate-400">
+                    Alerts, new and lost referring domains, and watchlist link changes, every Monday.
+                    {digest.lastSentAt && ` Last sent ${new Date(digest.lastSentAt).toLocaleDateString()}.`}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={toggleDigest}
+                disabled={digestSaving}
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-2 text-xs font-medium transition disabled:opacity-50 ${
+                  digest.subscribed
+                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20'
+                    : 'border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700'
+                }`}
+              >
+                <Mail className="h-3.5 w-3.5" />
+                {digest.subscribed ? 'Emailing you weekly (unsubscribe)' : 'Email me the weekly digest'}
+              </button>
+            </div>
+            {digest.canManageSlack && (
+              <div className="mt-3 border-t border-slate-800 pt-3">
+                {digest.slackConfigured ? (
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-slate-300">
+                    <span>Posting to a Slack channel.</span>
+                    <button
+                      type="button"
+                      onClick={() => saveSlack('')}
+                      disabled={digestSaving}
+                      className="rounded border border-slate-700 px-2 py-1 text-slate-300 hover:bg-slate-800 disabled:opacity-50"
+                    >
+                      Turn off Slack
+                    </button>
+                  </div>
+                ) : (
+                  <form
+                    className="flex flex-col gap-2 sm:flex-row sm:items-center"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      saveSlack(slackUrl.trim());
+                    }}
+                  >
+                    <input
+                      type="url"
+                      value={slackUrl}
+                      onChange={(e) => setSlackUrl(e.target.value)}
+                      placeholder="Slack incoming webhook URL (https://hooks.slack.com/services/...)"
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-200 placeholder:text-slate-500 sm:max-w-md"
+                    />
+                    <button
+                      type="submit"
+                      disabled={digestSaving || slackUrl.trim() === ''}
+                      className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-700 disabled:opacity-50"
+                    >
+                      Post to Slack
+                    </button>
+                  </form>
+                )}
+                {digestError && <p className="mt-2 text-xs text-rose-400">{digestError}</p>}
+              </div>
+            )}
           </div>
         )}
 

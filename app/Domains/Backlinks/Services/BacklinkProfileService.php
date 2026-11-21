@@ -79,6 +79,25 @@ class BacklinkProfileService
     }
 
     /**
+     * The referring domains already cached for the project, without making
+     * a paid call. Empty when nothing is cached.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function cachedReferringDomains(Project $project): array
+    {
+        $cached = $this->cache->get(self::DOMAINS_ENDPOINT, ['target' => $this->resolveTarget($project), 'limit' => 100]);
+        if (! is_array($cached) || ! isset($cached['items']) || ! is_array($cached['items'])) {
+            return [];
+        }
+
+        /** @var list<array<string, mixed>> $items */
+        $items = array_values(array_filter($cached['items'], 'is_array'));
+
+        return $items;
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function fetchSummary(Project $project, string $target, int $ttlHours, bool $fresh): array
