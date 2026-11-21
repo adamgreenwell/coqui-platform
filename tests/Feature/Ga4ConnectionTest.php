@@ -269,6 +269,39 @@ class Ga4ConnectionTest extends TestCase
         $this->assertSame(0, PageTrafficSnapshot::query()->where('provider', 'ga4')->count());
     }
 
+    public function test_refreshing_the_token_while_choosing_keeps_the_property_choice_pending(): void
+    {
+        $integration = $this->pendingIntegration();
+        $integration->update(['credentials_encrypted' => ['refresh_token' => 'ga4-refresh-token', 'expires_at' => now()->subMinute()->toIso8601String()]]);
+        $this->fakeGoogle(self::THREE_PROPERTIES);
+
+        $this->actingAs($this->user)->getJson($this->ga4Url('properties'))->assertOk();
+
+        $integration->refresh();
+        $this->assertSame('ga4-access-token', $integration->getAccessToken());
+        $this->assertSame('needs_property', $integration->status);
+    }
+
+    public function test_a_report_for_a_property_switched_away_from_mid_sync_is_discarded(): void
+    {
+        $integration = $this->ga4Integration(expiresAt: now()->addHour()->toIso8601String());
+
+        Http::fake([
+            self::REPORT_URL => function () use ($integration) {
+                // The user picks another property while this report is in flight.
+                ProjectIntegration::query()->whereKey($integration->id)->update(['external_identifier' => 'properties/222']);
+
+                return Http::response(['rows' => [[
+                    'dimensionValues' => [['value' => '/'], ['value' => 'Organic Search'], ['value' => 'google'], ['value' => now()->format('Ymd')]],
+                    'metricValues' => [['value' => '50'], ['value' => '0.4'], ['value' => '60']],
+                ]]], 200);
+            },
+        ]);
+
+        $this->assertSame(0, app(TrafficAttributionService::class)->syncGa4($integration));
+        $this->assertSame(0, PageTrafficSnapshot::query()->where('provider', 'ga4')->count());
+    }
+
     public function test_a_property_the_account_cant_see_is_refused(): void
     {
         Queue::fake();

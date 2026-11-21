@@ -28,6 +28,7 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controllers\HasMiddleware;
 use Illuminate\Routing\Controllers\Middleware;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
@@ -472,19 +473,23 @@ class ProjectIntegrationController extends Controller implements HasMiddleware
      */
     private function useGa4Property(ProjectIntegration $integration, array $property): void
     {
-        $previous = (string) $integration->external_identifier;
-        if ($previous !== '' && $previous !== $property['id']) {
-            PageTrafficSnapshot::query()
-                ->where('project_id', $integration->project_id)
-                ->where('provider', 'ga4')
-                ->delete();
-        }
+        // Locks the integration row, as a GA4 sync does before storing its
+        // report, so a sync of the old property can't write after the delete.
+        DB::transaction(function () use ($integration, $property): void {
+            $previous = (string) ProjectIntegration::query()->whereKey($integration->id)->lockForUpdate()->value('external_identifier');
+            if ($previous !== '' && $previous !== $property['id']) {
+                PageTrafficSnapshot::query()
+                    ->where('project_id', $integration->project_id)
+                    ->where('provider', 'ga4')
+                    ->delete();
+            }
 
-        $integration->update([
-            'site_url' => $property['name'],
-            'external_identifier' => $property['id'],
-            'status' => 'connected',
-        ]);
+            $integration->update([
+                'site_url' => $property['name'],
+                'external_identifier' => $property['id'],
+                'status' => 'connected',
+            ]);
+        });
 
         $project = $integration->project;
         if ($project !== null) {
