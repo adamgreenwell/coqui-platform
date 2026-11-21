@@ -84,7 +84,7 @@ class ResetWorkspaceBillingCommandTest extends TestCase
 
         $this->workspace->refresh();
         $this->assertSame('free', $this->workspace->plan_tier);
-        $this->assertSame(100, $this->workspace->tracked_keyword_limit);
+        $this->assertSame(20, $this->workspace->tracked_keyword_limit);
         $this->assertFalse($this->workspace->has_runnr_addon);
         $this->assertNull($this->workspace->stripe_id);
         $this->assertNull($this->workspace->stripe_subscription_id);

@@ -32,6 +32,7 @@ return [
         // Recurring Price IDs (price_...) from the Stripe dashboard. Use the
         // test-mode prices with sk_test_ keys and live prices with sk_live_ keys.
         'prices' => [
+            'solo' => env('STRIPE_PRICE_SOLO'),
             'personal' => env('STRIPE_PRICE_PERSONAL'),
             'pro' => env('STRIPE_PRICE_PRO'),
             'agency' => env('STRIPE_PRICE_AGENCY'),

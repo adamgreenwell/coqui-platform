@@ -735,11 +735,13 @@ class DataForSeoClient
         $defaultDepth = max(1, (int) config('coqui.dataforseo.default_serp_depth', 10));
 
         $estimatedCost = 0.0;
+        $totalPages = 0;
         foreach ($tasks as $task) {
             $depth = max(1, (int) ($task['depth'] ?? $defaultDepth));
             $pages = (int) ceil($depth / $resultsPerPage);
 
             $estimatedCost += $pages * $pageCost;
+            $totalPages += $pages;
 
             // Waiting for an AI Overview that loads after the page is billed
             // as one extra base page on top of the task.
@@ -755,6 +757,7 @@ class DataForSeoClient
             estimatedCostUsd: $estimatedCost,
             project: $project,
             isScheduled: $isScheduled,
+            serpPages: $totalPages,
         );
     }
 
@@ -830,6 +833,7 @@ class DataForSeoClient
         float $estimatedCostUsd,
         ?Project $project = null,
         bool $isScheduled = false,
+        int $serpPages = 0,
     ): array {
         // Throws when credentials are missing, before anything is reserved.
         $request = $this->http();
@@ -841,6 +845,7 @@ class DataForSeoClient
             workspace: $project?->workspace,
             projectId: $project?->id,
             isScheduled: $isScheduled,
+            serpPages: $serpPages,
         );
 
         try {

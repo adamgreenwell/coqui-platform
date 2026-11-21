@@ -34,7 +34,7 @@ class StripeSubscriptionSyncTest extends TestCase
         config()->set('pennant.default', 'array');
         config()->set('services.stripe.webhook_secret', self::SECRET);
         config()->set('services.stripe.prices', [
-            'personal' => 'price_personal_test',
+            'solo' => 'price_solo_test',
             'pro' => 'price_pro_test',
             'agency' => 'price_agency_test',
             'runnr_addon' => 'price_runnr_test',
@@ -118,7 +118,7 @@ class StripeSubscriptionSyncTest extends TestCase
 
         $this->workspace->refresh();
         $this->assertSame('agency', $this->workspace->plan_tier);
-        $this->assertSame(10000, $this->workspace->tracked_keyword_limit);
+        $this->assertSame(5000, $this->workspace->tracked_keyword_limit);
         $this->assertSame(1798761600, $this->workspace->current_period_end?->getTimestamp());
         $this->assertDatabaseHas('workspace_subscriptions', [
             'stripe_id' => 'sub_base',
@@ -127,10 +127,10 @@ class StripeSubscriptionSyncTest extends TestCase
         ]);
     }
 
-    public function test_a_portal_switch_from_personal_to_pro_upgrades_the_workspace(): void
+    public function test_a_portal_switch_from_solo_to_pro_upgrades_the_workspace(): void
     {
         $this->subscribeToPro();
-        $this->workspace->applyPlanTier('personal');
+        $this->workspace->applyPlanTier('solo');
 
         $this->postEvent('customer.subscription.updated', $this->subscription('sub_base', 'price_pro_test'))
             ->assertOk();
@@ -140,17 +140,17 @@ class StripeSubscriptionSyncTest extends TestCase
         $this->assertSame(1000, $this->workspace->tracked_keyword_limit);
     }
 
-    public function test_a_portal_switch_from_pro_to_personal_downgrades_the_workspace(): void
+    public function test_a_portal_switch_from_pro_to_solo_downgrades_the_workspace(): void
     {
         $this->subscribeToPro();
 
-        $this->postEvent('customer.subscription.updated', $this->subscription('sub_base', 'price_personal_test'))
+        $this->postEvent('customer.subscription.updated', $this->subscription('sub_base', 'price_solo_test'))
             ->assertOk();
 
         $this->workspace->refresh();
-        $this->assertSame('personal', $this->workspace->plan_tier);
+        $this->assertSame('solo', $this->workspace->plan_tier);
         $this->assertSame(300, $this->workspace->tracked_keyword_limit);
-        $this->assertDatabaseHas('workspace_subscriptions', ['stripe_id' => 'sub_base', 'stripe_price' => 'personal']);
+        $this->assertDatabaseHas('workspace_subscriptions', ['stripe_id' => 'sub_base', 'stripe_price' => 'solo']);
     }
 
     public function test_a_portal_switch_from_agency_to_pro_downgrades_the_workspace(): void
@@ -204,7 +204,7 @@ class StripeSubscriptionSyncTest extends TestCase
 
         $this->workspace->refresh();
         $this->assertSame('free', $this->workspace->plan_tier);
-        $this->assertSame(100, $this->workspace->tracked_keyword_limit);
+        $this->assertSame(20, $this->workspace->tracked_keyword_limit);
         $this->assertSame('unpaid', $this->workspace->subscription_status);
 
         $this->postEvent('customer.subscription.updated', $this->subscription('sub_base', 'price_pro_test'))->assertOk();

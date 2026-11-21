@@ -108,9 +108,9 @@ class PlanFeatureGatesTest extends TestCase
         $this->assertSame(0, ContentBrief::query()->count());
     }
 
-    public function test_the_personal_plan_unlocks_the_pro_feature_pages(): void
+    public function test_the_solo_plan_unlocks_the_pro_feature_pages(): void
     {
-        $this->workspace->applyPlanTier('personal');
+        $this->workspace->applyPlanTier('solo');
 
         foreach (['/keywords/brief', '/backlinks/watchlist', '/bot-logs'] as $path) {
             $this->actingAs($this->owner)->get($this->projectUrl($path))->assertOk();
