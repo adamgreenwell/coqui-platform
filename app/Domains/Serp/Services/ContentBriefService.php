@@ -33,6 +33,7 @@ class ContentBriefService
         ?int $locationCode = null,
         ?string $languageCode = null,
         ?array $serpOverride = null,
+        bool $bypassCache = false,
     ): ContentBrief {
         $normalizedKeyword = strtolower(trim($keyword));
         $location = $locationCode ?? (int) ($project->location_code ?? 2840);
@@ -44,7 +45,7 @@ class ContentBriefService
         $cpc = isset($metrics['cpc']) ? (float) $metrics['cpc'] : 0.00;
 
         // 2. Fetch SERP organic items and People Also Ask questions
-        $serpData = $serpOverride ?? $this->fetchSerpData($project, $normalizedKeyword, $location, $language);
+        $serpData = $serpOverride ?? $this->fetchSerpData($project, $normalizedKeyword, $location, $language, $bypassCache);
         $extractedSerp = $this->extractSerpOrganicAndQuestions($serpData);
 
         $organicItems = $extractedSerp['organic'];
@@ -199,10 +200,10 @@ class ContentBriefService
     /**
      * @return array<string, mixed>
      */
-    private function fetchSerpData(Project $project, string $keyword, int $locationCode, string $languageCode): array
+    private function fetchSerpData(Project $project, string $keyword, int $locationCode, string $languageCode, bool $bypassCache = false): array
     {
         try {
-            return $this->dataForSeo->serpLive($keyword, $project, $locationCode, $languageCode);
+            return $this->dataForSeo->serpLive($keyword, $project, $locationCode, $languageCode, $bypassCache);
         } catch (ProviderNotConfiguredException $e) {
             // Not a lookup failure: a brief without SERP data would be empty.
             throw $e;

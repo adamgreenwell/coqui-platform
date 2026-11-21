@@ -92,10 +92,13 @@ class ContentBriefController extends Controller
         /** @var array<string, mixed> $validated */
         $validated = $request->validate([
             'keyword' => ['required', 'string', 'max:255'],
+            'fresh' => ['nullable', 'boolean'],
         ]);
 
         $keyword = (string) $validated['keyword'];
-        $brief = $this->briefService->buildBrief($project, $keyword);
+        // A fresh lookup skips the shared cache, so it's for members who can spend.
+        $fresh = (bool) ($validated['fresh'] ?? false) && Gate::allows('spend', $project);
+        $brief = $this->briefService->buildBrief($project, $keyword, bypassCache: $fresh);
 
         ProjectActivity::log(
             project: $project,

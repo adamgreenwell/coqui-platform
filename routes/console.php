@@ -20,6 +20,16 @@ Schedule::command('dataforseo:run-rank-batches')
     ->dailyAt('05:10')
     ->withoutOverlapping();
 
+// Free: compare the DataForSEO ledger with the account balance; alert operators on drift or thresholds.
+Schedule::command('dataforseo:reconcile')
+    ->hourly()
+    ->withoutOverlapping();
+
+// Drop archived DataForSEO responses past DATAFORSEO_ARCHIVE_RETENTION_DAYS.
+Schedule::command('dataforseo:status --prune')
+    ->dailyAt('03:15')
+    ->withoutOverlapping();
+
 // Re-checks rank tasks that failed or stalled with the backup SERP provider.
 Schedule::command('rank:fallback')
     ->hourly()
