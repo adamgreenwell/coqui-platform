@@ -106,7 +106,8 @@ class ContentBriefController extends Controller
         // The SERP lookup and competitor fetches run in a queued job, so the
         // request returns at once. The lock and the pending check stop a
         // double submit from paying for the same brief twice.
-        $brief = Cache::lock("content-brief:{$project->id}:".md5($keyword), 10)->get(function () use ($project, $keyword, $user, $fresh): ContentBrief {
+        $dispatch = null;
+        $brief = Cache::lock("content-brief:{$project->id}:".md5($keyword), 10)->get(function () use ($project, $keyword, $fresh, &$dispatch): ContentBrief {
             /** @var ContentBrief|null $brief */
             $brief = $project->contentBriefs()->where('keyword', $keyword)->latest('id')->first();
 
@@ -137,10 +138,16 @@ class ContentBriefController extends Controller
                 $brief->update(['status' => ContentBrief::STATUS_PENDING, 'error' => null, 'generation' => $generation]);
             }
 
-            GenerateContentBriefJob::dispatch($brief, $user, $fresh, $generation);
+            $dispatch = [$brief, $fresh, $generation];
 
             return $brief;
         });
+
+        // Dispatched after the lock is released: the job claims the brief
+        // under the same lock (and a sync queue runs it right here).
+        if ($dispatch !== null) {
+            GenerateContentBriefJob::dispatch($dispatch[0], $user, $dispatch[1], $dispatch[2]);
+        }
 
         if (! $brief instanceof ContentBrief) {
             // Another request holds the lock and is starting this brief.

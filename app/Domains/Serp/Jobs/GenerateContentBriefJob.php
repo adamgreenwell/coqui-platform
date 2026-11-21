@@ -13,10 +13,12 @@ use App\Domains\Serp\Services\ContentBriefService;
 use App\Domains\Serp\SpendRefusedException;
 use App\Models\User;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
@@ -59,7 +61,7 @@ class GenerateContentBriefJob implements ShouldQueue
 
         // A newer request replaced this one while it waited in the queue:
         // that job builds the brief, so don't pay for a second lookup.
-        if ($this->superseded()) {
+        if (! $this->claim()) {
             return;
         }
 
@@ -68,7 +70,9 @@ class GenerateContentBriefJob implements ShouldQueue
             // the project's targeting changed doesn't buy the old market's SERP.
             $brief = $service->buildBrief($project, $brief->keyword, bypassCache: $this->bypassCache);
         } catch (Throwable $e) {
-            $this->markFailed($brief, $e);
+            if (! $this->superseded()) {
+                $this->markFailed($brief, $e);
+            }
 
             return;
         }
@@ -99,6 +103,35 @@ class GenerateContentBriefJob implements ShouldQueue
             return;
         }
         $this->markFailed($this->brief->fresh() ?? $this->brief, $e);
+    }
+
+    /**
+     * Take ownership of the brief: refresh its pending timestamp if this job
+     * still holds the current generation. The controller treats a pending
+     * brief touched in the last five minutes as in flight, and this job's
+     * timeout is far shorter, so a running job can't be replaced. Uses the
+     * controller's lock so the check and the replacement can't interleave.
+     */
+    private function claim(): bool
+    {
+        if ($this->generation === null) {
+            return true;
+        }
+
+        try {
+            return (bool) Cache::lock(self::lockKey($this->brief), 10)->block(5, fn (): bool => ContentBrief::query()
+                ->whereKey($this->brief->getKey())
+                ->where('generation', $this->generation)
+                ->update(['updated_at' => now()]) === 1);
+        } catch (LockTimeoutException) {
+            // Someone else is changing this brief; leave it to them.
+            return false;
+        }
+    }
+
+    public static function lockKey(ContentBrief $brief): string
+    {
+        return "content-brief:{$brief->project_id}:".md5($brief->keyword);
     }
 
     private function superseded(): bool

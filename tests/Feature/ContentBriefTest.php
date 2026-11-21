@@ -469,6 +469,24 @@ HTML;
         $this->assertNotSame($first->generation, $brief->generation);
     }
 
+    public function test_a_running_job_cannot_be_replaced(): void
+    {
+        Queue::fake();
+
+        $this->actingAs($this->user)->postJson($this->briefUrl(), ['keyword' => 'crawl budget'])->assertStatus(202);
+        /** @var GenerateContentBriefJob $job */
+        $job = Queue::pushed(GenerateContentBriefJob::class)->first();
+
+        // The job starts just inside the window and claims the brief...
+        $this->travel(4)->minutes();
+        $this->assertTrue((fn (): bool => $this->claim())->call($job));
+
+        // ...so a submit past the original window still sees it in flight.
+        $this->travel(2)->minutes();
+        $this->actingAs($this->user)->postJson($this->briefUrl(), ['keyword' => 'crawl budget'])->assertStatus(202);
+        Queue::assertPushed(GenerateContentBriefJob::class, 1);
+    }
+
     public function test_the_job_completes_the_brief_and_broadcasts(): void
     {
         Event::fake([ContentBriefUpdated::class]);
