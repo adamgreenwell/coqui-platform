@@ -49,13 +49,13 @@ class Workspace extends Model
      * Base plans a workspace can pay for, cheapest first. Free is the
      * absence of one, and the Runnr add-on is billed on top of any of them.
      */
-    public const PAID_PLAN_TIERS = ['personal', 'pro', 'agency'];
+    public const PAID_PLAN_TIERS = ['solo', 'pro', 'agency'];
 
     /**
      * Base plans that unlock the Pro feature set (briefs, backlinks,
      * attribution, bot telemetry). Personal has them with smaller limits.
      */
-    public const PRO_FEATURE_TIERS = ['personal', 'pro', 'agency'];
+    public const PRO_FEATURE_TIERS = ['solo', 'pro', 'agency'];
 
     protected static function booted(): void
     {
@@ -146,6 +146,34 @@ class Workspace extends Model
     public function invoices(): HasMany
     {
         return $this->hasMany(BillingInvoice::class);
+    }
+
+    /**
+     * SERP credits this workspace's plan includes in a month.
+     */
+    public function serpCreditLimit(): int
+    {
+        return (int) PlanCatalog::get($this->plan_tier)['monthly_serp_credits'];
+    }
+
+    /**
+     * Credits spent this calendar month. One credit is one page of 10 SERP
+     * results, so a depth-100 check counts as ten.
+     */
+    public function serpCreditsUsedThisMonth(): int
+    {
+        return (int) DB::table('dataforseo_spend_ledger')
+            ->where('workspace_id', $this->id)
+            ->where('recorded_at', '>=', now()->startOfMonth())
+            ->sum('serp_pages');
+    }
+
+    /**
+     * Credits left before the plan's monthly allowance is exhausted.
+     */
+    public function remainingSerpCredits(): int
+    {
+        return max(0, $this->serpCreditLimit() - $this->serpCreditsUsedThisMonth());
     }
 
     /**
