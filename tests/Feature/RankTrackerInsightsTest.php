@@ -197,7 +197,11 @@ class RankTrackerInsightsTest extends TestCase
         $this->artisan('dataforseo:run-rank-batches', ['--project' => $this->project->id])->assertSuccessful();
 
         Http::assertSent(fn ($request): bool => ($request->data()[0]['load_async_ai_overview'] ?? null) === true);
-        $this->assertEqualsWithDelta(0.0012, (float) DB::table('dataforseo_spend_ledger')->value('estimated_cost_usd'), 0.000001);
+        Http::assertSent(fn ($request): bool => ($request->data()[0]['depth'] ?? null) === 100);
+
+        // Depth 100 is ten 10-result SERP pages at $0.0006 each, plus one
+        // extra base page for the AI Overview.
+        $this->assertEqualsWithDelta(0.0066, (float) DB::table('dataforseo_spend_ledger')->value('estimated_cost_usd'), 0.000001);
     }
 
     public function test_async_ai_overviews_can_be_turned_off(): void
@@ -217,7 +221,9 @@ class RankTrackerInsightsTest extends TestCase
         $this->artisan('dataforseo:run-rank-batches', ['--project' => $this->project->id])->assertSuccessful();
 
         Http::assertSent(fn ($request): bool => ($request->data()[0]['load_async_ai_overview'] ?? null) === false);
-        $this->assertEqualsWithDelta(0.0006, (float) DB::table('dataforseo_spend_ledger')->value('estimated_cost_usd'), 0.000001);
+
+        // Ten SERP pages for a depth-100 check, with no AI Overview page.
+        $this->assertEqualsWithDelta(0.006, (float) DB::table('dataforseo_spend_ledger')->value('estimated_cost_usd'), 0.000001);
     }
 
     public function test_keywords_with_no_data_are_remembered_so_they_are_not_paid_for_again(): void

@@ -9,6 +9,7 @@ use App\Domains\Projects\Models\Workspace;
 use App\Domains\Serp\DataForSeo\DataForSeoBudgetException;
 use App\Domains\Serp\DataForSeo\DataForSeoClient;
 use App\Domains\Serp\DataForSeo\DataForSeoSpendGuard;
+use App\Domains\Serp\SpendRefusedException;
 use App\Models\User;
 use App\Notifications\DataForSeoSpendAlert;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -24,6 +25,8 @@ class DataForSeoSpendControlsTest extends TestCase
     use RefreshDatabase;
 
     private const OVERVIEW = 'api.dataforseo.com/v3/dataforseo_labs/google/keyword_overview/live';
+
+    private const TASK_POST = 'api.dataforseo.com/v3/serp/google/organic/task_post';
 
     private User $user;
 
@@ -378,5 +381,61 @@ class DataForSeoSpendControlsTest extends TestCase
         $this->travel(31)->days();
         $this->artisan('dataforseo:status --prune')->expectsOutputToContain('Pruned 1')->assertSuccessful();
         $this->assertSame(0, DB::table('dataforseo_responses')->count());
+    }
+
+    /**
+     * DataForSEO bills SERP data per page of 10 results. The spend guard used
+     * to reserve one unit per task, so a depth-100 check was recorded at a
+     * tenth of its real cost and every cap ran loose.
+     */
+    public function test_a_depth_100_rank_check_reserves_ten_serp_pages(): void
+    {
+        $project = $this->project('Depth Co');
+        Http::fake([self::TASK_POST => Http::response([
+            'status_code' => 20000,
+            'cost' => 0.0072,
+            'tasks' => [['id' => 'task-1', 'status_code' => 20000]],
+        ], 200)]);
+
+        app(DataForSeoClient::class)->submitStandardSerpTasks([
+            ['keyword' => 'seo crawler', 'depth' => 100, 'load_async_ai_overview' => true],
+            ['keyword' => 'seo audit', 'depth' => 10],
+        ], $project);
+
+        $row = DB::table('dataforseo_spend_ledger')->sole();
+
+        // 10 pages, plus one AI Overview page, plus one page for the depth-10 task.
+        $this->assertEqualsWithDelta(0.0072, (float) $row->estimated_cost_usd, 0.000001);
+    }
+
+    public function test_a_task_without_a_depth_reserves_one_serp_page(): void
+    {
+        $project = $this->project('Default Depth Co');
+        Http::fake([self::TASK_POST => Http::response([
+            'status_code' => 20000,
+            'cost' => 0.0006,
+            'tasks' => [['id' => 'task-1', 'status_code' => 20000]],
+        ], 200)]);
+
+        app(DataForSeoClient::class)->submitStandardSerpTasks([
+            ['keyword' => 'seo crawler'],
+        ], $project);
+
+        $row = DB::table('dataforseo_spend_ledger')->sole();
+        $this->assertEqualsWithDelta(0.0006, (float) $row->estimated_cost_usd, 0.000001);
+    }
+
+    public function test_a_deep_check_is_refused_before_the_workspace_allowance_is_exceeded(): void
+    {
+        // $0.005 would have covered the old one-unit estimate; a depth-100
+        // check must not slip through it.
+        $project = $this->project('Tight Allowance Co', budget: 0.005);
+        Http::fake();
+
+        $this->expectException(SpendRefusedException::class);
+
+        app(DataForSeoClient::class)->submitStandardSerpTasks([
+            ['keyword' => 'seo crawler', 'depth' => 100],
+        ], $project);
     }
 }

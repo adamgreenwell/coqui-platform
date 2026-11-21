@@ -278,7 +278,7 @@ class WorkspaceBillingTest extends TestCase
         $this->assertSame('personal', $this->workspace->plan_tier);
         $this->assertSame(300, $this->workspace->tracked_keyword_limit);
         $this->assertSame(5000, $this->workspace->cloud_crawl_url_limit);
-        $this->assertSame(8.0, (float) $this->workspace->monthly_dfs_budget_usd);
+        $this->assertSame(6.0, (float) $this->workspace->monthly_dfs_budget_usd);
 
         $this->workspace->applyPlanTier('free');
         $response = $this->actingAs($this->owner)
@@ -325,7 +325,7 @@ class WorkspaceBillingTest extends TestCase
         $this->assertSame('agency', $this->workspace->plan_tier);
         $this->assertSame(10000, $this->workspace->tracked_keyword_limit);
         $this->assertSame(250000, $this->workspace->cloud_crawl_url_limit);
-        $this->assertEquals(750.00, $this->workspace->monthly_dfs_budget_usd);
+        $this->assertEquals(60.00, $this->workspace->monthly_dfs_budget_usd);
     }
 
     public function test_operator_command_rejects_unknown_tier(): void
@@ -368,7 +368,7 @@ class WorkspaceBillingTest extends TestCase
         $this->assertSame('active', $this->workspace->subscription_status);
         $this->assertSame(1000, $this->workspace->tracked_keyword_limit);
         $this->assertSame(25000, $this->workspace->cloud_crawl_url_limit);
-        $this->assertEquals(150.00, $this->workspace->monthly_dfs_budget_usd);
+        $this->assertEquals(15.00, $this->workspace->monthly_dfs_budget_usd);
 
         $this->assertDatabaseHas('workspace_subscriptions', [
             'workspace_id' => $this->workspace->id,
