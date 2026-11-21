@@ -11,6 +11,8 @@ use App\Domains\Serp\ProviderNotConfiguredException;
 use App\Domains\Serp\SeRanking\SeRankingAcceptanceRule;
 use App\Domains\Serp\SeRanking\SeRankingClient;
 use App\Domains\Serp\SpendRefusedException;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 
 /**
  * Routes SEO lookups across SE Ranking and DataForSEO based on endpoint
@@ -112,12 +114,13 @@ class SeoProviderRouter
                 }
 
                 $unavailable = $dataForSeoKeywords;
-            } catch (SpendRefusedException $e) {
+            } catch (SpendRefusedException|ConnectionException|RequestException $e) {
                 if ($seRankingRows === []) {
                     throw $e;
                 }
 
-                // Keep what SE Ranking returned rather than failing the lookup.
+                // Keep what SE Ranking returned (already paid for) rather
+                // than failing the whole lookup.
                 $unavailable = $dataForSeoKeywords;
             }
         }

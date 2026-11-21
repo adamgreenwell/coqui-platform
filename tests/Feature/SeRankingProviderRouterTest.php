@@ -254,4 +254,31 @@ class SeRankingProviderRouterTest extends TestCase
         $this->assertSame(['seo crawler'], $result['unavailable']);
         $this->assertSame(['seo crawler'], $result['fallback']);
     }
+
+    public function test_seranking_rows_survive_a_failed_fallback(): void
+    {
+        $this->configureProviders();
+        $keywords = array_map(static fn (int $i): string => "keyword {$i}", range(1, 100));
+        $keywords[73] = 'bad keyword';
+
+        Http::fake([
+            'api.seranking.com/v1/keywords/export*' => function (Request $request) {
+                /** @var list<string> $batch */
+                $batch = $request['keywords'];
+                if (in_array('bad keyword', $batch, true)) {
+                    return Http::response(['message' => 'Invalid keyword'], 422);
+                }
+
+                return Http::response(array_map(static fn (string $k): array => ['keyword' => $k, 'volume' => 10], $batch), 200);
+            },
+            'sandbox.dataforseo.com/*' => Http::response(['status_code' => 50000, 'status_message' => 'Internal error'], 500),
+        ]);
+
+        $result = app(SeoProviderRouter::class)->lookupKeywords($keywords);
+
+        $this->assertCount(50, $result['keywords']);
+        $this->assertCount(50, $result['unavailable']);
+        $this->assertContains('bad keyword', $result['unavailable']);
+        $this->assertSame(100, $result['cost']['seranking_credits']);
+    }
 }
