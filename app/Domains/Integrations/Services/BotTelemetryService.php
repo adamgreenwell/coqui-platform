@@ -9,6 +9,7 @@ use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Facades\DB;
 
 class BotTelemetryService
@@ -33,113 +34,234 @@ class BotTelemetryService
         'meta-externalagent',
     ];
 
+    /** Statuses that mean the page is gone, for the 404 remediation list. */
+    public const array GONE_STATUSES = [404, 410];
+
+    /** Paths kept per stored row. */
+    private const int PATHS_PER_ROW = 100;
+
     /**
-     * Ingest a batch of bot crawl log summaries from Runnr edge/server logs.
+     * Ingest a batch of hourly bot crawl summaries from Runnr access logs.
+     *
+     * Each batch is stored under its batch ID (or, without one, a hash of
+     * its contents). Sending the same batch again replaces its own rows, so
+     * a retry never counts twice; different batches for the same hour add
+     * up.
      *
      * @param  list<array{
      *     botFamily: string,
      *     statusBucket: int,
      *     hitCount: int,
      *     bytesServed?: int|null,
+     *     parameterHitCount?: int|null,
      *     bucketHour: string,
+     *     topPaths?: list<array{path: string, hits: int, status?: int|null, redirectTarget?: string|null, hops?: int|null}>|null,
      *     topErrorPaths?: list<array{path: string, hits: int, status?: int|null}>|null,
      * }>  $entries
-     * @return array{ingestedCount: int, totalHits: int, project_id: int}
+     * @return array{ingestedCount: int, totalHits: int, project_id: int, duplicate: bool}
      */
-    public function ingest(string $runnrSiteId, array $entries): array
+    public function ingest(string $runnrSiteId, array $entries, ?string $batchId = null): array
     {
         /** @var Project $project */
         $project = Project::query()->where('runnr_site_id', $runnrSiteId)->firstOrFail();
 
-        $totalHits = 0;
-        $flagged404Hits = 0;
-        $top404Path = null;
+        $batchKey = $this->batchKey($batchId, $entries);
+        $buckets = $this->buckets($entries);
+        $totalHits = array_sum(array_column($buckets, 'hit_count'));
 
-        DB::transaction(function () use ($project, $entries, &$totalHits, &$flagged404Hits, &$top404Path): void {
-            foreach ($entries as $entry) {
-                $botFamily = strtolower(trim($entry['botFamily']));
-                $statusBucket = (int) $entry['statusBucket'];
-                // Normalize statusBucket to hundreds (200, 300, 400, 500)
-                if ($statusBucket >= 200 && $statusBucket < 300) {
-                    $statusBucket = 200;
-                } elseif ($statusBucket >= 300 && $statusBucket < 400) {
-                    $statusBucket = 300;
-                } elseif ($statusBucket >= 400 && $statusBucket < 500) {
-                    $statusBucket = 400;
-                } elseif ($statusBucket >= 500) {
-                    $statusBucket = 500;
-                }
-
-                $hitCount = max(0, (int) $entry['hitCount']);
-                $bytesServed = max(0, (int) ($entry['bytesServed'] ?? 0));
-                $bucketHour = Carbon::parse($entry['bucketHour'])->startOfHour();
-                $topErrorPaths = $entry['topErrorPaths'] ?? [];
-
-                $totalHits += $hitCount;
-
-                if ($botFamily === 'googlebot' && $statusBucket === 400 && $topErrorPaths !== []) {
-                    foreach ($topErrorPaths as $err) {
-                        $errHits = (int) $err['hits'];
-                        if ($errHits > $flagged404Hits) {
-                            $flagged404Hits = $errHits;
-                            $top404Path = (string) $err['path'];
-                        }
-                    }
-                }
-
-                /** @var BotCrawlLog|null $existing */
-                $existing = BotCrawlLog::query()
+        try {
+            $duplicate = DB::transaction(function () use ($project, $batchKey, $buckets): bool {
+                $previous = BotCrawlLog::query()
                     ->where('project_id', $project->id)
-                    ->where('bot_family', $botFamily)
-                    ->where('status_bucket', $statusBucket)
-                    ->where('bucket_hour', $bucketHour)
-                    ->first();
+                    ->where('batch_id', $batchKey)
+                    ->delete();
 
-                if ($existing !== null) {
-                    $mergedErrors = $this->mergeErrorPaths($existing->top_error_paths, $topErrorPaths);
-                    $existing->update([
-                        'hit_count' => $existing->hit_count + $hitCount,
-                        'bytes_served' => $existing->bytes_served + $bytesServed,
-                        'top_error_paths' => $mergedErrors,
-                    ]);
-                } else {
+                foreach ($buckets as $bucket) {
                     BotCrawlLog::query()->create([
+                        ...$bucket,
                         'project_id' => $project->id,
-                        'bot_family' => $botFamily,
-                        'status_bucket' => $statusBucket,
-                        'hit_count' => $hitCount,
-                        'bytes_served' => $bytesServed,
-                        'bucket_hour' => $bucketHour,
-                        'top_error_paths' => $topErrorPaths,
+                        'batch_id' => $batchKey,
                     ]);
                 }
-            }
-        });
 
-        // Trigger real-time activity alert when Googlebot repeatedly hits 404 pages
-        if ($top404Path !== null && $flagged404Hits >= 5) {
-            ProjectActivity::log(
-                project: $project,
-                eventType: 'telemetry.bot_404_detected',
-                title: 'High-frequency 404 detected on Googlebot',
-                description: "Googlebot hit {$top404Path} {$flagged404Hits} times. Recommended for 301 redirect remediation.",
-                properties: [
-                    'path' => $top404Path,
-                    'hits' => $flagged404Hits,
-                    'bot' => 'googlebot',
-                ],
-            );
+                return $previous > 0;
+            });
+        } catch (UniqueConstraintViolationException) {
+            // The same batch arrived twice at once and the other copy won.
+            $duplicate = true;
+        }
+
+        // Alert once per batch when Googlebot keeps hitting a missing page.
+        if (! $duplicate) {
+            $this->alertOnGooglebot404s($project, $buckets);
         }
 
         return [
             'ingestedCount' => count($entries),
-            'totalHits' => $totalHits,
+            'totalHits' => (int) $totalHits,
             'project_id' => $project->id,
+            'duplicate' => $duplicate,
         ];
     }
 
     /**
-     * Retrieve aggregated crawl budget metrics, daily timeseries, bot breakdowns, and 404 remediation list.
+     * @param  list<array<string, mixed>>  $entries
+     */
+    private function batchKey(?string $batchId, array $entries): string
+    {
+        $batchId = trim((string) $batchId);
+        if ($batchId !== '') {
+            return sha1('id:'.$batchId);
+        }
+
+        return sha1('content:'.json_encode($entries, JSON_THROW_ON_ERROR));
+    }
+
+    /**
+     * Combine the batch's entries into one row per bot, status class and
+     * hour.
+     *
+     * @param  list<array<string, mixed>>  $entries
+     * @return list<array{bot_family: string, status_bucket: int, hit_count: int, bytes_served: int, parameter_hits: int, bucket_hour: CarbonInterface, top_paths: list<array{path: string, hits: int, status: int, redirectTarget?: string, hops?: int}>}>
+     */
+    private function buckets(array $entries): array
+    {
+        /** @var array<string, array{bot_family: string, status_bucket: int, hit_count: int, bytes_served: int, parameter_hits: int, bucket_hour: CarbonInterface, paths: array<string, array{path: string, hits: int, status: int, redirectTarget?: string, hops?: int}>}> $map */
+        $map = [];
+
+        foreach ($entries as $entry) {
+            $bot = strtolower(trim((string) $entry['botFamily']));
+            $rawStatus = (int) $entry['statusBucket'];
+            $statusBucket = self::statusClass($rawStatus);
+            $hour = Carbon::parse((string) $entry['bucketHour'])->utc()->startOfHour();
+            $hits = max(0, (int) $entry['hitCount']);
+
+            $key = $bot.'|'.$statusBucket.'|'.$hour->toIso8601String();
+            $map[$key] ??= [
+                'bot_family' => $bot,
+                'status_bucket' => $statusBucket,
+                'hit_count' => 0,
+                'bytes_served' => 0,
+                'parameter_hits' => 0,
+                'bucket_hour' => $hour,
+                'paths' => [],
+            ];
+
+            $map[$key]['hit_count'] += $hits;
+            $map[$key]['bytes_served'] += max(0, (int) ($entry['bytesServed'] ?? 0));
+
+            /** @var list<array<string, mixed>> $paths */
+            $paths = array_merge(
+                is_array($entry['topPaths'] ?? null) ? $entry['topPaths'] : [],
+                is_array($entry['topErrorPaths'] ?? null) ? $entry['topErrorPaths'] : [],
+            );
+
+            $parameterHits = 0;
+            foreach ($paths as $p) {
+                $path = trim((string) ($p['path'] ?? ''));
+                $pHits = max(0, (int) ($p['hits'] ?? 0));
+                if ($path === '' || $pHits === 0) {
+                    continue;
+                }
+                // A path's own status, or the entry's when it gave an exact code.
+                $status = isset($p['status']) ? (int) $p['status'] : $rawStatus;
+                if (self::isParameterized($path)) {
+                    $parameterHits += $pHits;
+                }
+
+                $pathKey = $path.'|'.$status;
+                if (isset($map[$key]['paths'][$pathKey])) {
+                    $map[$key]['paths'][$pathKey]['hits'] += $pHits;
+                } else {
+                    $item = ['path' => $path, 'hits' => $pHits, 'status' => $status];
+                    $target = trim((string) ($p['redirectTarget'] ?? ''));
+                    if ($target !== '') {
+                        $item['redirectTarget'] = mb_substr($target, 0, 2048);
+                    }
+                    if (isset($p['hops']) && (int) $p['hops'] > 0) {
+                        $item['hops'] = (int) $p['hops'];
+                    }
+                    $map[$key]['paths'][$pathKey] = $item;
+                }
+            }
+
+            // Runnr's own count covers every parameterized hit, not just the
+            // top paths; use it when sent.
+            $reported = $entry['parameterHitCount'] ?? null;
+            $map[$key]['parameter_hits'] += min($hits, max(0, $reported !== null ? (int) $reported : $parameterHits));
+        }
+
+        $buckets = [];
+        foreach ($map as $row) {
+            $paths = array_values($row['paths']);
+            usort($paths, fn (array $a, array $b): int => $b['hits'] <=> $a['hits']);
+            unset($row['paths']);
+            $row['top_paths'] = array_slice($paths, 0, self::PATHS_PER_ROW);
+            $buckets[] = $row;
+        }
+
+        return $buckets;
+    }
+
+    /**
+     * @param  list<array{bot_family: string, top_paths: list<array{path: string, hits: int, status: int}>}>  $buckets
+     */
+    private function alertOnGooglebot404s(Project $project, array $buckets): void
+    {
+        $topPath = null;
+        $topHits = 0;
+        foreach ($buckets as $bucket) {
+            if ($bucket['bot_family'] !== 'googlebot') {
+                continue;
+            }
+            foreach ($bucket['top_paths'] as $p) {
+                if (in_array($p['status'], self::GONE_STATUSES, true) && $p['hits'] > $topHits) {
+                    $topHits = $p['hits'];
+                    $topPath = $p['path'];
+                }
+            }
+        }
+
+        if ($topPath === null || $topHits < 5) {
+            return;
+        }
+
+        ProjectActivity::log(
+            project: $project,
+            eventType: 'telemetry.bot_404_detected',
+            title: 'High-frequency 404 detected on Googlebot',
+            description: "Googlebot hit {$topPath} {$topHits} times. Recommended for 301 redirect remediation.",
+            properties: [
+                'path' => $topPath,
+                'hits' => $topHits,
+                'bot' => 'googlebot',
+            ],
+        );
+    }
+
+    public static function statusClass(int $status): int
+    {
+        return match (true) {
+            $status >= 500 => 500,
+            $status >= 400 => 400,
+            $status >= 300 => 300,
+            default => 200,
+        };
+    }
+
+    public static function isParameterized(string $path): bool
+    {
+        $query = parse_url($path, PHP_URL_QUERY);
+
+        return is_string($query) && $query !== '';
+    }
+
+    /**
+     * Crawl budget metrics, daily timeseries, bot breakdowns, top crawled
+     * paths, redirect chains, parameter waste and the 404 remediation list.
+     *
+     * Wasted crawl budget is hits on redirects (3xx), errors (4xx/5xx) and
+     * parameterized URLs that otherwise returned 2xx.
      *
      * @return array{
      *     kpis: array{
@@ -148,6 +270,9 @@ class BotTelemetryService
      *         aiCrawlerHits: int,
      *         wastedHits: int,
      *         wastePercentage: float,
+     *         redirectHits: int,
+     *         parameterHits: int,
+     *         errorHits: int,
      *         bytesServed: int,
      *         errorRate: float,
      *     },
@@ -176,6 +301,9 @@ class BotTelemetryService
      *         status4xx: int,
      *         status5xx: int,
      *     },
+     *     topPaths: list<array{path: string, hits: int, status: int, bots: list<string>, parameterized: bool}>,
+     *     redirectChains: list<array{path: string, hits: int, hops: int, target: string|null, bots: list<string>}>,
+     *     parameterPaths: list<array{path: string, hits: int, status: int, bots: list<string>}>,
      *     flagged404s: list<array{
      *         path: string,
      *         hits: int,
@@ -198,195 +326,151 @@ class BotTelemetryService
         $totalHits = 0;
         $searchEngineHits = 0;
         $aiCrawlerHits = 0;
-        $status2xx = 0;
-        $status3xx = 0;
-        $status4xx = 0;
-        $status5xx = 0;
+        $parameterHits = 0;
+        $status = [200 => 0, 300 => 0, 400 => 0, 500 => 0];
         $bytesServed = 0;
 
         /** @var array<string, array{searchEngineHits: int, aiCrawlerHits: int, wastedHits: int, totalHits: int}> $dailyMap */
         $dailyMap = [];
-
-        // Prepopulate all days in range
         for ($i = $days - 1; $i >= 0; $i--) {
-            $dateStr = now()->subDays($i)->format('Y-m-d');
-            $dailyMap[$dateStr] = [
-                'searchEngineHits' => 0,
-                'aiCrawlerHits' => 0,
-                'wastedHits' => 0,
-                'totalHits' => 0,
-            ];
+            $dailyMap[now()->subDays($i)->format('Y-m-d')] = ['searchEngineHits' => 0, 'aiCrawlerHits' => 0, 'wastedHits' => 0, 'totalHits' => 0];
         }
 
-        /** @var array<string, array{
-         *     botFamily: string,
-         *     category: string,
-         *     hits: int,
-         *     status2xx: int,
-         *     status3xx: int,
-         *     status4xx: int,
-         *     status5xx: int,
-         *     bytesServed: int,
-         * }> $botMap */
+        /** @var array<string, array{botFamily: string, category: string, hits: int, status: array<int, int>, bytesServed: int}> $botMap */
         $botMap = [];
 
-        /** @var array<string, array{hits: int, lastHitAt: CarbonInterface, bots: array<string, bool>}> $errorPathMap */
-        $errorPathMap = [];
+        /** @var array<string, array{path: string, hits: int, statusHits: array<int, int>, bots: array<string, bool>, lastHitAt: CarbonInterface, target: string|null, hops: int}> $pathMap */
+        $pathMap = [];
 
         foreach ($logs as $log) {
             $hits = $log->hit_count;
-            $totalHits += $hits;
-            $bytesServed += $log->bytes_served;
-
+            $bucket = self::statusClass($log->status_bucket);
             $bot = strtolower($log->bot_family);
             $isSearch = in_array($bot, self::SEARCH_ENGINE_BOTS, true);
             $isAi = in_array($bot, self::AI_CRAWLER_BOTS, true);
+            $category = $isSearch ? 'search_engine' : ($isAi ? 'ai_crawler' : 'other');
 
-            if ($isSearch) {
-                $searchEngineHits += $hits;
-                $category = 'search_engine';
-            } elseif ($isAi) {
-                $aiCrawlerHits += $hits;
-                $category = 'ai_crawler';
-            } else {
-                $category = 'other';
-            }
+            // Parameterized hits are waste only where they didn't already
+            // count as a redirect or error.
+            $rowParameterHits = $bucket === 200 ? min($hits, $log->parameter_hits) : 0;
+            $rowWaste = $bucket === 200 ? $rowParameterHits : $hits;
 
-            $bucket = $log->status_bucket;
-            $isWaste = in_array($bucket, [400, 500], true);
+            $totalHits += $hits;
+            $bytesServed += $log->bytes_served;
+            $status[$bucket] += $hits;
+            $parameterHits += $rowParameterHits;
+            $searchEngineHits += $isSearch ? $hits : 0;
+            $aiCrawlerHits += $isAi ? $hits : 0;
 
-            if ($bucket === 200) {
-                $status2xx += $hits;
-            } elseif ($bucket === 300) {
-                $status3xx += $hits;
-            } elseif ($bucket === 400) {
-                $status4xx += $hits;
-            } elseif ($bucket === 500) {
-                $status5xx += $hits;
-            }
-
-            // Daily timeseries accumulation
             $date = $log->bucket_hour->format('Y-m-d');
-            if (! isset($dailyMap[$date])) {
-                $dailyMap[$date] = [
-                    'searchEngineHits' => 0,
-                    'aiCrawlerHits' => 0,
-                    'wastedHits' => 0,
-                    'totalHits' => 0,
-                ];
-            }
-
+            $dailyMap[$date] ??= ['searchEngineHits' => 0, 'aiCrawlerHits' => 0, 'wastedHits' => 0, 'totalHits' => 0];
             $dailyMap[$date]['totalHits'] += $hits;
-            if ($isSearch) {
-                $dailyMap[$date]['searchEngineHits'] += $hits;
-            }
-            if ($isAi) {
-                $dailyMap[$date]['aiCrawlerHits'] += $hits;
-            }
-            if ($isWaste) {
-                $dailyMap[$date]['wastedHits'] += $hits;
-            }
+            $dailyMap[$date]['searchEngineHits'] += $isSearch ? $hits : 0;
+            $dailyMap[$date]['aiCrawlerHits'] += $isAi ? $hits : 0;
+            $dailyMap[$date]['wastedHits'] += $rowWaste;
 
-            // Bot family breakdown accumulation
-            if (! isset($botMap[$bot])) {
-                $botMap[$bot] = [
-                    'botFamily' => $bot,
-                    'category' => $category,
-                    'hits' => 0,
-                    'status2xx' => 0,
-                    'status3xx' => 0,
-                    'status4xx' => 0,
-                    'status5xx' => 0,
-                    'bytesServed' => 0,
-                ];
-            }
+            $botMap[$bot] ??= ['botFamily' => $bot, 'category' => $category, 'hits' => 0, 'status' => [200 => 0, 300 => 0, 400 => 0, 500 => 0], 'bytesServed' => 0];
             $botMap[$bot]['hits'] += $hits;
+            $botMap[$bot]['status'][$bucket] += $hits;
             $botMap[$bot]['bytesServed'] += $log->bytes_served;
-            if ($bucket === 200) {
-                $botMap[$bot]['status2xx'] += $hits;
-            } elseif ($bucket === 300) {
-                $botMap[$bot]['status3xx'] += $hits;
-            } elseif ($bucket === 400) {
-                $botMap[$bot]['status4xx'] += $hits;
-            } elseif ($bucket === 500) {
-                $botMap[$bot]['status5xx'] += $hits;
-            }
 
-            // 404 paths extraction
-            if ($bucket === 400 && is_array($log->top_error_paths)) {
-                /** @var list<array<string, mixed>> $paths */
-                $paths = $log->top_error_paths;
-                foreach ($paths as $p) {
-                    $pathStr = (string) ($p['path'] ?? '');
-                    if ($pathStr === '') {
-                        continue;
-                    }
-                    $pHits = (int) ($p['hits'] ?? 1);
-                    if (! isset($errorPathMap[$pathStr])) {
-                        $errorPathMap[$pathStr] = [
-                            'hits' => 0,
-                            'lastHitAt' => $log->bucket_hour,
-                            'bots' => [],
-                        ];
-                    }
-                    $errorPathMap[$pathStr]['hits'] += $pHits;
-                    $errorPathMap[$pathStr]['bots'][$bot] = true;
-                    if ($log->bucket_hour > $errorPathMap[$pathStr]['lastHitAt']) {
-                        $errorPathMap[$pathStr]['lastHitAt'] = $log->bucket_hour;
-                    }
+            foreach ($log->top_paths ?? [] as $p) {
+                $path = (string) ($p['path'] ?? '');
+                if ($path === '') {
+                    continue;
                 }
+                $pHits = (int) ($p['hits'] ?? 0);
+                $pStatus = (int) ($p['status'] ?? $bucket);
+
+                $pathMap[$path] ??= ['path' => $path, 'hits' => 0, 'statusHits' => [], 'bots' => [], 'lastHitAt' => $log->bucket_hour, 'target' => null, 'hops' => 0];
+                $pathMap[$path]['hits'] += $pHits;
+                $pathMap[$path]['statusHits'][$pStatus] = ($pathMap[$path]['statusHits'][$pStatus] ?? 0) + $pHits;
+                $pathMap[$path]['bots'][$bot] = true;
+                if ($log->bucket_hour->greaterThan($pathMap[$path]['lastHitAt'])) {
+                    $pathMap[$path]['lastHitAt'] = $log->bucket_hour;
+                }
+                if (isset($p['redirectTarget']) && is_string($p['redirectTarget']) && $p['redirectTarget'] !== '') {
+                    $pathMap[$path]['target'] = $p['redirectTarget'];
+                }
+                $pathMap[$path]['hops'] = max($pathMap[$path]['hops'], (int) ($p['hops'] ?? 0));
             }
         }
 
-        $wastedHits = $status4xx + $status5xx;
-        $wastePercentage = $totalHits > 0 ? round(($wastedHits / $totalHits) * 100, 1) : 0.0;
-        $errorRate = $totalHits > 0 ? round((($status4xx + $status5xx) / $totalHits) * 100, 1) : 0.0;
+        $redirectHits = $status[300];
+        $errorHits = $status[400] + $status[500];
+        $wastedHits = $redirectHits + $errorHits + $parameterHits;
 
-        /** @var list<array{date: string, searchEngineHits: int, aiCrawlerHits: int, wastedHits: int, totalHits: int}> $dailyTimeseries */
         $dailyTimeseries = [];
         foreach ($dailyMap as $dt => $vals) {
-            $dailyTimeseries[] = [
-                'date' => $dt,
-                'searchEngineHits' => $vals['searchEngineHits'],
-                'aiCrawlerHits' => $vals['aiCrawlerHits'],
-                'wastedHits' => $vals['wastedHits'],
-                'totalHits' => $vals['totalHits'],
-            ];
+            $dailyTimeseries[] = ['date' => (string) $dt, ...$vals];
         }
 
-        /** @var list<array{botFamily: string, category: string, hits: int, percent: float, status2xx: int, status3xx: int, status4xx: int, status5xx: int, errorRate: float, bytesServed: int}> $botFamilyBreakdown */
         $botFamilyBreakdown = [];
         foreach ($botMap as $b) {
-            $bHits = $b['hits'];
-            $bErrors = $b['status4xx'] + $b['status5xx'];
+            $bErrors = $b['status'][400] + $b['status'][500];
             $botFamilyBreakdown[] = [
                 'botFamily' => $b['botFamily'],
                 'category' => $b['category'],
-                'hits' => $bHits,
-                'percent' => $totalHits > 0 ? round(($bHits / $totalHits) * 100, 1) : 0.0,
-                'status2xx' => $b['status2xx'],
-                'status3xx' => $b['status3xx'],
-                'status4xx' => $b['status4xx'],
-                'status5xx' => $b['status5xx'],
-                'errorRate' => $bHits > 0 ? round(($bErrors / $bHits) * 100, 1) : 0.0,
+                'hits' => $b['hits'],
+                'percent' => $totalHits > 0 ? round(($b['hits'] / $totalHits) * 100, 1) : 0.0,
+                'status2xx' => $b['status'][200],
+                'status3xx' => $b['status'][300],
+                'status4xx' => $b['status'][400],
+                'status5xx' => $b['status'][500],
+                'errorRate' => $b['hits'] > 0 ? round(($bErrors / $b['hits']) * 100, 1) : 0.0,
                 'bytesServed' => $b['bytesServed'],
             ];
         }
-        usort($botFamilyBreakdown, fn ($a, $b) => $b['hits'] <=> $a['hits']);
+        usort($botFamilyBreakdown, fn (array $a, array $b): int => $b['hits'] <=> $a['hits']);
 
-        // Flagged 404 paths for redirect remediation
-        /** @var list<array{path: string, hits: int, lastHitAt: string, bots: list<string>, recommendedTarget: string}> $flagged404s */
+        uasort($pathMap, fn (array $a, array $b): int => $b['hits'] <=> $a['hits']);
+
+        $topPaths = [];
+        $redirectChains = [];
+        $parameterPaths = [];
         $flagged404s = [];
-        foreach ($errorPathMap as $pathKey => $data) {
-            $flagged404s[] = [
-                'path' => $pathKey,
-                'hits' => $data['hits'],
-                'lastHitAt' => $data['lastHitAt']->toIso8601String(),
-                'bots' => array_keys($data['bots']),
-                'recommendedTarget' => $this->suggestRedirectTarget($pathKey),
-            ];
+        foreach ($pathMap as $path => $data) {
+            arsort($data['statusHits']);
+            $mainStatus = (int) array_key_first($data['statusHits']);
+            $bots = array_keys($data['bots']);
+            $parameterized = self::isParameterized($path);
+
+            if (count($topPaths) < 50) {
+                $topPaths[] = ['path' => $path, 'hits' => $data['hits'], 'status' => $mainStatus, 'bots' => $bots, 'parameterized' => $parameterized];
+            }
+
+            if ($parameterized && count($parameterPaths) < 50) {
+                $parameterPaths[] = ['path' => $path, 'hits' => $data['hits'], 'status' => $mainStatus, 'bots' => $bots];
+            }
+
+            if (self::statusClass($mainStatus) === 300) {
+                // A chain: more than one hop, or a redirect to a path that
+                // itself redirects.
+                $target = $data['target'];
+                $targetPath = $target !== null ? $this->pathOf($target) : null;
+                $targetRedirects = $targetPath !== null && $targetPath !== $path && isset($pathMap[$targetPath])
+                    && $this->redirectHits($pathMap[$targetPath]['statusHits']) > 0;
+                $hops = max($data['hops'], $targetRedirects ? 2 : 1);
+                if ($hops >= 2 && count($redirectChains) < 50) {
+                    $redirectChains[] = ['path' => $path, 'hits' => $data['hits'], 'hops' => $hops, 'target' => $target, 'bots' => $bots];
+                }
+            }
+
+            $goneHits = 0;
+            foreach (self::GONE_STATUSES as $code) {
+                $goneHits += $data['statusHits'][$code] ?? 0;
+            }
+            if ($goneHits > 0 && count($flagged404s) < 50) {
+                $flagged404s[] = [
+                    'path' => $path,
+                    'hits' => $goneHits,
+                    'lastHitAt' => $data['lastHitAt']->toIso8601String(),
+                    'bots' => $bots,
+                    'recommendedTarget' => $this->suggestRedirectTarget($path),
+                ];
+            }
         }
-        usort($flagged404s, fn ($a, $b) => $b['hits'] <=> $a['hits']);
+        usort($flagged404s, fn (array $a, array $b): int => $b['hits'] <=> $a['hits']);
 
         return [
             'kpis' => [
@@ -394,65 +478,57 @@ class BotTelemetryService
                 'searchEngineHits' => $searchEngineHits,
                 'aiCrawlerHits' => $aiCrawlerHits,
                 'wastedHits' => $wastedHits,
-                'wastePercentage' => $wastePercentage,
+                'wastePercentage' => $totalHits > 0 ? round(($wastedHits / $totalHits) * 100, 1) : 0.0,
+                'redirectHits' => $redirectHits,
+                'parameterHits' => $parameterHits,
+                'errorHits' => $errorHits,
                 'bytesServed' => $bytesServed,
-                'errorRate' => $errorRate,
+                'errorRate' => $totalHits > 0 ? round(($errorHits / $totalHits) * 100, 1) : 0.0,
             ],
             'dailyTimeseries' => $dailyTimeseries,
             'botFamilyBreakdown' => $botFamilyBreakdown,
             'statusBreakdown' => [
-                'status2xx' => $status2xx,
-                'status3xx' => $status3xx,
-                'status4xx' => $status4xx,
-                'status5xx' => $status5xx,
+                'status2xx' => $status[200],
+                'status3xx' => $status[300],
+                'status4xx' => $status[400],
+                'status5xx' => $status[500],
             ],
-            'flagged404s' => array_slice($flagged404s, 0, 50),
+            'topPaths' => $topPaths,
+            'redirectChains' => $redirectChains,
+            'parameterPaths' => $parameterPaths,
+            'flagged404s' => $flagged404s,
         ];
     }
 
     /**
-     * Merge existing and new error path lists.
-     *
-     * @param  array<string, mixed>|list<array<string, mixed>>|null  $existing
-     * @param  list<array{path: string, hits: int, status?: int|null}>  $incoming
-     * @return list<array{path: string, hits: int, status: int}>
+     * @param  array<int, int>  $statusHits
      */
-    private function mergeErrorPaths(mixed $existing, array $incoming): array
+    private function redirectHits(array $statusHits): int
     {
-        /** @var array<string, array{path: string, hits: int, status: int}> $map */
-        $map = [];
-
-        if (is_array($existing)) {
-            /** @var list<array<string, mixed>> $existingList */
-            $existingList = $existing;
-            foreach ($existingList as $item) {
-                $p = (string) ($item['path'] ?? '');
-                if ($p !== '') {
-                    $map[$p] = [
-                        'path' => $p,
-                        'hits' => (int) ($item['hits'] ?? 0),
-                        'status' => (int) ($item['status'] ?? 404),
-                    ];
-                }
+        $hits = 0;
+        foreach ($statusHits as $code => $count) {
+            if (self::statusClass((int) $code) === 300) {
+                $hits += $count;
             }
         }
 
-        foreach ($incoming as $item) {
-            $p = (string) $item['path'];
-            if ($p !== '') {
-                if (isset($map[$p])) {
-                    $map[$p]['hits'] += (int) $item['hits'];
-                } else {
-                    $map[$p] = [
-                        'path' => $p,
-                        'hits' => (int) $item['hits'],
-                        'status' => (int) ($item['status'] ?? 404),
-                    ];
-                }
-            }
+        return $hits;
+    }
+
+    /**
+     * The path (and query) of a redirect target, absolute or relative.
+     */
+    private function pathOf(string $target): ?string
+    {
+        $parts = parse_url($target);
+        if ($parts === false) {
+            return null;
         }
 
-        return array_values($map);
+        $path = $parts['path'] ?? '/';
+        $query = isset($parts['query']) && $parts['query'] !== '' ? '?'.$parts['query'] : '';
+
+        return $path.$query;
     }
 
     /**
@@ -460,7 +536,7 @@ class BotTelemetryService
      */
     private function suggestRedirectTarget(string $path): string
     {
-        $trimmed = trim($path, '/');
+        $trimmed = trim((string) parse_url($path, PHP_URL_PATH), '/');
         if ($trimmed === '') {
             return '/';
         }

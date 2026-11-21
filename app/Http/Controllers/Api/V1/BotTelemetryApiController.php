@@ -51,13 +51,23 @@ class BotTelemetryApiController extends Controller implements HasMiddleware
         $validated = $request->validate([
             'siteId' => ['required_without:site_id', 'nullable', 'string', 'max:120'],
             'site_id' => ['required_without:siteId', 'nullable', 'string', 'max:120'],
-            'entries' => ['required', 'array', 'min:1'],
+            // Resending a batch with the same ID replaces it instead of
+            // counting it twice. Without one, identical payloads are deduped.
+            'batchId' => ['nullable', 'string', 'max:120'],
+            'entries' => ['required', 'array', 'min:1', 'max:5000'],
             'entries.*.botFamily' => ['required', 'string', 'max:64'],
             'entries.*.statusBucket' => ['required', 'integer'],
             'entries.*.hitCount' => ['required', 'integer', 'min:0'],
             'entries.*.bytesServed' => ['nullable', 'integer', 'min:0'],
+            'entries.*.parameterHitCount' => ['nullable', 'integer', 'min:0'],
             'entries.*.bucketHour' => ['required', 'date'],
-            'entries.*.topErrorPaths' => ['nullable', 'array'],
+            'entries.*.topPaths' => ['nullable', 'array', 'max:500'],
+            'entries.*.topPaths.*.path' => ['required_with:entries.*.topPaths', 'string', 'max:2048'],
+            'entries.*.topPaths.*.hits' => ['required_with:entries.*.topPaths', 'integer', 'min:1'],
+            'entries.*.topPaths.*.status' => ['nullable', 'integer', 'between:100,599'],
+            'entries.*.topPaths.*.redirectTarget' => ['nullable', 'string', 'max:2048'],
+            'entries.*.topPaths.*.hops' => ['nullable', 'integer', 'min:1', 'max:50'],
+            'entries.*.topErrorPaths' => ['nullable', 'array', 'max:500'],
             'entries.*.topErrorPaths.*.path' => ['required_with:entries.*.topErrorPaths', 'string', 'max:2048'],
             'entries.*.topErrorPaths.*.hits' => ['required_with:entries.*.topErrorPaths', 'integer', 'min:1'],
             'entries.*.topErrorPaths.*.status' => ['nullable', 'integer'],
@@ -82,13 +92,15 @@ class BotTelemetryApiController extends Controller implements HasMiddleware
             $project->workspace->ensureFeature(PlanFeature::BotTelemetry);
         }
 
-        /** @var list<array{botFamily: string, statusBucket: int, hitCount: int, bytesServed?: int|null, bucketHour: string, topErrorPaths?: list<array{path: string, hits: int, status?: int|null}>|null}> $entries */
+        /** @var list<array{botFamily: string, statusBucket: int, hitCount: int, bytesServed?: int|null, parameterHitCount?: int|null, bucketHour: string, topPaths?: list<array{path: string, hits: int, status?: int|null, redirectTarget?: string|null, hops?: int|null}>|null, topErrorPaths?: list<array{path: string, hits: int, status?: int|null}>|null}> $entries */
         $entries = $validated['entries'];
 
-        $result = $this->telemetry->ingest($siteId, $entries);
+        $batchId = isset($validated['batchId']) ? (string) $validated['batchId'] : null;
+        $result = $this->telemetry->ingest($siteId, $entries, $batchId);
 
         return response()->json([
             'status' => 'ingested',
+            'duplicate' => $result['duplicate'],
             'ingestedCount' => $result['ingestedCount'],
             'totalHits' => $result['totalHits'],
             'projectId' => $result['project_id'],

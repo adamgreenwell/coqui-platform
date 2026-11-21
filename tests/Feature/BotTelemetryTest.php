@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace Tests\Feature;
 
 use App\Domains\Integrations\Models\BotCrawlLog;
+use App\Domains\Integrations\Services\BotCrawlLogPartitions;
 use App\Domains\Projects\Models\Project;
+use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\Workspace;
 use App\Features\RunnrIntegration;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Testing\TestResponse;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
@@ -146,57 +149,215 @@ class BotTelemetryTest extends TestCase
         ]);
     }
 
-    public function test_ingests_bot_crawler_logs_merging_existing_bucket_hour(): void
+    /**
+     * @param  list<array<string, mixed>>  $entries
+     */
+    private function sendBatch(array $entries, ?string $batchId = null): TestResponse
     {
         config()->set('services.runnr.telemetry_token', 'secret-telemetry-token');
-        $hour = '2026-11-19T05:00:00Z';
 
-        // First ingest
-        $this->withToken('secret-telemetry-token')
-            ->postJson('/api/v1/telemetry/bot-logs', [
+        return $this->withToken('secret-telemetry-token')
+            ->postJson('/api/v1/telemetry/bot-logs', array_filter([
                 'siteId' => 'site_telemetry_123',
-                'entries' => [
-                    [
-                        'botFamily' => 'googlebot',
-                        'statusBucket' => 400,
-                        'hitCount' => 10,
-                        'bytesServed' => 5000,
-                        'bucketHour' => $hour,
-                        'topErrorPaths' => [
-                            ['path' => '/dead-link', 'hits' => 10, 'status' => 404],
-                        ],
-                    ],
-                ],
-            ])->assertStatus(202);
+                'batchId' => $batchId,
+                'entries' => $entries,
+            ], fn ($v): bool => $v !== null));
+    }
 
-        // Second ingest for same hour should accumulate
-        $this->withToken('secret-telemetry-token')
-            ->postJson('/api/v1/telemetry/bot-logs', [
-                'siteId' => 'site_telemetry_123',
-                'entries' => [
-                    [
-                        'botFamily' => 'googlebot',
-                        'statusBucket' => 400,
-                        'hitCount' => 15,
-                        'bytesServed' => 7500,
-                        'bucketHour' => $hour,
-                        'topErrorPaths' => [
-                            ['path' => '/dead-link', 'hits' => 15, 'status' => 404],
-                        ],
-                    ],
-                ],
-            ])->assertStatus(202);
+    /**
+     * @return array<string, mixed>
+     */
+    private function googlebot404s(int $hits, string $hour = '2026-11-19T05:00:00Z'): array
+    {
+        return [
+            'botFamily' => 'googlebot',
+            'statusBucket' => 404,
+            'hitCount' => $hits,
+            'bytesServed' => $hits * 500,
+            'bucketHour' => $hour,
+            'topErrorPaths' => [['path' => '/dead-link', 'hits' => $hits, 'status' => 404]],
+        ];
+    }
 
-        /** @var BotCrawlLog $log */
-        $log = BotCrawlLog::query()->where('project_id', $this->project->id)
+    private function googlebot404Total(): int
+    {
+        return (int) BotCrawlLog::query()
+            ->where('project_id', $this->project->id)
             ->where('bot_family', 'googlebot')
             ->where('status_bucket', 400)
-            ->firstOrFail();
+            ->sum('hit_count');
+    }
 
-        $this->assertSame(25, $log->hit_count);
-        $this->assertSame(12500, $log->bytes_served);
-        $this->assertIsArray($log->top_error_paths);
-        $this->assertSame(25, $log->top_error_paths[0]['hits']);
+    public function test_resending_the_same_batch_leaves_counts_unchanged(): void
+    {
+        $this->sendBatch([$this->googlebot404s(10)], 'batch-0500-a')->assertStatus(202)->assertJsonPath('duplicate', false);
+        $this->sendBatch([$this->googlebot404s(10)], 'batch-0500-a')->assertStatus(202)->assertJsonPath('duplicate', true);
+        $this->sendBatch([$this->googlebot404s(10)], 'batch-0500-a')->assertStatus(202);
+
+        $this->assertSame(10, $this->googlebot404Total());
+        $this->assertSame(5000, (int) BotCrawlLog::query()->where('project_id', $this->project->id)->sum('bytes_served'));
+        // The 404 alert fires for the first copy only.
+        $this->assertSame(1, ProjectActivity::query()->where('event_type', 'telemetry.bot_404_detected')->count());
+    }
+
+    public function test_a_resent_batch_replaces_what_it_sent_before(): void
+    {
+        $this->sendBatch([
+            $this->googlebot404s(10),
+            ['botFamily' => 'bingbot', 'statusBucket' => 200, 'hitCount' => 40, 'bucketHour' => '2026-11-19T05:00:00Z'],
+        ], 'batch-0500-a')->assertStatus(202);
+
+        // Corrected copy without the bingbot entry.
+        $this->sendBatch([$this->googlebot404s(12)], 'batch-0500-a')->assertStatus(202);
+
+        $this->assertSame(12, $this->googlebot404Total());
+        $this->assertSame(0, BotCrawlLog::query()->where('bot_family', 'bingbot')->count());
+    }
+
+    public function test_different_batches_for_the_same_hour_add_up(): void
+    {
+        $this->sendBatch([$this->googlebot404s(10)], 'batch-0500-a')->assertStatus(202);
+        $this->sendBatch([$this->googlebot404s(15)], 'batch-0500-b')->assertStatus(202);
+
+        $this->assertSame(25, $this->googlebot404Total());
+
+        Sanctum::actingAs($this->user, ['projects:read']);
+        Carbon::setTestNow('2026-11-20 12:00:00');
+        $this->getJson("/api/v1/projects/{$this->project->uuid}/telemetry/bot-logs?days=7")
+            ->assertOk()
+            ->assertJsonPath('flagged404s.0.path', '/dead-link')
+            ->assertJsonPath('flagged404s.0.hits', 25);
+        Carbon::setTestNow();
+    }
+
+    public function test_identical_batches_without_an_id_are_counted_once(): void
+    {
+        $this->sendBatch([$this->googlebot404s(10)])->assertStatus(202)->assertJsonPath('duplicate', false);
+        $this->sendBatch([$this->googlebot404s(10)])->assertStatus(202)->assertJsonPath('duplicate', true);
+        $this->assertSame(10, $this->googlebot404Total());
+
+        // A different payload is a different batch.
+        $this->sendBatch([$this->googlebot404s(4)])->assertStatus(202)->assertJsonPath('duplicate', false);
+        $this->assertSame(14, $this->googlebot404Total());
+    }
+
+    public function test_the_404_flag_ignores_other_4xx_statuses(): void
+    {
+        $hour = '2026-11-19T06:00:00Z';
+        $this->sendBatch([
+            [
+                'botFamily' => 'googlebot',
+                'statusBucket' => 403,
+                'hitCount' => 30,
+                'bucketHour' => $hour,
+                'topPaths' => [['path' => '/members-only', 'hits' => 30]],
+            ],
+            [
+                'botFamily' => 'googlebot',
+                'statusBucket' => 400,
+                'hitCount' => 9,
+                'bucketHour' => $hour,
+                'topPaths' => [
+                    ['path' => '/old-page', 'hits' => 6, 'status' => 410],
+                    ['path' => '/bad-request', 'hits' => 3, 'status' => 400],
+                ],
+            ],
+        ])->assertStatus(202);
+
+        $activity = ProjectActivity::query()->where('event_type', 'telemetry.bot_404_detected')->sole();
+        $this->assertSame('/old-page', $activity->properties['path'] ?? null);
+
+        Sanctum::actingAs($this->user, ['projects:read']);
+        Carbon::setTestNow('2026-11-20 12:00:00');
+        $response = $this->getJson("/api/v1/projects/{$this->project->uuid}/telemetry/bot-logs?days=7")->assertOk();
+        Carbon::setTestNow();
+
+        $this->assertSame(['/old-page'], array_column($response->json('flagged404s'), 'path'));
+        $this->assertSame(39, $response->json('kpis.errorHits'));
+    }
+
+    public function test_crawl_budget_waste_includes_redirects_and_parameter_urls(): void
+    {
+        $hour = '2026-11-19T07:00:00Z';
+        $this->sendBatch([
+            [
+                'botFamily' => 'googlebot',
+                'statusBucket' => 200,
+                'hitCount' => 1000,
+                'bucketHour' => $hour,
+                'topPaths' => [
+                    ['path' => '/', 'hits' => 300],
+                    ['path' => '/shop?sort=price&page=2', 'hits' => 120],
+                    ['path' => '/shop?color=red', 'hits' => 80],
+                ],
+            ],
+            [
+                // Runnr's own count of every parameterized 2xx hit.
+                'botFamily' => 'bingbot',
+                'statusBucket' => 200,
+                'hitCount' => 100,
+                'parameterHitCount' => 30,
+                'bucketHour' => $hour,
+            ],
+            [
+                'botFamily' => 'googlebot',
+                'statusBucket' => 301,
+                'hitCount' => 150,
+                'bucketHour' => $hour,
+                'topPaths' => [
+                    ['path' => '/old-shop', 'hits' => 90, 'redirectTarget' => 'https://telemetry-site.com/shop-v2'],
+                    ['path' => '/shop-v2', 'hits' => 40, 'redirectTarget' => '/shop'],
+                    ['path' => '/legacy', 'hits' => 20, 'redirectTarget' => '/new', 'hops' => 3],
+                ],
+            ],
+            [
+                'botFamily' => 'googlebot',
+                'statusBucket' => 500,
+                'hitCount' => 20,
+                'bucketHour' => $hour,
+            ],
+        ])->assertStatus(202);
+
+        Sanctum::actingAs($this->user, ['projects:read']);
+        Carbon::setTestNow('2026-11-20 12:00:00');
+        $response = $this->getJson("/api/v1/projects/{$this->project->uuid}/telemetry/bot-logs?days=7")->assertOk();
+        Carbon::setTestNow();
+
+        // 150 redirects + 20 errors + 200 + 30 parameterized 2xx hits.
+        $response->assertJsonPath('kpis.totalHits', 1270)
+            ->assertJsonPath('kpis.redirectHits', 150)
+            ->assertJsonPath('kpis.parameterHits', 230)
+            ->assertJsonPath('kpis.errorHits', 20)
+            ->assertJsonPath('kpis.wastedHits', 400)
+            ->assertJsonPath('topPaths.0.path', '/')
+            ->assertJsonPath('topPaths.0.status', 200);
+
+        $this->assertSame(
+            ['/shop?sort=price&page=2', '/shop?color=red'],
+            array_column($response->json('parameterPaths'), 'path'),
+        );
+
+        // /old-shop → /shop-v2 → /shop, and /legacy reported with 3 hops.
+        $chains = collect($response->json('redirectChains'))->keyBy('path');
+        $this->assertSame(['/old-shop', '/legacy'], $chains->keys()->all());
+        $this->assertSame(2, $chains['/old-shop']['hops']);
+        $this->assertSame(3, $chains['/legacy']['hops']);
+
+        $daily = collect($response->json('dailyTimeseries'))->firstWhere('date', '2026-11-19');
+        $this->assertSame(400, $daily['wastedHits'] ?? null);
+    }
+
+    public function test_partitions_command_is_a_no_op_off_postgres(): void
+    {
+        if (BotCrawlLogPartitions::supported()) {
+            $this->artisan('telemetry:ensure-partitions')->assertSuccessful()->expectsOutputToContain('bot telemetry partition(s)');
+
+            return;
+        }
+
+        $this->artisan('telemetry:ensure-partitions')
+            ->assertSuccessful()
+            ->expectsOutputToContain('need Postgres');
     }
 
     public function test_telemetry_dashboard_aggregates_kpis_and_classifies_bots(): void
@@ -239,7 +400,7 @@ class BotTelemetryTest extends TestCase
             'hit_count' => 50,
             'bytes_served' => 20000,
             'bucket_hour' => $hour,
-            'top_error_paths' => [
+            'top_paths' => [
                 ['path' => '/obsolete-doc', 'hits' => 50, 'status' => 404],
             ],
         ]);

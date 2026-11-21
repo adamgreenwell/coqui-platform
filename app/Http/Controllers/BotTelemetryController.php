@@ -51,6 +51,9 @@ class BotTelemetryController extends Controller
             'dailyTimeseries' => $dashboard['dailyTimeseries'],
             'botFamilyBreakdown' => $dashboard['botFamilyBreakdown'],
             'statusBreakdown' => $dashboard['statusBreakdown'],
+            'topPaths' => $dashboard['topPaths'],
+            'redirectChains' => $dashboard['redirectChains'],
+            'parameterPaths' => $dashboard['parameterPaths'],
             'flagged404s' => $dashboard['flagged404s'],
             'canEdit' => $user->can('update', $project),
         ]);

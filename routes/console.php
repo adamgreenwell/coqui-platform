@@ -30,6 +30,11 @@ Schedule::command('coqui:verify-backlinks')
     ->weeklyOn(1, '03:30')
     ->withoutOverlapping();
 
+// Creates upcoming monthly partitions of the bot telemetry table (Postgres).
+Schedule::command('telemetry:ensure-partitions')
+    ->dailyAt('01:15')
+    ->withoutOverlapping();
+
 // Nightly synchronization of Google Search Console and Bing Webmaster performance metrics.
 Schedule::command('search-console:sync')
     ->dailyAt('04:00')
