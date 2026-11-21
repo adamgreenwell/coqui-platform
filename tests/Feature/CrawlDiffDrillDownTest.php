@@ -322,6 +322,13 @@ class CrawlDiffDrillDownTest extends TestCase
             }
         }
 
+        // Production tables have planner statistics; rows inserted inside
+        // the test transaction don't, so Postgres could plan for a near-empty
+        // table and take nearly a minute. ANALYZE counts this transaction's rows.
+        if (DB::getDriverName() === 'pgsql') {
+            DB::statement('ANALYZE crawl_urls, crawl_issues');
+        }
+
         $started = microtime(true);
         $diff = app(CrawlDiffService::class)->compare($this->baseline, $this->target);
         $elapsed = microtime(true) - $started;
