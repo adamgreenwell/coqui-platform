@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -51,6 +52,42 @@ return new class extends Migration
     public function down(): void
     {
         Schema::dropIfExists('bing_crawl_stats');
+
+        // Fold per-device rows back into one row per query and date, so the
+        // old unique key can be restored.
+        $groups = DB::table('search_performance_queries')
+            ->selectRaw('project_id, provider, query, date, SUM(clicks) as clicks, SUM(impressions) as impressions, SUM(position * impressions) as weighted_position, AVG(position) as avg_position, MIN(created_at) as created_at, MAX(updated_at) as updated_at')
+            ->groupBy('project_id', 'provider', 'query', 'date')
+            ->havingRaw('COUNT(*) > 1')
+            ->get();
+
+        foreach ($groups as $group) {
+            $impressions = (int) $group->impressions;
+            $clicks = (int) $group->clicks;
+
+            DB::transaction(function () use ($group, $impressions, $clicks): void {
+                DB::table('search_performance_queries')
+                    ->where('project_id', $group->project_id)
+                    ->where('provider', $group->provider)
+                    ->where('query', $group->query)
+                    ->where('date', $group->date)
+                    ->delete();
+
+                DB::table('search_performance_queries')->insert([
+                    'project_id' => $group->project_id,
+                    'provider' => $group->provider,
+                    'query' => $group->query,
+                    'device' => 'all',
+                    'date' => $group->date,
+                    'clicks' => $clicks,
+                    'impressions' => $impressions,
+                    'ctr' => $impressions > 0 ? round($clicks / $impressions, 4) : 0,
+                    'position' => $impressions > 0 ? round((float) $group->weighted_position / $impressions, 2) : round((float) $group->avg_position, 2),
+                    'created_at' => $group->created_at,
+                    'updated_at' => $group->updated_at,
+                ]);
+            });
+        }
 
         Schema::table('search_performance_queries', function (Blueprint $table): void {
             $table->dropUnique('search_perf_queries_unique');

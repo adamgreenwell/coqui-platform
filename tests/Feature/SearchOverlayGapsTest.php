@@ -15,6 +15,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Inertia\Testing\AssertableInertia as Assert;
 use Tests\TestCase;
@@ -304,5 +305,59 @@ class SearchOverlayGapsTest extends TestCase
         $this->actingAs($this->user)
             ->get(route('workspaces.projects.keywords.index', [$this->workspace, $this->project]))
             ->assertInertia(fn (Assert $page) => $page->where('keywords.0.gsc_performance.clicks', 7));
+    }
+
+    public function test_a_capped_device_fetch_keeps_the_older_rows_as_a_fallback(): void
+    {
+        $integration = $this->gsc([
+            'access_token' => 'tok',
+            'refresh_token' => 'ref',
+            'expires_at' => Carbon::now()->addHour()->toIso8601String(),
+        ]);
+        $date = Carbon::now()->subDays(10)->toDateString();
+        SearchPerformanceQuery::query()->create([
+            'project_id' => $this->project->id, 'provider' => 'gsc', 'query' => 'long tail query', 'device' => 'all',
+            'date' => $date, 'clicks' => 5, 'impressions' => 50, 'ctr' => 0.1, 'position' => 8,
+        ]);
+
+        // Every page comes back full, so the fetch stops at the row cap.
+        Http::fake([
+            self::GSC_QUERY => fn (Request $request) => Http::response([
+                'rows' => $request['dimensions'] === ['query', 'date', 'device']
+                    ? array_map(fn (int $i): array => [
+                        'keys' => ['query '.($request['startRow'] + $i), $date, 'DESKTOP'],
+                        'clicks' => 1, 'impressions' => 10, 'ctr' => 0.1, 'position' => 5.0,
+                    ], range(0, $request['rowLimit'] - 1))
+                    : [],
+            ], 200),
+        ]);
+
+        app(SearchPerformanceSyncService::class)->syncGoogleSearchConsole($integration);
+
+        $this->assertSame(25000, SearchPerformanceQuery::query()->where('device', 'desktop')->count());
+        $this->assertDatabaseHas('search_performance_queries', ['query' => 'long tail query', 'device' => 'all', 'clicks' => 5]);
+    }
+
+    public function test_rolling_back_folds_device_rows_into_one_row_per_query_and_date(): void
+    {
+        $date = Carbon::now()->subDays(10)->toDateString();
+        foreach ([['desktop', 30, 300, 2.0], ['mobile', 10, 100, 6.0]] as [$device, $clicks, $impressions, $position]) {
+            SearchPerformanceQuery::query()->create([
+                'project_id' => $this->project->id, 'provider' => 'gsc', 'query' => 'rank tracker', 'device' => $device,
+                'date' => $date, 'clicks' => $clicks, 'impressions' => $impressions, 'ctr' => 0.1, 'position' => $position,
+            ]);
+        }
+
+        $migration = require database_path('migrations/0001_01_25_000000_add_integration_reasons_gsc_devices_and_bing_crawl_stats.php');
+        $migration->down();
+
+        $rows = DB::table('search_performance_queries')->where('query', 'rank tracker')->get();
+        $this->assertCount(1, $rows);
+        $this->assertSame(40, (int) $rows[0]->clicks);
+        $this->assertSame(400, (int) $rows[0]->impressions);
+        // Impression-weighted: (2 * 300 + 6 * 100) / 400.
+        $this->assertEqualsWithDelta(3.0, (float) $rows[0]->position, 0.001);
+
+        $migration->up();
     }
 }

@@ -59,6 +59,10 @@ class SearchPerformanceSyncService
                 $startRow += $pageSize;
             } while (count($pageRows) === $pageSize && count($rows) < $maxRows);
 
+            // A short last page means every row was fetched; at the row cap
+            // there may be more.
+            $complete = count($pageRows) < $pageSize;
+
             $recordsToUpsert = [];
             $now = Carbon::now();
 
@@ -110,15 +114,19 @@ class SearchPerformanceSyncService
 
             $recordsToUpsert = array_values($deduped);
 
-            DB::transaction(function () use ($project, $startDate, $endDate, $recordsToUpsert): void {
-                // Rows synced before the device split cover all devices; drop
-                // them for the dates re-synced per device so nothing counts twice.
-                SearchPerformanceQuery::query()
-                    ->where('project_id', $project->id)
-                    ->where('provider', 'gsc')
-                    ->where('device', 'all')
-                    ->whereBetween('date', [$startDate->format('Y-m-d'), $endDate->format('Y-m-d')])
-                    ->delete();
+            DB::transaction(function () use ($project, $startDate, $endDate, $recordsToUpsert, $complete): void {
+                // Rows synced before the device split cover all devices. Once
+                // the window has been fetched in full per device they're
+                // replaced, so drop them; after a capped fetch keep them as the
+                // fallback for queries that didn't come back.
+                if ($complete) {
+                    SearchPerformanceQuery::query()
+                        ->where('project_id', $project->id)
+                        ->where('provider', 'gsc')
+                        ->where('device', 'all')
+                        ->whereBetween('date', [$startDate->format('Y-m-d'), $endDate->format('Y-m-d')])
+                        ->delete();
+                }
 
                 foreach (array_chunk($recordsToUpsert, 500) as $chunk) {
                     SearchPerformanceQuery::query()->upsert(
