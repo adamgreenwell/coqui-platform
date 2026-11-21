@@ -425,7 +425,8 @@ class TrafficAttributionTest extends TestCase
         $crawlRun = CrawlRun::query()->create([
             'project_id' => $this->project->id,
             'workspace_id' => $this->workspace->id,
-            'external_crawl_id' => 'crawl_perf_123',
+            // external_crawl_id is a uuid column; Postgres rejects anything else.
+            'external_crawl_id' => '01937b2a-6c1e-7d3f-9a2b-4c5d6e7f8a9b',
             'status' => 'completed',
             'source' => 'desktop_sync',
             'seed' => 'https://trafficsite.com/',
@@ -437,7 +438,7 @@ class TrafficAttributionTest extends TestCase
 
         CrawlUrl::query()->create([
             'crawl_run_id' => $crawlRun->id,
-            'client_row_id' => 'row_1',
+            'client_row_id' => 1,
             'url' => 'https://trafficsite.com/broken-page',
             'url_hash' => hash('sha256', 'https://trafficsite.com/broken-page'),
             'status' => 404,
@@ -446,7 +447,7 @@ class TrafficAttributionTest extends TestCase
 
         CrawlUrl::query()->create([
             'crawl_run_id' => $crawlRun->id,
-            'client_row_id' => 'row_2',
+            'client_row_id' => 2,
             'url' => 'https://trafficsite.com/docs',
             'url_hash' => hash('sha256', 'https://trafficsite.com/docs'),
             'status' => 200,
