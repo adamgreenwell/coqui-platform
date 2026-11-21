@@ -39,7 +39,9 @@ interface IntersectItem {
   backlinks: number;
   spam_score: number;
   first_seen?: string | null;
-  intersections_count: number;
+  // Null (with no linked competitors) when the provider didn't say which
+  // competitors this domain links to.
+  intersections_count: number | null;
   linked_competitors: string[];
 }
 
@@ -47,11 +49,13 @@ interface BrokenReclaimItem {
   competitor_domain: string;
   page_url: string;
   path: string;
-  status_code: number;
+  status_code: number | null;
   backlinks: number;
   referring_domains: number;
   dofollow: number;
-  dofollow_ratio: number;
+  dofollow_ratio: number | null;
+  // Counts come from the top-ranked broken backlinks only: they're minimums.
+  sampled?: boolean;
   pitch_idea: string;
 }
 
@@ -561,14 +565,18 @@ export default function BacklinkIntersect({
                           {/* Linked Competitors */}
                           <td className="py-3 px-3">
                             <div className="flex items-center gap-1 flex-wrap">
-                              {item.linked_competitors.map((comp) => (
-                                <span
-                                  key={comp}
-                                  className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono bg-sky-500/10 text-sky-300 border border-sky-500/20"
-                                >
-                                  {comp}
-                                </span>
-                              ))}
+                              {item.intersections_count === null ? (
+                                <span className="text-[11px] text-slate-500">Unknown</span>
+                              ) : (
+                                item.linked_competitors.map((comp) => (
+                                  <span
+                                    key={comp}
+                                    className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono bg-sky-500/10 text-sky-300 border border-sky-500/20"
+                                  >
+                                    {comp}
+                                  </span>
+                                ))
+                              )}
                             </div>
                           </td>
 
@@ -672,23 +680,23 @@ export default function BacklinkIntersect({
                           {/* Status */}
                           <td className="py-3 px-3 text-center">
                             <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                              {item.status_code}
+                              {item.status_code ?? 'Broken'}
                             </span>
                           </td>
 
                           {/* Backlinks */}
                           <td className="py-3 px-3 text-right font-mono font-bold text-purple-400">
-                            {item.backlinks.toLocaleString()}
+                            {item.backlinks.toLocaleString()}{item.sampled ? '+' : ''}
                           </td>
 
                           {/* Referring Domains */}
                           <td className="py-3 px-3 text-right font-mono text-white">
-                            {item.referring_domains.toLocaleString()}
+                            {item.referring_domains.toLocaleString()}{item.sampled ? '+' : ''}
                           </td>
 
                           {/* Dofollow % */}
                           <td className="py-3 px-3 text-right font-mono text-emerald-400">
-                            {item.dofollow_ratio}%
+                            {item.dofollow_ratio === null ? 'Unknown' : `${item.dofollow_ratio}%`}
                           </td>
 
                           {/* Pitch Hook */}

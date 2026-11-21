@@ -34,7 +34,9 @@ class ProjectApiController extends Controller
             ->with(['workspace:id,uuid,name,slug'])
             ->with(['crawlRuns' => function ($cQuery): void {
                 $cQuery->latest('id')->limit(1);
-            }]);
+            }])
+            // A workspace-scoped token only lists that workspace's projects.
+            ->when($user->tokenWorkspaceId() !== null, fn ($q) => $q->where('workspace_id', $user->tokenWorkspaceId()));
 
         if ($workspaceId !== null && $workspaceId !== '') {
             // Workspaces are filtered by public UUID; anything else matches nothing.
@@ -116,6 +118,10 @@ class ProjectApiController extends Controller
         if (is_string($workspaceId) && $workspaceId !== '') {
             /** @var Workspace $workspace */
             $workspace = Workspace::query()->where('uuid', $workspaceId)->firstOrFail();
+        } elseif ($user->tokenWorkspaceId() !== null) {
+            // A workspace-scoped token creates projects in its workspace.
+            /** @var Workspace|null $workspace */
+            $workspace = Workspace::query()->find($user->tokenWorkspaceId());
         } else {
             /** @var Workspace|null $workspace */
             $workspace = Workspace::query()

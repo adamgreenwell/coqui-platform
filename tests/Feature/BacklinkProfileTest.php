@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Domains\Backlinks\Services\BacklinkProfileService;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Crawls\Models\CrawlUrl;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
+use App\Domains\Serp\DataForSeo\DataForSeoCacheRepository;
+use App\Domains\Serp\DataForSeo\DataForSeoClient;
+use App\Domains\Serp\SpendRefusedException;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -435,5 +439,115 @@ class BacklinkProfileTest extends TestCase
             'project_id' => $this->project->id,
             'event_type' => 'backlinks.refreshed',
         ]);
+    }
+
+    private function profileUrl(): string
+    {
+        return "/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks";
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function emptyItems(): array
+    {
+        return ['status_code' => 20000, 'tasks' => [['result' => [['items' => []]]]]];
+    }
+
+    public function test_an_unknown_follow_split_is_shown_as_unknown_not_estimated(): void
+    {
+        Http::fake([
+            'https://sandbox.dataforseo.com/v3/backlinks/summary/live' => Http::response([
+                'status_code' => 20000,
+                'tasks' => [['result' => [['rank' => 400, 'backlinks' => 1000, 'referring_domains' => 80]]]],
+            ], 200),
+            'https://sandbox.dataforseo.com/v3/backlinks/referring_domains/live' => Http::response([
+                'status_code' => 20000,
+                'tasks' => [['result' => [['items' => [
+                    ['domain' => 'no-split.com', 'rank' => 300, 'backlinks' => 12],
+                    ['domain' => 'split.com', 'rank' => 200, 'backlinks' => 4, 'dofollow' => 3, 'nofollow' => 1],
+                ]]]]],
+            ], 200),
+            'https://sandbox.dataforseo.com/v3/backlinks/anchors/live' => Http::response($this->emptyItems(), 200),
+            'https://sandbox.dataforseo.com/v3/backlinks/pages/live' => Http::response($this->emptyItems(), 200),
+            'https://sandbox.dataforseo.com/v3/backlinks/history/live' => Http::response($this->emptyItems(), 200),
+        ]);
+
+        $this->actingAs($this->user)->get($this->profileUrl())
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('summary.backlinks', 1000)
+                ->where('summary.dofollow', null)
+                ->where('summary.nofollow', null)
+                ->where('summary.dofollow_ratio', null)
+                ->where('referringDomains', fn ($rows): bool => collect($rows)->firstWhere('domain', 'no-split.com')['dofollow_ratio'] === null
+                    && collect($rows)->firstWhere('domain', 'split.com')['dofollow_ratio'] == 75));
+    }
+
+    public function test_a_failed_fetch_is_not_retried_on_every_page_load(): void
+    {
+        Http::fake([
+            'https://sandbox.dataforseo.com/v3/backlinks/*' => Http::response(['status_code' => 50000, 'status_message' => 'Internal error'], 500),
+        ]);
+
+        $this->actingAs($this->user)->get($this->profileUrl())
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->where('summary.unavailable', true)
+                ->where('summary.backlinks', null));
+        $firstLoad = count(Http::recorded());
+        $this->assertGreaterThan(0, $firstLoad);
+
+        // Reloading within the failure window sends nothing new (and bills nothing).
+        $this->actingAs($this->user)->get($this->profileUrl())
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page->where('summary.unavailable', true));
+        $this->assertCount($firstLoad, Http::recorded());
+
+        // An explicit refresh retries and reports the failure instead of logging success.
+        $this->actingAs($this->user)
+            ->post($this->profileUrl().'/refresh')
+            ->assertRedirect()
+            ->assertSessionHas('error');
+        $this->assertGreaterThan($firstLoad, count(Http::recorded()));
+        $this->assertDatabaseMissing('project_activities', [
+            'project_id' => $this->project->id,
+            'event_type' => 'backlinks.refreshed',
+        ]);
+    }
+
+    public function test_a_spend_refusal_is_not_remembered_as_a_failure_for_other_workspaces(): void
+    {
+        $refusing = \Mockery::mock(DataForSeoClient::class)->shouldIgnoreMissing();
+        $refusing->shouldReceive('backlinksSummary')->andThrow(new SpendRefusedException('Monthly allowance used up.'));
+        $service = new BacklinkProfileService($refusing, app(DataForSeoCacheRepository::class));
+        $this->assertTrue($service->getBacklinkProfile($this->project)['summary']['unavailable']);
+
+        // Another workspace looking at the same domain still fetches it.
+        Http::fake([
+            'https://sandbox.dataforseo.com/v3/backlinks/summary/live' => Http::response([
+                'status_code' => 20000,
+                'tasks' => [['result' => [['rank' => 300, 'backlinks' => 50, 'referring_domains' => 9]]]],
+            ], 200),
+            'https://sandbox.dataforseo.com/v3/backlinks/*' => Http::response($this->emptyItems(), 200),
+        ]);
+        $otherWorkspace = Workspace::query()->create([
+            'plan_tier' => 'pro',
+            'name' => 'Other Agency',
+            'slug' => 'other-agency',
+            'owner_id' => $this->user->id,
+            'monthly_dfs_budget_usd' => 100.00,
+        ]);
+        $otherProject = Project::query()->create([
+            'workspace_id' => $otherWorkspace->id,
+            'name' => 'Same Site',
+            'domain' => 'coquiseo.com',
+            'canonical_url' => 'https://coquiseo.com/',
+            'location_code' => 2840,
+            'language_code' => 'en',
+        ]);
+
+        $profile = app(BacklinkProfileService::class)->getBacklinkProfile($otherProject);
+        $this->assertSame(50, $profile['summary']['backlinks']);
     }
 }

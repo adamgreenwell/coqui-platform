@@ -14,7 +14,7 @@ Production runs on a self-hosted **Coolify** server using `docker-compose.coolif
 | `postgres` | PostgreSQL 17, persistent `postgres_data` volume | Internal `:5432` |
 | `redis` | Redis 7 with AOF, used for queues, cache, sessions and Horizon | Internal `:6379` |
 
-`coqui-worker` (the Rust crawl sidecar) is not part of the production stack until its image exists (#58). Cloud crawls and backlink link-rot checks that need it will not run.
+`coqui-worker` (the Rust crawl sidecar) isn't part of the production stack yet. Its image, `ghcr.io/adamgreenwell/coqui-worker`, is built and published by `.github/workflows/coqui-worker.yml`; see [`docker/coqui-worker/README.md`](../../docker/coqui-worker/README.md). Without it, "Run cloud crawl" says cloud crawling isn't set up, scheduled crawls skip, and backlink checks fetch pages from Laravel directly.
 
 ### Start-up order
 
@@ -64,13 +64,13 @@ Production runs on a self-hosted **Coolify** server using `docker-compose.coolif
 
 | Variables | Feature |
 | --- | --- |
-| `DATAFORSEO_LOGIN`, `DATAFORSEO_PASSWORD`, `DATAFORSEO_WEBHOOK_SECRET` | Keyword, SERP and backlink data |
+| `DATAFORSEO_LOGIN`, `DATAFORSEO_PASSWORD` | Keyword, SERP and backlink data |
 | `SERANKING_API_KEY` | SE Ranking keyword/domain data |
 | `STRIPE_KEY`, `STRIPE_SECRET`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_PERSONAL`, `STRIPE_PRICE_PRO`, `STRIPE_PRICE_AGENCY`, `STRIPE_PRICE_RUNNR_ADDON` | Billing. Checkout and the portal show a "not set up" error until the secret key and price IDs are set, and webhooks return 503 until the webhook secret is set. See [Stripe Billing Setup](Stripe-Billing-Setup.md). |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, (`GOOGLE_REDIRECT_URI`) | Search Console / GA4. Register `https://<app domain>/integrations/google/callback` as an authorised redirect URI. In the same Google Cloud project, enable the Search Console API, the Google Analytics Data API and the Google Analytics Admin API (it lists GA4 properties for the picker), and add the `webmasters.readonly` and `analytics.readonly` scopes to the OAuth consent screen. |
 | `BING_WEBMASTER_API_KEY` | Bing Webmaster data |
 | `RUNNR_WEBHOOK_SECRET`, `RUNNR_TELEMETRY_TOKEN` | Runnr deploy webhooks and bot telemetry |
-| `COQUI_WORKER_URL`, `COQUI_WORKER_TOKEN` | Cloud crawl worker (after #58) |
+| `COQUI_WORKER_URL`, `COQUI_WORKER_TOKEN` | Cloud crawl worker. The token is shared with the worker container; cloud crawls are refused while it's empty. Optional: `COQUI_WORKER_CONNECT_TIMEOUT` (5s), `COQUI_WORKER_STALL_MINUTES` (30). |
 
 ## Operations
 
@@ -84,3 +84,4 @@ Production runs on a self-hosted **Coolify** server using `docker-compose.coolif
 - `dataforseo:collect-tasks`: every 10 minutes (free; recovers missed Standard postbacks).
 - `dataforseo:run-rank-batches`: daily at `05:10 UTC` (guarded by `DATAFORSEO_SCHEDULED_SPEND`).
 - `coqui:verify-backlinks`: weekly on Monday at `03:30 UTC` via `coqui-worker`.
+- `coqui:fail-stalled-crawls`: every 5 minutes; marks cloud crawls the worker has sent nothing for in `COQUI_WORKER_STALL_MINUTES` as failed, so they don't block the next crawl.

@@ -30,3 +30,7 @@ DataForSEO is the wholesale data engine behind Coqui SEO's global SERP, keyword,
 ## Standard Queue + Postbacks
 
 Automated rank tracking submits tasks to DataForSEO's **Standard queue** with a signed `postback_url` pointing to `POST /api/webhooks/dataforseo`. Results are verified against the per-task `postback_token` stored in `dataforseo_tasks`, and any missed webhooks are recovered every 10 minutes by `php artisan dataforseo:collect-tasks`.
+
+- **Postbacks are authenticated by each task's own token**, so there is no shared webhook secret. The webhook claims the task under a row lock, stores the result on it (status `processing`) and queues `ProcessDataForSeoPostbackJob` on the `serp` queue to record it. A duplicate delivery finds the task already claimed and changes nothing; a job that gives up marks the task `failed`.
+- **Errors are not "in progress".** A failed request or an error status from the task endpoint counts as "could not be checked", separately from tasks DataForSEO reports as queued (40601/40602).
+- **Tasks have a maximum age** (`DATAFORSEO_TASK_MAX_AGE_HOURS`, default 12). A task still `pending` (or `processing`) after that is marked `failed` with a reason, so the next rank run tracks its keyword again and the backup check can pick it up. A late postback for a failed task is still recorded.

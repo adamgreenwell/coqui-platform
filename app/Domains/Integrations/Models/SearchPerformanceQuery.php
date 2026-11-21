@@ -15,6 +15,7 @@ class SearchPerformanceQuery extends Model
         'project_id',
         'provider',
         'query',
+        'device',
         'date',
         'clicks',
         'impressions',

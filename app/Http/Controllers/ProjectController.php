@@ -6,11 +6,14 @@ namespace App\Http\Controllers;
 
 use App\Domains\Billing\PlanFeature;
 use App\Domains\Crawls\Models\CrawlRun;
+use App\Domains\Integrations\Models\BingCrawlStat;
 use App\Domains\Integrations\Models\ProjectIntegration;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\ProjectCompetitor;
 use App\Domains\Projects\Models\Workspace;
+use App\Domains\Projects\Models\WorkspaceActivity;
+use App\Domains\Serp\Support\VisibilityScore;
 use App\Features\RunnrIntegration;
 use App\Models\User;
 use Carbon\CarbonInterface;
@@ -232,8 +235,9 @@ class ProjectController extends Controller
             ])
             ->all();
 
-        /** @var list<array{id: int, eventType: string, title: string, description: string|null, properties: array<string, mixed>|null, userName: string|null, createdAt: string}> $activities */
-        $activities = $project->activities()
+        // The project's own events plus workspace-level ones (membership
+        // changes), newest first.
+        $projectActivities = $project->activities()
             ->with('user')
             ->latest('id')
             ->limit(20)
@@ -246,8 +250,32 @@ class ProjectController extends Controller
                 'properties' => $a->properties,
                 'userName' => $a->user?->name,
                 'createdAt' => $a->created_at->toIso8601String(),
-            ])
+            ]);
+        $workspaceActivities = $workspace->activities()
+            ->with('user')
+            ->latest('id')
+            ->limit(20)
+            ->get()
+            ->map(fn (WorkspaceActivity $a): array => [
+                // Negative, so it can't collide with a project activity's id.
+                'id' => -$a->id,
+                'eventType' => $a->event_type,
+                'title' => $a->title,
+                'description' => $a->description,
+                'properties' => $a->properties,
+                'userName' => $a->user?->name,
+                'createdAt' => $a->created_at->toIso8601String(),
+            ]);
+
+        /** @var list<array{id: int, eventType: string, title: string, description: string|null, properties: array<string, mixed>|null, userName: string|null, createdAt: string}> $activities */
+        $activities = $projectActivities->concat($workspaceActivities)
+            ->sortByDesc('createdAt')
+            ->take(20)
+            ->values()
             ->all();
+
+        // Baselines for the overview cards.
+        $latestBacklinks = $project->backlinkHistorySnapshots()->latest('snapshot_date')->first();
 
         $projectProps = [
             'id' => $project->uuid,
@@ -293,9 +321,17 @@ class ProjectController extends Controller
             ] : null,
             'trackedKeywordsCount' => $project->trackedKeywords()->count(),
             'monitoredBacklinksCount' => $project->monitoredBacklinks()->count(),
+            'keywordVisibility' => VisibilityScore::forProject($project),
+            'backlinkBaseline' => $latestBacklinks !== null ? [
+                'backlinks' => $latestBacklinks->backlinks_count,
+                'referringDomains' => $latestBacklinks->referring_domains_count,
+                'rank' => $latestBacklinks->rank,
+                'date' => $latestBacklinks->snapshot_date->toDateString(),
+            ] : null,
             'competitors' => $competitors,
+            'bingCrawl' => $this->bingCrawlSummary($project),
             'integrations' => $project->integrations()
-                ->select(['id', 'uuid', 'provider', 'site_url', 'external_identifier', 'status', 'last_synced_at'])
+                ->select(['id', 'uuid', 'provider', 'site_url', 'external_identifier', 'status', 'status_reason', 'last_synced_at'])
                 ->when(! $runnrEnabled, fn ($query) => $query->where('provider', '!=', 'runnr'))
                 ->get()
                 ->map(fn (ProjectIntegration $i): array => [
@@ -303,6 +339,7 @@ class ProjectController extends Controller
                     'provider' => $i->provider,
                     'site_url' => $i->site_url,
                     'status' => $i->status,
+                    'status_reason' => $i->needsReconnect() ? $i->status_reason : null,
                     'last_synced_at' => $i->last_synced_at instanceof CarbonInterface ? $i->last_synced_at->toIso8601String() : null,
                 ])
                 ->all(),
@@ -311,6 +348,38 @@ class ProjectController extends Controller
             'canEdit' => $user->can('update', $project),
             'canDelete' => $user->can('delete', $project),
         ]);
+    }
+
+    /**
+     * Bing crawl health over the last 30 days of synced crawl stats.
+     *
+     * @return array{days: int, latestDate: string, crawledPages: int, inIndex: int, crawlErrors: int, code4xx: int, code5xx: int, blockedByRobots: int, dnsFailures: int, connectionTimeouts: int}|null
+     */
+    private function bingCrawlSummary(Project $project): ?array
+    {
+        $stats = $project->bingCrawlStats()
+            ->where('date', '>=', now()->subDays(30)->toDateString())
+            ->orderByDesc('date')
+            ->get();
+
+        /** @var BingCrawlStat|null $latest */
+        $latest = $stats->first();
+        if ($latest === null) {
+            return null;
+        }
+
+        return [
+            'days' => $stats->count(),
+            'latestDate' => $latest->date->toDateString(),
+            'crawledPages' => (int) $stats->sum('crawled_pages'),
+            'inIndex' => $latest->in_index,
+            'crawlErrors' => (int) $stats->sum('crawl_errors'),
+            'code4xx' => (int) $stats->sum('code_4xx'),
+            'code5xx' => (int) $stats->sum('code_5xx'),
+            'blockedByRobots' => (int) $stats->sum('blocked_by_robots'),
+            'dnsFailures' => (int) $stats->sum('dns_failures'),
+            'connectionTimeouts' => (int) $stats->sum('connection_timeouts'),
+        ];
     }
 
     public function edit(Workspace $workspace, Project $project): Response

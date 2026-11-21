@@ -17,6 +17,73 @@ class RunnrDeploySmokeService
     ) {}
 
     /**
+     * The smoke crawl couldn't run (the worker was unreachable or stopped
+     * reporting). Record it and tell Runnr the check failed, so the deploy
+     * log doesn't wait on a result that will never come.
+     */
+    public function reportFailure(CrawlRun $run, string $reason): void
+    {
+        $config = $run->config;
+        /** @var array<string, mixed> $deploy */
+        $deploy = is_array($config['deploy'] ?? null) ? $config['deploy'] : [];
+        $summary = "Deploy SEO Smoke Test FAILED: the smoke crawl couldn't run. {$reason}";
+
+        $config['smoke_results'] = [
+            'status' => 'failed',
+            'passed' => false,
+            'regressions' => [],
+            'summary' => $summary,
+            'total_urls_checked' => 0,
+            'evaluated_at' => now()->toIso8601String(),
+        ];
+        $run->update(['config' => $config]);
+
+        $project = $run->project;
+        if ($project !== null) {
+            ProjectActivity::log(
+                project: $project,
+                eventType: 'deploy.smoke_failed',
+                title: '🚨 Deploy Smoke Test Failed',
+                description: $summary,
+                properties: [
+                    'crawl_id' => $run->id,
+                    'external_crawl_id' => $run->external_crawl_id,
+                    'deploy_id' => $deploy['deploy_id'] ?? null,
+                    'environment' => (string) ($deploy['environment'] ?? 'production'),
+                    'status' => 'failed',
+                    'total_urls_checked' => 0,
+                ],
+            );
+        }
+
+        $callbackUrl = isset($deploy['callback_url']) ? (string) $deploy['callback_url'] : '';
+        if ($callbackUrl === '') {
+            return;
+        }
+
+        $payload = [
+            'deployId' => $deploy['deploy_id'] ?? null,
+            'siteId' => $project?->runnr_site_id,
+            'crawlId' => $run->external_crawl_id,
+            'status' => 'failed',
+            'passed' => false,
+            'summary' => $summary,
+            'regressions' => [],
+            'totalUrlsChecked' => 0,
+            'completedAt' => now()->toIso8601String(),
+        ];
+
+        try {
+            $signature = hash_hmac('sha256', json_encode($payload, JSON_THROW_ON_ERROR), (string) config('services.runnr.webhook_secret'));
+            rescue(fn () => $this->http->postJson($callbackUrl, $payload, [
+                'X-Runnr-Signature' => $signature,
+            ], timeoutSeconds: 10), report: true);
+        } catch (Throwable) {
+            // The failure is already recorded; the callback is best effort.
+        }
+    }
+
+    /**
      * Evaluates a completed deploy_smoke crawl for critical SEO regressions.
      *
      * @return array{

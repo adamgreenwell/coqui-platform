@@ -71,15 +71,7 @@ class BingWebmasterClient
                 ? (float) $row['AvgImpressionPosition']
                 : (float) ($row['AvgClickPosition'] ?? 0.0);
 
-            // Bing returns date e.g. "/Date(1620000000000)/" or ISO string
-            $rawDate = (string) ($row['Date'] ?? '');
-            if (preg_match('/\/Date\((\d+)\)\//', $rawDate, $matches)) {
-                $date = date('Y-m-d', (int) ($matches[1] / 1000));
-            } elseif ($rawDate !== '') {
-                $date = date('Y-m-d', strtotime($rawDate) ?: time());
-            } else {
-                $date = date('Y-m-d');
-            }
+            $date = self::parseDate($row['Date'] ?? null) ?? date('Y-m-d');
 
             $results[] = [
                 'query' => $query,
@@ -95,9 +87,31 @@ class BingWebmasterClient
     }
 
     /**
-     * Fetch crawl statistics and crawl issues from Bing Webmaster Tools.
+     * Bing dates come as "/Date(1620000000000)/" (optionally with a "-0700"
+     * offset) or as an ISO string. Returns Y-m-d (UTC), or null when absent
+     * or unreadable.
+     */
+    public static function parseDate(mixed $raw): ?string
+    {
+        if (! is_string($raw) || trim($raw) === '') {
+            return null;
+        }
+
+        if (preg_match('#/Date\((-?\d+)(?:[+-]\d{4})?\)/#', $raw, $matches) === 1) {
+            return gmdate('Y-m-d', intdiv((int) $matches[1], 1000));
+        }
+
+        $timestamp = strtotime($raw);
+
+        return $timestamp !== false ? gmdate('Y-m-d', $timestamp) : null;
+    }
+
+    /**
+     * Fetch daily crawl stats from Bing Webmaster Tools. Returns no rows when
+     * the site or key is missing or the request fails; query stats report
+     * those problems.
      *
-     * @return list<array<string, mixed>>
+     * @return list<array{date: string, crawled_pages: int, crawl_errors: int, in_index: int, in_links: int, code_2xx: int, code_301: int, code_302: int, code_4xx: int, code_5xx: int, blocked_by_robots: int, dns_failures: int, connection_timeouts: int}>
      */
     public function getCrawlStats(ProjectIntegration $integration): array
     {
@@ -127,8 +141,40 @@ class BingWebmasterClient
         }
 
         $d = $response->json('d') ?? [];
+        if (! is_array($d)) {
+            return [];
+        }
 
-        /** @var list<array<string, mixed>> */
-        return is_array($d) ? $d : [];
+        $int = static fn (array $row, string $key): int => isset($row[$key]) && is_numeric($row[$key]) ? max(0, (int) $row[$key]) : 0;
+
+        $results = [];
+        foreach ($d as $row) {
+            if (! is_array($row)) {
+                continue;
+            }
+
+            $date = self::parseDate($row['Date'] ?? null);
+            if ($date === null) {
+                continue;
+            }
+
+            $results[] = [
+                'date' => $date,
+                'crawled_pages' => $int($row, 'CrawledPages'),
+                'crawl_errors' => $int($row, 'CrawlErrors'),
+                'in_index' => $int($row, 'InIndex'),
+                'in_links' => $int($row, 'InLinks'),
+                'code_2xx' => $int($row, 'Code2xx'),
+                'code_301' => $int($row, 'Code301'),
+                'code_302' => $int($row, 'Code302'),
+                'code_4xx' => $int($row, 'Code4xx'),
+                'code_5xx' => $int($row, 'Code5xx'),
+                'blocked_by_robots' => $int($row, 'BlockedByRobotsTxt'),
+                'dns_failures' => $int($row, 'DnsFailures'),
+                'connection_timeouts' => $int($row, 'ConnectionTimeout'),
+            ];
+        }
+
+        return $results;
     }
 }
