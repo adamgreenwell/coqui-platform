@@ -159,10 +159,11 @@ class FetchFallbackRankJob implements ShouldQueue
             TrackedKeyword::query()->whereKey($fresh->id)->update(['last_checked_at' => $check->reference_at]);
 
             if ($check->dataforseo_task_id !== null) {
-                // A late primary result must not overwrite this check.
+                // A late primary result must not overwrite this check,
+                // including one already received and waiting to be recorded.
                 DB::table('dataforseo_tasks')
                     ->where('id', $check->dataforseo_task_id)
-                    ->whereIn('status', ['pending', 'failed'])
+                    ->whereIn('status', ['pending', 'processing', 'failed'])
                     ->update(['status' => 'superseded', 'updated_at' => now()]);
             }
 

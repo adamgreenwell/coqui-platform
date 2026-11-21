@@ -241,4 +241,25 @@ class DataForSeoTaskLifecycleTest extends TestCase
         $this->assertSame('collected', $this->taskStatus($task['id']));
         $this->assertSame(1, KeywordRankSnapshot::query()->where('tracked_keyword_id', $keyword->id)->where('domain', 'coqui.io')->count());
     }
+
+    public function test_a_late_postback_waiting_in_the_queue_is_not_expired(): void
+    {
+        Queue::fake();
+        $keyword = $this->keyword('late queued keyword');
+        // Submitted long ago, so only the postback's arrival is recent.
+        $task = $this->task($keyword, 'pending', 13 * 60);
+
+        $this->postJson(route('webhooks.dataforseo', ['token' => $task['token']]), $this->payload($task['external']))
+            ->assertOk()
+            ->assertJson(['status' => 'accepted']);
+
+        Http::fake();
+        $this->artisan('dataforseo:collect-tasks')->assertSuccessful();
+
+        $this->assertSame('processing', $this->taskStatus($task['id']));
+
+        // The queued job still records it.
+        (new ProcessDataForSeoPostbackJob($task['id']))->handle(app(RecordDataForSeoTaskResult::class));
+        $this->assertSame('collected', $this->taskStatus($task['id']));
+    }
 }

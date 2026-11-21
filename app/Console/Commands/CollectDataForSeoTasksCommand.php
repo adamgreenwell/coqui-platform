@@ -147,9 +147,17 @@ class CollectDataForSeoTasksCommand extends Command
     {
         $hours = max(1, (int) config('coqui.dataforseo.task_max_age_hours', 12));
 
+        $cutoff = now()->subHours($hours);
+
         return DB::table('dataforseo_tasks')
-            ->whereIn('status', ['pending', 'processing'])
-            ->where('submitted_at', '<=', now()->subHours($hours))
+            ->where(function ($query) use ($cutoff): void {
+                // Waiting for a result since it was submitted...
+                $query->where(fn ($q) => $q->where('status', 'pending')->where('submitted_at', '<=', $cutoff))
+                    // ...or received but not recorded since the postback
+                    // arrived (claiming it stamps updated_at), so a late
+                    // result gets the full window to be recorded.
+                    ->orWhere(fn ($q) => $q->where('status', 'processing')->where('updated_at', '<=', $cutoff));
+            })
             ->update([
                 'status' => 'failed',
                 'error_message' => "No result after {$hours} hours.",
