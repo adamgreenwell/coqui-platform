@@ -21,6 +21,7 @@ use Illuminate\Support\Carbon;
  * @property string|null $external_identifier
  * @property array<string, mixed>|null $credentials_encrypted
  * @property string $status
+ * @property string|null $status_reason
  * @property CarbonInterface|null $last_synced_at
  * @property CarbonInterface $created_at
  * @property CarbonInterface $updated_at
@@ -38,8 +39,20 @@ class ProjectIntegration extends Model
         'external_identifier',
         'credentials_encrypted',
         'status',
+        'status_reason',
         'last_synced_at',
     ];
+
+    protected static function booted(): void
+    {
+        // A reason only explains a broken connection; clear it once the
+        // integration is healthy again, however that happens.
+        static::saving(function (self $integration): void {
+            if ($integration->isDirty('status') && ! $integration->needsReconnect()) {
+                $integration->status_reason = null;
+            }
+        });
+    }
 
     /**
      * @return array<string, string>
@@ -88,7 +101,21 @@ class ProjectIntegration extends Model
 
     public function markNeedsReconnect(string $reason = 'Token expired or revoked'): void
     {
-        $this->update(['status' => 'needs_reconnect']);
+        $this->update([
+            'status' => 'needs_reconnect',
+            'status_reason' => mb_substr($reason, 0, 500),
+        ]);
+    }
+
+    /**
+     * Mark it as needing a reconnect unless an earlier step of this request
+     * already did, so the first, most specific reason is kept.
+     */
+    public function markNeedsReconnectUnlessMarked(string $reason): void
+    {
+        if (! $this->needsReconnect()) {
+            $this->markNeedsReconnect($reason);
+        }
     }
 
     public function markConnected(): void

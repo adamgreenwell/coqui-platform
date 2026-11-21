@@ -249,7 +249,7 @@ class GoogleSearchConsoleClient
                 $newToken = $this->refreshToken($integration);
                 $response = Http::withToken($newToken)->post($endpoint, $payload);
             } catch (\Throwable) {
-                $integration->markNeedsReconnect('Authentication failed when querying search analytics.');
+                $integration->markNeedsReconnectUnlessMarked('Authentication failed when querying search analytics.');
                 throw new SearchConsoleAuthException('Google Search Console authentication failed: access revoked or expired.');
             }
         }

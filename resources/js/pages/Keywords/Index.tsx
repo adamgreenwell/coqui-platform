@@ -121,8 +121,10 @@ interface IntegrationSummary {
   status: 'connected' | 'needs_reconnect' | 'not_connected';
   site_url?: string | null;
   last_synced_at?: string | null;
+  // Why it needs reconnecting, when it does.
   error_message?: string | null;
   connect_url?: string;
+  settings_url?: string;
 }
 
 interface KeywordsIndexProps {
@@ -432,7 +434,7 @@ export default function KeywordsIndex({
                 </p>
                 {gscIntegration.error_message && (
                   <p className="text-[11px] font-mono text-amber-400/90 mt-1">
-                    Error: {gscIntegration.error_message}
+                    Reason: {gscIntegration.error_message}
                   </p>
                 )}
               </div>
@@ -444,6 +446,37 @@ export default function KeywordsIndex({
               >
                 <RefreshCw className="h-3.5 w-3.5" />
                 <span>Reconnect Search Console</span>
+              </a>
+            )}
+          </div>
+        )}
+
+        {/* Reconnect banner for Bing Webmaster Tools (API key based) */}
+        {hasTrafficAttribution && bingIntegration?.status === 'needs_reconnect' && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <h4 className="text-sm font-semibold text-amber-200">
+                  Bing Webmaster Tools Needs a New API Key
+                </h4>
+                <p className="text-xs text-amber-300/80 mt-0.5">
+                  Bing stopped accepting this project&apos;s API key, so the Bing overlay and crawl stats are paused. Add a current key from Bing Webmaster Tools to resume syncing.
+                </p>
+                {bingIntegration.error_message && (
+                  <p className="text-[11px] font-mono text-amber-400/90 mt-1">
+                    Reason: {bingIntegration.error_message}
+                  </p>
+                )}
+              </div>
+            </div>
+            {canEdit && bingIntegration.settings_url && (
+              <a
+                href={bingIntegration.settings_url}
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-semibold text-xs transition shrink-0 cursor-pointer"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                <span>Update Bing API Key</span>
               </a>
             )}
           </div>
