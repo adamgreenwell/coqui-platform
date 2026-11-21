@@ -40,6 +40,19 @@ class DataForSeoClient
     }
 
     /**
+     * Whether keywordOverview would answer these keywords from cache (and so
+     * cost nothing).
+     *
+     * @param  list<string>  $keywords
+     */
+    public function keywordOverviewIsCached(array $keywords, int $locationCode = 2840, string $languageCode = 'en'): bool
+    {
+        [$endpoint, $signature] = $this->keywordOverviewCacheKey($keywords, $locationCode, $languageCode);
+
+        return $this->cache->get($endpoint, $signature) !== null;
+    }
+
+    /**
      * Cached DataForSEO Labs keyword overview lookup (max 700 keywords per task).
      *
      * @param  list<string>  $keywords
@@ -52,17 +65,9 @@ class DataForSeoClient
         string $languageCode = 'en',
         bool $bypassCache = false,
     ): array {
-        $endpoint = '/v3/dataforseo_labs/google/keyword_overview/live';
-        $normalizedKeywords = array_values(array_unique(array_filter(array_map(
-            static fn (string $k): string => strtolower(trim($k)),
-            $keywords,
-        ))));
-
-        $signature = [
-            'keywords' => $normalizedKeywords,
-            'location_code' => $locationCode,
-            'language_code' => $languageCode,
-        ];
+        [$endpoint, $signature] = $this->keywordOverviewCacheKey($keywords, $locationCode, $languageCode);
+        /** @var list<string> $normalizedKeywords */
+        $normalizedKeywords = $signature['keywords'];
 
         if (! $bypassCache) {
             $cached = $this->cache->get($endpoint, $signature);
@@ -92,6 +97,24 @@ class DataForSeoClient
         $this->cache->put($endpoint, $signature, $response, $ttl);
 
         return $response;
+    }
+
+    /**
+     * @param  list<string>  $keywords
+     * @return array{0: string, 1: array{keywords: list<string>, location_code: int, language_code: string}}
+     */
+    private function keywordOverviewCacheKey(array $keywords, int $locationCode, string $languageCode): array
+    {
+        $normalizedKeywords = array_values(array_unique(array_filter(array_map(
+            static fn (string $k): string => strtolower(trim($k)),
+            $keywords,
+        ))));
+
+        return ['/v3/dataforseo_labs/google/keyword_overview/live', [
+            'keywords' => $normalizedKeywords,
+            'location_code' => $locationCode,
+            'language_code' => $languageCode,
+        ]];
     }
 
     /**
