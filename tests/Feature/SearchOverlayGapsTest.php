@@ -307,7 +307,7 @@ class SearchOverlayGapsTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('keywords.0.gsc_performance.clicks', 7));
     }
 
-    public function test_older_rows_fill_the_dates_the_device_rows_do_not_cover(): void
+    public function test_older_rows_stay_authoritative_on_dates_a_capped_sync_only_partly_covered(): void
     {
         $first = Carbon::now()->subDays(10)->toDateString();
         $second = Carbon::now()->subDays(9)->toDateString();
@@ -316,23 +316,34 @@ class SearchOverlayGapsTest extends TestCase
             'date' => $date, 'clicks' => $clicks, 'impressions' => $impressions, 'ctr' => 0.1, 'position' => $position,
         ]);
 
-        // Older all-device rows on both dates; a capped device fetch only
-        // replaced the first.
+        $third = Carbon::now()->subDays(8)->toDateString();
+
+        // A capped device sync kept the older all-device rows on the first
+        // two dates and fetched desktop (but not mobile) for the first. The
+        // third date was synced per device in full.
         $row('all', $first, 30, 300, 2.0);
         $row('all', $second, 20, 200, 6.0);
         $row('desktop', $first, 25, 250, 2.0);
-        $row('mobile', $first, 5, 50, 4.0);
+        $row('desktop', $third, 4, 40, 3.0);
+        $row('mobile', $third, 6, 60, 5.0);
         $this->keyword('rank tracker', 'desktop');
+        $this->keyword('rank tracker', 'mobile');
 
         $this->actingAs($this->user)
             ->get(route('workspaces.projects.keywords.index', [$this->workspace, $this->project]))
             ->assertInertia(function (Assert $page): void {
-                $gsc = $page->toArray()['props']['keywords'][0]['gsc_performance'];
-                // Desktop on the first date, the older row on the second.
-                $this->assertSame(45, $gsc['clicks']);
-                $this->assertSame(450, $gsc['impressions']);
-                // (2 * 250 + 6 * 200) / 450
-                $this->assertEqualsWithDelta(3.8, $gsc['position'], 0.001);
+                $keywords = collect($page->toArray()['props']['keywords'])->keyBy('device');
+                // The older rows on the first two dates, the device row on the third.
+                $desktop = $keywords['desktop']['gsc_performance'];
+                $this->assertSame(54, $desktop['clicks']);
+                $this->assertSame(540, $desktop['impressions']);
+                // (2 * 300 + 6 * 200 + 3 * 40) / 540
+                $this->assertEqualsWithDelta(3.6, $desktop['position'], 0.05);
+
+                // Mobile keeps the first date's traffic though only desktop was fetched.
+                $mobile = $keywords['mobile']['gsc_performance'];
+                $this->assertSame(56, $mobile['clicks']);
+                $this->assertSame(560, $mobile['impressions']);
             });
     }
 
@@ -385,6 +396,28 @@ class SearchOverlayGapsTest extends TestCase
         $this->assertSame(40, (int) $rows[0]->clicks);
         $this->assertSame(400, (int) $rows[0]->impressions);
         // Impression-weighted: (2 * 300 + 6 * 100) / 400.
+        $this->assertEqualsWithDelta(3.0, (float) $rows[0]->position, 0.001);
+
+        $migration->up();
+    }
+
+    public function test_rolling_back_keeps_a_surviving_all_device_row_instead_of_adding_device_rows_to_it(): void
+    {
+        $date = Carbon::now()->subDays(10)->toDateString();
+        foreach ([['all', 50, 500, 3.0], ['desktop', 30, 300, 2.0]] as [$device, $clicks, $impressions, $position]) {
+            SearchPerformanceQuery::query()->create([
+                'project_id' => $this->project->id, 'provider' => 'gsc', 'query' => 'rank tracker', 'device' => $device,
+                'date' => $date, 'clicks' => $clicks, 'impressions' => $impressions, 'ctr' => 0.1, 'position' => $position,
+            ]);
+        }
+
+        $migration = require database_path('migrations/0001_01_25_000000_add_integration_reasons_gsc_devices_and_bing_crawl_stats.php');
+        $migration->down();
+
+        $rows = DB::table('search_performance_queries')->where('query', 'rank tracker')->get();
+        $this->assertCount(1, $rows);
+        $this->assertSame(50, (int) $rows[0]->clicks);
+        $this->assertSame(500, (int) $rows[0]->impressions);
         $this->assertEqualsWithDelta(3.0, (float) $rows[0]->position, 0.001);
 
         $migration->up();

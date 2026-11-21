@@ -88,24 +88,25 @@ class TrackedKeywordController extends Controller
         // The GSC/Bing overlay belongs to the traffic attribution plan feature;
         // without it the columns stay empty and the page shows an upgrade prompt.
         // Search Console rows are per device; rows synced before the split
-        // cover all devices ("all"), as do Bing's. An "all" row counts only
-        // on dates with no per-device rows for that query, so each day uses
-        // the per-device data where it was fetched and the older row where
-        // it wasn't.
+        // cover all devices ("all"), as do Bing's. A complete per-device sync
+        // deletes the older rows in its window, so an "all" row that's still
+        // there means that day's device data may be partial: it stays
+        // authoritative for its query and date, and device rows count only
+        // on dates without one.
         $performanceStats = $workspace->hasFeature(PlanFeature::TrafficAttribution)
             ? DB::table('search_performance_queries as spq')
                 ->where('spq.project_id', $project->id)
                 ->where('spq.date', '>=', $cutoffDate)
                 ->where(function ($query): void {
-                    $query->where('spq.device', '!=', 'all')
+                    $query->where('spq.device', 'all')
                         ->orWhereNotExists(function ($sub): void {
                             $sub->selectRaw('1')
-                                ->from('search_performance_queries as per_device')
-                                ->whereColumn('per_device.project_id', 'spq.project_id')
-                                ->whereColumn('per_device.provider', 'spq.provider')
-                                ->whereColumn('per_device.query', 'spq.query')
-                                ->whereColumn('per_device.date', 'spq.date')
-                                ->where('per_device.device', '!=', 'all');
+                                ->from('search_performance_queries as legacy')
+                                ->whereColumn('legacy.project_id', 'spq.project_id')
+                                ->whereColumn('legacy.provider', 'spq.provider')
+                                ->whereColumn('legacy.query', 'spq.query')
+                                ->whereColumn('legacy.date', 'spq.date')
+                                ->where('legacy.device', 'all');
                         });
                 })
                 ->selectRaw('spq.provider as provider, spq.device as device, LOWER(spq.query) as query_lower, SUM(spq.clicks) as total_clicks, SUM(spq.impressions) as total_impressions, SUM(spq.position * spq.impressions) as weighted_position, SUM(spq.position) as position_sum, COUNT(*) as row_count')
@@ -165,8 +166,8 @@ class TrackedKeywordController extends Controller
 
             $kwKey = strtolower(trim($kw->keyword));
 
-            // This keyword's device, plus older all-device rows on dates the
-            // per-device data doesn't cover.
+            // This keyword's device on fully synced dates, plus the older
+            // all-device rows on the rest.
             $gscRows = array_values(array_filter([
                 $gscStatsByQuery->get(strtolower($kw->device).'|'.$kwKey),
                 $gscStatsByQuery->get('all|'.$kwKey),

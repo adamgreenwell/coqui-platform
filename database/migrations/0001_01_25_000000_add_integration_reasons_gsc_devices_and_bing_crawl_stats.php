@@ -53,8 +53,25 @@ return new class extends Migration
     {
         Schema::dropIfExists('bing_crawl_stats');
 
-        // Fold per-device rows back into one row per query and date, so the
-        // old unique key can be restored.
+        // Back to one row per query and date, so the old unique key can be
+        // restored. Where an all-device row survived (a capped sync kept it)
+        // it already covers every device: keep it and drop the device rows,
+        // rather than adding the same traffic twice.
+        $keepLegacy = static function ($query): void {
+            $query->select(DB::raw(1))
+                ->from('search_performance_queries as legacy')
+                ->whereColumn('legacy.project_id', 'search_performance_queries.project_id')
+                ->whereColumn('legacy.provider', 'search_performance_queries.provider')
+                ->whereColumn('legacy.query', 'search_performance_queries.query')
+                ->whereColumn('legacy.date', 'search_performance_queries.date')
+                ->where('legacy.device', 'all');
+        };
+        DB::table('search_performance_queries')
+            ->where('device', '!=', 'all')
+            ->whereExists($keepLegacy)
+            ->delete();
+
+        // Fold the rest: device rows with no all-device row.
         $groups = DB::table('search_performance_queries')
             ->selectRaw('project_id, provider, query, date, SUM(clicks) as clicks, SUM(impressions) as impressions, SUM(position * impressions) as weighted_position, AVG(position) as avg_position, MIN(created_at) as created_at, MAX(updated_at) as updated_at')
             ->groupBy('project_id', 'provider', 'query', 'date')
