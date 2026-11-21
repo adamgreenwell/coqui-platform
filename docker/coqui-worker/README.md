@@ -148,14 +148,18 @@ Up to 200 URLs. Answers:
       "status": 200,
       "hasTargetLink": true,
       "observedRel": "dofollow",
+      "observedAnchor": "best uptime monitor",
       "noindex": false
     }
   ]
 }
 ```
 
-`observedRel` is one of `nofollow`, `sponsored`, `ugc`, `dofollow`, taken from
-the first link that matches the target. A URL that couldn't
+`observedRel` is one of `nofollow`, `sponsored`, `ugc`, `dofollow`, and
+`observedAnchor` is that link's visible text (whitespace collapsed, at most 255
+characters), both taken from the first link that matches the target. Laravel
+flags a link whose anchor no longer matches the expected one as
+`anchor_changed`. A URL that couldn't
 be fetched has `status: null` and an `error`, and so does a page over 2 MB
 where no matching link was found in the part that was read. Laravel treats any
 result with an `error` as inconclusive and checks that URL itself. URLs not

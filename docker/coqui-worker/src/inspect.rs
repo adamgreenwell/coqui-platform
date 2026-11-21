@@ -1,6 +1,6 @@
 //! `POST /jobs/inspect`: fetch a list of pages and report, for each, its
-//! status, whether it links to the target (and with what rel), and whether
-//! it's noindex. Used for backlink verification; Laravel falls back to
+//! status, whether it links to the target (with what rel and anchor text),
+//! and whether it's noindex. Used for backlink verification; Laravel falls back to
 //! fetching any URL missing from the response itself.
 //!
 //! The target is the page's entry in `targetUrls` when there is one (the
@@ -20,6 +20,8 @@ pub const MAX_URLS: usize = 200;
 const MAX_REDIRECTS: usize = 5;
 const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 const CONCURRENCY: usize = 8;
+/// Longest anchor text reported; Laravel stores expected anchors up to 255.
+const MAX_ANCHOR_CHARS: usize = 255;
 /// Error for a page too large to read in full without finding the link.
 /// Laravel treats any observation with an error as inconclusive.
 pub const INCOMPLETE: &str = "page is larger than 2 MB and the link wasn't in the part read";
@@ -73,6 +75,9 @@ pub struct Observation {
     pub status: Option<u16>,
     pub has_target_link: bool,
     pub observed_rel: Option<String>,
+    /// Visible text of the matched link (whitespace collapsed), so Laravel
+    /// can flag a changed anchor.
+    pub observed_anchor: Option<String>,
     pub noindex: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
@@ -85,6 +90,7 @@ impl Observation {
             status: None,
             has_target_link: false,
             observed_rel: None,
+            observed_anchor: None,
             noindex: false,
             error: Some(error),
         }
@@ -152,12 +158,12 @@ async fn inspect_one(client: &reqwest::Client, url: &str, target: Option<&Target
                     current = next.to_string();
                     continue;
                 }
-                None => return observation(url, status.as_u16(), false, None, false),
+                None => return observation(url, status.as_u16(), None, false),
             }
         }
 
         if status.as_u16() >= 400 {
-            return observation(url, status.as_u16(), false, None, false);
+            return observation(url, status.as_u16(), None, false);
         }
 
         let header_noindex = response
@@ -184,34 +190,32 @@ async fn inspect_one(client: &reqwest::Client, url: &str, target: Option<&Target
             }
         }
         let html = String::from_utf8_lossy(&body);
-        let (has_link, rel, meta_noindex) = analyse_html(&html, &current, target);
+        let page = analyse_page(&html, &current, target);
         // A link found in the first 2 MB is conclusive; its absence isn't.
-        if truncated && !has_link && target.is_some() {
+        if truncated && page.link.is_none() && target.is_some() {
             return Observation::failed(url, INCOMPLETE.into());
         }
         return observation(
             url,
             status.as_u16(),
-            has_link,
-            rel,
-            header_noindex || meta_noindex,
+            page.link,
+            header_noindex || page.noindex,
         );
     }
     Observation::failed(url, "too many redirects".into())
 }
 
-fn observation(
-    url: &str,
-    status: u16,
-    has_target_link: bool,
-    observed_rel: Option<String>,
-    noindex: bool,
-) -> Observation {
+fn observation(url: &str, status: u16, link: Option<FoundLink>, noindex: bool) -> Observation {
+    let (has_target_link, observed_rel, observed_anchor) = match link {
+        Some(link) => (true, Some(link.rel), Some(link.anchor)),
+        None => (false, None, None),
+    };
     Observation {
         url: url.to_string(),
         status: Some(status),
         has_target_link,
         observed_rel,
+        observed_anchor,
         noindex,
         error: None,
     }
@@ -232,14 +236,44 @@ fn robots_says_noindex(value: &str) -> bool {
     value.contains("noindex") || value.split([',', ' ']).any(|token| token.trim() == "none")
 }
 
-/// Returns (links to target, rel of the first such link, meta robots noindex).
-/// Rel is reported the way Laravel stores it: nofollow, sponsored, ugc or
-/// dofollow.
+/// The first link on a page that points at the target.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct FoundLink {
+    /// As Laravel stores it: nofollow, sponsored, ugc or dofollow.
+    rel: String,
+    /// Visible text, whitespace collapsed, at most `MAX_ANCHOR_CHARS`.
+    anchor: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct PageAnalysis {
+    link: Option<FoundLink>,
+    noindex: bool,
+}
+
+/// (links to target, rel of the first such link, meta robots noindex).
+#[cfg(test)]
 fn analyse_html(
     html: &str,
     page_url: &str,
     target: Option<&Target>,
 ) -> (bool, Option<String>, bool) {
+    let page = analyse_page(html, page_url, target);
+    let has = page.link.is_some();
+    (has, page.link.map(|link| link.rel), page.noindex)
+}
+
+fn anchor_text(anchor: &scraper::ElementRef<'_>) -> String {
+    let text = anchor.text().collect::<Vec<_>>().join(" ");
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(MAX_ANCHOR_CHARS)
+        .collect()
+}
+
+fn analyse_page(html: &str, page_url: &str, target: Option<&Target>) -> PageAnalysis {
     let document = Html::parse_document(html);
     let meta = Selector::parse("meta[name]").expect("selector");
     let noindex = document.select(&meta).any(|element| {
@@ -254,7 +288,10 @@ fn analyse_html(
     });
 
     let Some(target) = target else {
-        return (false, None, noindex);
+        return PageAnalysis {
+            link: None,
+            noindex,
+        };
     };
     let base = url::Url::parse(page_url).ok();
     let anchors = Selector::parse("a[href]").expect("selector");
@@ -281,10 +318,19 @@ fn analyse_html(
             } else {
                 "dofollow"
             };
-            return (true, Some(observed.to_string()), noindex);
+            return PageAnalysis {
+                link: Some(FoundLink {
+                    rel: observed.to_string(),
+                    anchor: anchor_text(&anchor),
+                }),
+                noindex,
+            };
         }
     }
-    (false, None, noindex)
+    PageAnalysis {
+        link: None,
+        noindex,
+    }
 }
 
 #[cfg(test)]
@@ -342,6 +388,33 @@ mod tests {
         // A subdomain isn't the monitored page.
         let html = r#"<a href="https://app.example.com/pricing">app</a>"#;
         assert!(!analyse_html(html, "https://blog.test/", Some(&target)).0);
+    }
+
+    #[test]
+    fn the_matched_links_anchor_text_is_reported() {
+        let target = Target::page("https://example.com/pricing").unwrap();
+        let html = r#"<a href="https://example.com/">Home</a>
+            <a href="https://example.com/pricing">  Best <b>SEO</b>
+               pricing </a>"#;
+        let page = analyse_page(html, "https://blog.test/", Some(&target));
+        assert_eq!(
+            page.link,
+            Some(FoundLink {
+                rel: "dofollow".into(),
+                anchor: "Best SEO pricing".into()
+            })
+        );
+
+        let long = format!(
+            r#"<a href="https://example.com/pricing">{}</a>"#,
+            "a".repeat(400)
+        );
+        let page = analyse_page(&long, "https://blog.test/", Some(&target));
+        assert_eq!(page.link.unwrap().anchor.chars().count(), MAX_ANCHOR_CHARS);
+
+        let missing = observation("https://blog.test/", 200, None, false);
+        assert_eq!(missing.observed_anchor, None);
+        assert!(!missing.has_target_link);
     }
 
     #[test]

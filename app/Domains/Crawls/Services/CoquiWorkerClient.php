@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domains\Crawls\Services;
 
+use App\Domains\Crawls\Exceptions\SsrfProtectionException;
 use App\Domains\Projects\Models\Project;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
@@ -73,27 +74,42 @@ class CoquiWorkerClient
     /**
      * Inspect specific external URLs (backlink verification or SERP top-10 scraping).
      *
+     * URLs the SSRF guard refuses are left out of the request and listed
+     * under `blocked`, so one bad URL doesn't fail the whole batch.
+     *
      * @param  list<string>  $urls
      * @param  array<string, string>  $targetUrls  Source URL => monitored target URL
      * @return array<string, mixed>
      */
     public function inspectUrls(array $urls, ?string $targetDomain = null, array $targetUrls = []): array
     {
+        $allowed = [];
+        $blocked = [];
         foreach ($urls as $url) {
-            $this->ssrf->assertAllowed((string) $url);
+            try {
+                $this->ssrf->assertAllowed((string) $url);
+                $allowed[] = (string) $url;
+            } catch (SsrfProtectionException) {
+                $blocked[] = (string) $url;
+            }
+        }
+
+        if ($allowed === []) {
+            return ['results' => [], 'blocked' => $blocked];
         }
 
         $response = $this->http()->post($this->url('/jobs/inspect'), [
-            'urls' => $urls,
+            'urls' => $allowed,
             'targetDomain' => $targetDomain,
             // Source URL => the exact page the monitored link should point at.
-            'targetUrls' => (object) $targetUrls,
+            'targetUrls' => (object) array_intersect_key($targetUrls, array_flip($allowed)),
         ]);
 
         $response->throw();
 
         /** @var array<string, mixed> $decoded */
         $decoded = $response->json() ?? [];
+        $decoded['blocked'] = $blocked;
 
         return $decoded;
     }
