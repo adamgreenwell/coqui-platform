@@ -175,6 +175,14 @@ class CrawlSyncController extends Controller
 
         $run = $this->findRun($project, $crawlId, IngestDesktopCrawlSnapshot::DESKTOP_SOURCE);
 
+        if (IngestDesktopCrawlSnapshot::isSealed($run)) {
+            return response()->json([
+                'message' => 'This crawl was already finalized and takes no more chunks.',
+                'externalCrawlId' => $run->external_crawl_id,
+                'status' => $run->status,
+            ], 409);
+        }
+
         /** @var array<string, mixed> $validated */
         $validated = $request->validate(CrawlSyncPayload::chunkRules());
 
@@ -201,9 +209,22 @@ class CrawlSyncController extends Controller
 
         $validated = $request->validate([
             'status' => ['nullable', 'in:completed,paused,failed,cancelled'],
+            'issueCounts' => ['nullable', 'array', 'max:1000'],
+            'issueCounts.*.rule' => ['required', 'string', 'max:96'],
+            'issueCounts.*.severity' => ['required', 'in:error,warning,opportunity'],
+            'issueCounts.*.count' => ['required', 'integer', 'min:0'],
         ]);
 
-        $finalized = $this->ingest->finalize($run, $validated['status'] ?? null);
+        /** @var list<array{rule: string, severity: string, count: int}>|null $issueCounts */
+        $issueCounts = isset($validated['issueCounts'])
+            ? array_map(static fn (array $row): array => [
+                'rule' => (string) $row['rule'],
+                'severity' => (string) $row['severity'],
+                'count' => (int) $row['count'],
+            ], array_values($validated['issueCounts']))
+            : null;
+
+        $finalized = $this->ingest->finalize($run, $validated['status'] ?? null, $issueCounts);
 
         return response()->json([
             'externalCrawlId' => $finalized->external_crawl_id,

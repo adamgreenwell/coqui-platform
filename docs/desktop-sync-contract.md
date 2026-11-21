@@ -75,7 +75,12 @@ Maps 1:1 to `coqui_core::CrawlSummary` + `coqui_core::CrawlConfig`:
 ### 2. Stream Chunked Records
 `POST /api/v1/projects/{project}/crawls/{crawlId}/chunks`
 
-Accepts up to 1,000 `urls`, 2,500 `links`, and 2,500 `issues` per request, using upsert semantics on `(crawl_run_id, url)` so interrupted uploads can retry safely.
+Accepts up to 1,000 `urls`, 2,500 `links`, and 2,500 `issues` per request; larger chunks get a `422`. Every record is upserted, so an interrupted upload can resend any chunk and end up with the same rows:
+- URLs on `(crawl_run_id, url)`
+- issues on `(crawl_run_id, url, rule)`
+- links on `(crawl_run_id, fromUrl, toUrl, anchor, rel)`
+
+A run that has been finalized with any status other than `paused` is sealed: further chunks get a `409`. A paused run accepts chunks again when the crawl resumes.
 
 ```json
 {
@@ -126,4 +131,20 @@ Accepts up to 1,000 `urls`, 2,500 `links`, and 2,500 `issues` per request, using
 ### 3. Finalize Sync
 `POST /api/v1/projects/{project}/crawls/{crawlId}/finalize`
 
-Accepts optional `issueCounts` (`Array<{ rule, severity, count }>` matching `coqui_core::IssueCount`), seals the `CrawlRun` status, recomputes aggregate totals in PostgreSQL if omitted, and broadcasts `CrawlSynced` over Reverb.
+Accepts optional `issueCounts` (`Array<{ rule, severity, count }>` matching `coqui_core::IssueCount`; `severity` is `error`, `warning` or `opportunity`). It seals the `CrawlRun` status and sets the error, warning and opportunity totals from `issueCounts`, or counts the uploaded issues when it's omitted. Finalizing again is allowed and recomputes the totals.
+
+It then broadcasts `CrawlSynced` on the project's private channel over Reverb:
+
+```json
+{
+  "project_id": 12,
+  "external_crawl_id": "3b2e7c90-...",
+  "status": "completed",
+  "total_urls": 1116,
+  "error_count": 4,
+  "warning_count": 37,
+  "opportunity_count": 12,
+  "source": "desktop",
+  "finalized_at": "2026-11-21T05:30:00+00:00"
+}
+```
