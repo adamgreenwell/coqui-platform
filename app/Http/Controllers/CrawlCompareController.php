@@ -19,6 +19,8 @@ use Inertia\Response;
 
 class CrawlCompareController extends Controller
 {
+    public const SHARE_LINKS_PER_PAGE = 50;
+
     public function __construct(
         private readonly CrawlDiffService $diffService,
     ) {}
@@ -70,6 +72,9 @@ class CrawlCompareController extends Controller
             $diff = $this->diffService->compare($baselineRun, $targetRun);
         }
 
+        // Creating and revoking share links is for editors.
+        $canManage = $request->user()?->can('update', $project) ?? false;
+
         return Inertia::render('Crawls/Compare', [
             'workspace' => [
                 'id' => $workspace->uuid,
@@ -86,12 +91,34 @@ class CrawlCompareController extends Controller
             'selectedTargetId' => $targetRun?->external_crawl_id,
             'diff' => $diff,
             'isReadOnly' => false,
-            // Creating and revoking share links is for editors.
-            'canManageShares' => $request->user()?->can('update', $project) ?? false,
-            'shareLinks' => $request->user()?->can('update', $project)
-                ? $this->shareLinks($project)
-                : [],
+            'canManageShares' => $canManage,
+            ...$this->shareLinksProps($canManage ? $this->shareLinks($project) : ['links' => [], 'nextCursor' => null]),
         ]);
+    }
+
+    /**
+     * Older share links, after the given one, for the management list.
+     */
+    public function shareLinksPage(Request $request, Workspace $workspace, Project $project): JsonResponse
+    {
+        Gate::authorize('update', $project);
+
+        $validated = $request->validate(['after' => ['required', 'string', 'max:64']]);
+        $after = CrawlDiffReport::query()
+            ->where('project_id', $project->id)
+            ->where('uuid', (string) $validated['after'])
+            ->first() ?? abort(404);
+
+        return response()->json($this->shareLinksProps($this->shareLinks($project, $after->id)));
+    }
+
+    /**
+     * @param  array{links: list<array<string, mixed>>, nextCursor: string|null}  $page
+     * @return array{shareLinks: list<array<string, mixed>>, shareLinksNextCursor: string|null}
+     */
+    private function shareLinksProps(array $page): array
+    {
+        return ['shareLinks' => $page['links'], 'shareLinksNextCursor' => $page['nextCursor']];
     }
 
     /**
@@ -152,19 +179,28 @@ class CrawlCompareController extends Controller
     }
 
     /**
-     * The project's share links that still work, newest first.
+     * One page of the project's share links that still work, newest first,
+     * starting after the report with id $beforeId. A cursor (rather than an
+     * offset) keeps revoking one from shifting later pages.
      *
-     * @return list<array<string, mixed>>
+     * @return array{links: list<array<string, mixed>>, nextCursor: string|null}
      */
-    private function shareLinks(Project $project): array
+    private function shareLinks(Project $project, ?int $beforeId = null): array
     {
-        return CrawlDiffReport::query()
+        $perPage = self::SHARE_LINKS_PER_PAGE;
+        $rows = CrawlDiffReport::query()
             ->where('project_id', $project->id)
             ->whereNull('revoked_at')
             ->where(fn ($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now()))
-            ->latest('id')
-            ->limit(50)
-            ->get()
+            ->when($beforeId !== null, fn ($q) => $q->where('id', '<', $beforeId))
+            ->orderByDesc('id')
+            ->limit($perPage + 1)
+            ->get();
+
+        $hasMore = $rows->count() > $perPage;
+        $rows = $rows->take($perPage);
+
+        $links = $rows
             ->map(fn (CrawlDiffReport $r): array => [
                 'id' => $r->uuid,
                 'title' => $r->title,
@@ -175,6 +211,11 @@ class CrawlCompareController extends Controller
             ])
             ->values()
             ->all();
+
+        /** @var CrawlDiffReport|null $last */
+        $last = $rows->last();
+
+        return ['links' => $links, 'nextCursor' => $hasMore && $last !== null ? $last->uuid : null];
     }
 
     public function share(Request $request, Workspace $workspace, Project $project): JsonResponse

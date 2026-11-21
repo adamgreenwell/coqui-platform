@@ -25,7 +25,7 @@ import {
   TrendingUp,
   X,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { UpgradePill, usePlan } from '../../components/PlanGate';
 import AppLayout, { type WorkspaceSummary } from '../../layouts/AppLayout';
 
@@ -220,6 +220,7 @@ interface CompareProps {
   shareToken?: string | null;
   canManageShares?: boolean;
   shareLinks?: ShareLink[];
+  shareLinksNextCursor?: string | null;
 }
 
 export default function Compare({
@@ -235,6 +236,7 @@ export default function Compare({
   shareToken,
   canManageShares = false,
   shareLinks = [],
+  shareLinksNextCursor = null,
 }: CompareProps) {
   const [baselineId, setBaselineId] = useState<string>(selectedBaselineId || '');
   const [targetId, setTargetId] = useState<string>(selectedTargetId || '');
@@ -252,13 +254,28 @@ export default function Compare({
   const [generatedShareUrl, setGeneratedShareUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [links, setLinks] = useState<ShareLink[]>(shareLinks);
+  const [linksCursor, setLinksCursor] = useState<string | null>(shareLinksNextCursor);
+  const [linksLoading, setLinksLoading] = useState(false);
+  // Only the latest drill-down request may update the modal.
+  const drillRequest = useRef<AbortController | null>(null);
   const [drillRule, setDrillRule] = useState<{ rule: string; severity: string; type: 'new' | 'resolved' } | null>(null);
   const [drillPage, setDrillPage] = useState<DrillDownPage | null>(null);
   const [drillLoading, setDrillLoading] = useState(false);
 
   const csrf = () => (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || '';
 
+  const closeDrillDown = () => {
+    drillRequest.current?.abort();
+    drillRequest.current = null;
+    setDrillRule(null);
+    setDrillPage(null);
+    setDrillLoading(false);
+  };
+
   const loadDrillDown = async (rule: string, severity: string, type: 'new' | 'resolved', page = 1) => {
+    drillRequest.current?.abort();
+    const controller = new AbortController();
+    drillRequest.current = controller;
     setDrillRule({ rule, severity, type });
     setDrillLoading(true);
     const params = new URLSearchParams({ type, rule, severity, page: String(page) });
@@ -271,10 +288,42 @@ export default function Compare({
       url = `/workspaces/${workspace.id}/projects/${project.id}/crawls/compare/issues?${params}`;
     }
     try {
-      const response = await fetch(url, { headers: { Accept: 'application/json' }, credentials: 'same-origin' });
-      setDrillPage(response.ok ? await response.json() : null);
+      const response = await fetch(url, {
+        headers: { Accept: 'application/json' },
+        credentials: 'same-origin',
+        signal: controller.signal,
+      });
+      const data = response.ok ? await response.json() : null;
+      if (drillRequest.current === controller) {
+        setDrillPage(data);
+      }
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        throw error;
+      }
     } finally {
-      setDrillLoading(false);
+      if (drillRequest.current === controller) {
+        drillRequest.current = null;
+        setDrillLoading(false);
+      }
+    }
+  };
+
+  const loadOlderLinks = async () => {
+    if (!linksCursor) return;
+    setLinksLoading(true);
+    try {
+      const response = await fetch(
+        `/workspaces/${workspace.id}/projects/${project.id}/crawls/compare/shares?after=${encodeURIComponent(linksCursor)}`,
+        { headers: { Accept: 'application/json' }, credentials: 'same-origin' }
+      );
+      if (response.ok) {
+        const data: { shareLinks: ShareLink[]; shareLinksNextCursor: string | null } = await response.json();
+        setLinks((current) => [...current, ...data.shareLinks.filter((l) => !current.some((c) => c.id === l.id))]);
+        setLinksCursor(data.shareLinksNextCursor);
+      }
+    } finally {
+      setLinksLoading(false);
     }
   };
 
@@ -428,14 +477,14 @@ export default function Compare({
               <UpgradePill />
             </Link>
             {/* Existing links stay revocable after a downgrade. */}
-            {links.length > 0 && (
+            {(links.length > 0 || linksCursor) && (
               <button
                 type="button"
                 onClick={() => setShareModalOpen(true)}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition cursor-pointer"
               >
                 <Share2 className="h-3.5 w-3.5" />
-                <span>Manage links ({links.length})</span>
+                <span>Manage links ({links.length}{linksCursor ? '+' : ''})</span>
               </button>
             )}
           </div>
@@ -1069,10 +1118,7 @@ export default function Compare({
               </h3>
               <button
                 type="button"
-                onClick={() => {
-                  setDrillRule(null);
-                  setDrillPage(null);
-                }}
+                onClick={closeDrillDown}
                 className="text-slate-400 hover:text-white"
               >
                 <X className="h-4 w-4" />
@@ -1228,6 +1274,16 @@ export default function Compare({
                         </li>
                       ))}
                     </ul>
+                    {linksCursor && (
+                      <button
+                        type="button"
+                        onClick={loadOlderLinks}
+                        disabled={linksLoading}
+                        className="mt-2 text-[11px] text-slate-400 hover:text-white disabled:opacity-50"
+                      >
+                        {linksLoading ? 'Loading…' : 'Show older links'}
+                      </button>
+                    )}
                   </div>
                 )}
 

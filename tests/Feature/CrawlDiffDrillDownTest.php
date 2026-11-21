@@ -9,6 +9,7 @@ use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Crawls\Services\CrawlDiffService;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
+use App\Http\Controllers\CrawlCompareController;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -225,6 +226,30 @@ class CrawlDiffDrillDownTest extends TestCase
         $this->actingAs($editor)->postJson($this->base().'/share', $payload)->assertCreated();
         $this->actingAs($editor)->get($this->base())
             ->assertInertia(fn (Assert $page) => $page->where('canManageShares', true)->has('shareLinks', 2));
+    }
+
+    public function test_every_active_share_link_can_be_reached_for_revoking(): void
+    {
+        $per = CrawlCompareController::SHARE_LINKS_PER_PAGE;
+        $reports = collect(range(1, $per + 5))->map(fn (int $i): CrawlDiffReport => $this->report(['title' => "Link {$i}"]));
+        $this->report(['title' => 'Revoked', 'revoked_at' => now()]);
+        $oldest = $reports->first();
+
+        $page = $this->actingAs($this->owner)->get($this->base())
+            ->assertInertia(fn (Assert $p) => $p->has('shareLinks', $per)->whereNot('shareLinksNextCursor', null));
+        $cursor = $page->viewData('page')['props']['shareLinksNextCursor'];
+
+        // Revoking a link on the first page doesn't shift the next one.
+        $this->actingAs($this->owner)->deleteJson($this->base().'/shares/'.$reports->last()->uuid)->assertOk();
+
+        $next = $this->actingAs($this->owner)->getJson($this->base().'/shares?after='.$cursor)
+            ->assertOk()
+            ->assertJsonCount(5, 'shareLinks')
+            ->assertJsonPath('shareLinksNextCursor', null);
+        $this->assertContains($oldest->uuid, array_column($next->json('shareLinks'), 'id'));
+        $this->assertNotContains('Revoked', array_column($next->json('shareLinks'), 'title'));
+
+        $this->actingAs($this->member('viewer'))->getJson($this->base().'/shares?after='.$cursor)->assertForbidden();
     }
 
     public function test_share_links_expire_after_30_days_by_default(): void
