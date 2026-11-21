@@ -6,9 +6,12 @@ namespace App\Policies;
 
 use App\Domains\Projects\Models\Project;
 use App\Models\User;
+use App\Policies\Concerns\RespectsTokenWorkspace;
 
 class ProjectPolicy
 {
+    use RespectsTokenWorkspace;
+
     public function view(User $user, Project $project): bool
     {
         return $this->belongsToWorkspace($user, $project);
