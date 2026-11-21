@@ -458,13 +458,19 @@ class TrackedKeywordController extends Controller
                 'checked_on',
             ]);
 
-        // The latest AI Overview's sources, in the order it cited them.
-        $citedOn = KeywordAiOverviewCitation::query()
+        $own = $snapshots->where('domain', $project->domain)->values();
+        /** @var KeywordRankSnapshot|null $latest */
+        $latest = $own->last();
+        $features = $latest !== null && is_array($latest->serp_features) ? $latest->serp_features : [];
+
+        // The latest check's AI Overview: its position and sources, in the
+        // order it cited them. None when that check had no overview.
+        $overviewOn = $latest !== null && $latest->has_ai_overview
+            ? Carbon::parse($latest->checked_on)->toDateString()
+            : null;
+        $citations = $overviewOn === null ? [] : KeywordAiOverviewCitation::query()
             ->where('tracked_keyword_id', $keyword->id)
-            ->max('checked_on');
-        $citations = $citedOn === null ? [] : KeywordAiOverviewCitation::query()
-            ->where('tracked_keyword_id', $keyword->id)
-            ->whereDate('checked_on', Carbon::parse((string) $citedOn)->toDateString())
+            ->whereDate('checked_on', $overviewOn)
             ->orderBy('position')
             ->get(['position', 'domain', 'url', 'title'])
             ->map(fn (KeywordAiOverviewCitation $c): array => [
@@ -476,11 +482,6 @@ class TrackedKeywordController extends Controller
             ])
             ->all();
 
-        $own = $snapshots->where('domain', $project->domain)->values();
-        /** @var KeywordRankSnapshot|null $latest */
-        $latest = $own->last();
-        $features = $latest !== null && is_array($latest->serp_features) ? $latest->serp_features : [];
-
         return response()->json([
             'keyword' => [
                 'id' => $keyword->uuid,
@@ -491,8 +492,8 @@ class TrackedKeywordController extends Controller
             'snapshots' => $snapshots,
             'volatility' => $trends->volatility($own),
             'ai_overview' => [
-                'checked_on' => $citedOn !== null ? Carbon::parse((string) $citedOn)->toDateString() : null,
-                'position' => $features['ai_overview_position'] ?? null,
+                'checked_on' => $overviewOn,
+                'position' => $overviewOn !== null ? ($features['ai_overview_position'] ?? null) : null,
                 'citations' => $citations,
             ],
             'people_also_ask' => is_array($features['people_also_ask'] ?? null) ? $features['people_also_ask'] : [],

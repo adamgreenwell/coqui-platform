@@ -344,4 +344,23 @@ class RankTrackerInsightsTest extends TestCase
 
         Carbon::setTestNow();
     }
+
+    public function test_history_shows_no_ai_overview_sources_when_the_latest_check_had_none(): void
+    {
+        Carbon::setTestNow('2026-11-21 12:00:00');
+        $keyword = $this->keyword();
+        $recorder = app(RecordSerpRankSnapshots::class);
+        $recorder->handle($keyword, $this->payload(), '2026-11-20');
+        $items = array_values(array_filter($this->serpItems(), fn (array $i): bool => $i['type'] !== 'ai_overview'));
+        $recorder->handle($keyword, ['items' => $items], '2026-11-21');
+
+        $this->actingAs($this->owner)
+            ->getJson("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keywords/{$keyword->uuid}/snapshots")
+            ->assertOk()
+            ->assertJsonPath('ai_overview.checked_on', null)
+            ->assertJsonPath('ai_overview.position', null)
+            ->assertJsonPath('ai_overview.citations', []);
+
+        Carbon::setTestNow();
+    }
 }

@@ -108,6 +108,14 @@ export default function TrendChart({
             </text>
           ) : null,
         )}
+        {/* A point with no neighbour draws no line; mark it so it shows. */}
+        {series.map((s) =>
+          s.values.map((v, i) =>
+            v !== null && (s.values[i - 1] ?? null) === null && (s.values[i + 1] ?? null) === null ? (
+              <circle key={`${s.key}-${i}`} cx={x(i)} cy={y(v)} r={2.5} fill={s.color} />
+            ) : null,
+          ),
+        )}
         {paths.map((d, i) => (
           <path
             key={series[i].key}
