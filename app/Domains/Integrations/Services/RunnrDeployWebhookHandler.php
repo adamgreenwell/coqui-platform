@@ -42,6 +42,21 @@ class RunnrDeployWebhookHandler
             return null;
         }
 
+        // A redelivered deploy (same deploy ID) gets the run already started
+        // for it rather than a second crawl.
+        $deployId = $deployMetadata['deploy_id'] ?? null;
+        if ($deployId !== null && $deployId !== '') {
+            /** @var CrawlRun|null $existing */
+            $existing = CrawlRun::query()
+                ->where('project_id', $project->id)
+                ->where('source', 'deploy_smoke')
+                ->where('config->deploy->deploy_id', $deployId)
+                ->first();
+            if ($existing !== null) {
+                return $existing;
+            }
+        }
+
         $crawlId = (string) Str::uuid();
         $seed = $deployUrl ?? $project->canonical_url;
         $smokeMaxUrls = (int) config('coqui.worker.smoke_max_urls', 100);
@@ -58,7 +73,9 @@ class RunnrDeployWebhookHandler
                 'maxDepth' => 2,
                 'maxUrls' => $smokeMaxUrls,
                 'concurrency' => 4,
-                'respectRobots' => true,
+                // robots.txt is checked directly by the smoke evaluation, so
+                // a deploy that blocks crawlers still gets its pages checked.
+                'respectRobots' => false,
                 'deploy' => [
                     'deploy_id' => $deployMetadata['deploy_id'] ?? null,
                     'environment' => $deployMetadata['environment'] ?? 'production',
@@ -96,6 +113,7 @@ class RunnrDeployWebhookHandler
             'seed' => $seed,
             'maxDepth' => 2,
             'maxUrls' => $smokeMaxUrls,
+            'respectRobots' => false,
         ]);
 
         return $run;
