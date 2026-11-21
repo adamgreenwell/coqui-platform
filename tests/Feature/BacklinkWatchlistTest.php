@@ -14,6 +14,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -562,6 +563,25 @@ CSV;
         $urls = collect(Http::recorded())->map(fn (array $pair): string => $pair[0]->url())->all();
         $this->assertSame(['https://busy.example/one', 'https://other.example/one', 'https://busy.example/two'], $urls);
         $this->assertGreaterThanOrEqual(0.15, microtime(true) - $started);
+    }
+
+    public function test_a_slot_reserved_by_another_run_pushes_the_next_request_back(): void
+    {
+        config()->set('coqui.backlinks.verify_host_delay_ms', 150);
+        Http::fake(['*' => Http::response('Not Found', 404)]);
+        $this->monitor('https://busy.example/one');
+
+        // Another worker has already reserved the next slot for this host.
+        $key = 'backlink-verify:host:'.md5('busy.example');
+        $reserved = microtime(true) + 0.1;
+        Cache::put($key, $reserved, now()->addMinutes(5));
+
+        $started = microtime(true);
+        app(BacklinkVerificationService::class)->verifyProjectWatchlist($this->project);
+
+        // It waited for that slot plus the gap, and reserved its own after it.
+        $this->assertGreaterThanOrEqual(0.25, microtime(true) - $started);
+        $this->assertEqualsWithDelta($reserved + 0.15, (float) Cache::get($key), 0.001);
     }
 
     public function test_the_scheduled_command_queues_by_default_and_can_run_inline(): void

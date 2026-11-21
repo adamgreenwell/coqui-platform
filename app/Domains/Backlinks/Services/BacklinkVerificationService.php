@@ -256,15 +256,24 @@ class BacklinkVerificationService
         }
 
         $key = 'backlink-verify:host:'.md5($host);
-        $last = Cache::get($key);
-        if (is_numeric($last)) {
-            $wait = (float) $last + ($delayMs / 1000) - microtime(true);
-            if ($wait > 0) {
-                usleep((int) ceil($wait * 1_000_000));
-            }
-        }
+        $gap = $delayMs / 1000;
 
-        Cache::put($key, microtime(true), now()->addMinutes(5));
+        // Reserve this request's slot under a lock so parallel runs hitting
+        // the same host queue up behind each other instead of reading the
+        // same timestamp. The wait happens after the lock is released.
+        $slot = Cache::lock($key.':lock', 10)->block(10, function () use ($key, $gap): float {
+            $now = microtime(true);
+            $last = Cache::get($key);
+            $slot = is_numeric($last) ? max($now, (float) $last + $gap) : $now;
+            Cache::put($key, $slot, now()->addMinutes(5));
+
+            return $slot;
+        });
+
+        $wait = $slot - microtime(true);
+        if ($wait > 0) {
+            usleep((int) ceil($wait * 1_000_000));
+        }
     }
 
     /**
