@@ -461,7 +461,7 @@ class BotTelemetryService
                 $target = $data['target'];
                 // Only a target on this site can be looked up in its own
                 // telemetry; reported hops still count for external ones.
-                $targetPath = $target !== null ? $this->localPathOf($target, $siteHosts) : null;
+                $targetPath = $target !== null ? $this->localPathOf($target, $siteHosts, $path) : null;
                 $targetRedirects = $targetPath !== null && $targetPath !== $path && isset($pathMap[$targetPath])
                     && $this->redirectHits($pathMap[$targetPath]['statusHits']) > 0;
                 $hops = max($data['hops'], $targetRedirects ? 2 : 1);
@@ -566,7 +566,7 @@ class BotTelemetryService
      *
      * @param  list<string>  $siteHosts
      */
-    private function localPathOf(string $target, array $siteHosts): ?string
+    private function localPathOf(string $target, array $siteHosts, string $sourcePath = '/'): ?string
     {
         $parts = parse_url($target);
         if ($parts === false) {
@@ -576,10 +576,42 @@ class BotTelemetryService
             return null;
         }
 
-        $path = $parts['path'] ?? '/';
+        $path = $parts['path'] ?? '';
+        $sourceOnly = (string) (parse_url($sourcePath, PHP_URL_PATH) ?? '/');
+        if (! isset($parts['host'])) {
+            if ($path === '') {
+                // "?page=2" keeps the source path.
+                $path = $sourceOnly;
+            } elseif (! str_starts_with($path, '/')) {
+                // Relative to the source path's directory.
+                $path = substr($sourceOnly, 0, (int) strrpos($sourceOnly, '/') + 1).$path;
+            }
+        }
+        $path = self::removeDotSegments($path === '' ? '/' : $path);
         $query = isset($parts['query']) && $parts['query'] !== '' ? '?'.$parts['query'] : '';
 
         return $path.$query;
+    }
+
+    private static function removeDotSegments(string $path): string
+    {
+        $out = [];
+        foreach (explode('/', $path) as $segment) {
+            if ($segment === '..') {
+                if (count($out) > 1) {
+                    array_pop($out);
+                }
+            } elseif ($segment !== '.') {
+                $out[] = $segment;
+            }
+        }
+        $resolved = implode('/', $out);
+        // "a/." and "a/.." refer to a directory: keep the trailing slash.
+        if (preg_match('#/\.\.?$#', $path) === 1 && ! str_ends_with($resolved, '/')) {
+            $resolved .= '/';
+        }
+
+        return str_starts_with($resolved, '/') ? $resolved : '/'.$resolved;
     }
 
     /**

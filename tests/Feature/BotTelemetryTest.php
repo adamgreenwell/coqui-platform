@@ -300,6 +300,27 @@ class BotTelemetryTest extends TestCase
         $this->assertSame(['/legacy'], array_column($chains, 'path'));
     }
 
+    public function test_relative_redirect_targets_resolve_against_the_source_path(): void
+    {
+        $this->sendBatch([
+            ['botFamily' => 'googlebot', 'statusBucket' => 301, 'hitCount' => 40, 'bucketHour' => '2026-11-19T05:00:00Z', 'topPaths' => [
+                ['path' => '/catalog/old', 'hits' => 10, 'status' => 301, 'redirectTarget' => 'new'],
+                ['path' => '/catalog/new', 'hits' => 10, 'status' => 301, 'redirectTarget' => '/shop'],
+                ['path' => '/docs/a/page', 'hits' => 10, 'status' => 301, 'redirectTarget' => '../b/./page'],
+                ['path' => '/docs/b/page', 'hits' => 10, 'status' => 301, 'redirectTarget' => 'https://telemetry-site.com/docs'],
+            ]],
+        ])->assertStatus(202);
+
+        Sanctum::actingAs($this->user, ['projects:read']);
+        Carbon::setTestNow('2026-11-20 12:00:00');
+        $chains = $this->getJson("/api/v1/projects/{$this->project->uuid}/telemetry/bot-logs?days=7")->assertOk()->json('redirectChains');
+        Carbon::setTestNow();
+
+        $paths = array_column($chains, 'path');
+        sort($paths);
+        $this->assertSame(['/catalog/old', '/docs/a/page'], $paths);
+    }
+
     public function test_different_batches_for_the_same_hour_add_up(): void
     {
         $this->sendBatch([$this->googlebot404s(10)], 'batch-0500-a')->assertStatus(202);
