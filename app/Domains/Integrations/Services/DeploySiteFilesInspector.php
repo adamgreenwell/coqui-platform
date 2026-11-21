@@ -16,6 +16,8 @@ class DeploySiteFilesInspector
 {
     private const MAX_BYTES = 2 * 1024 * 1024;
 
+    private const SITEMAP_NAMESPACE = 'http://www.sitemaps.org/schemas/sitemap/0.9';
+
     public function __construct(
         private readonly SafeHttpClient $http = new SafeHttpClient,
     ) {}
@@ -64,15 +66,20 @@ class DeploySiteFilesInspector
     }
 
     /**
-     * Whether the rules for all crawlers (`*`) or Googlebot block the whole
-     * site, and which sitemaps are listed.
+     * Whether robots.txt blocks the whole site for all crawlers (`*`) or for
+     * Googlebot, and which sitemaps are listed.
+     *
+     * Rules follow Google's robots.txt handling: a crawler obeys only the
+     * most specific group naming it (falling back to `*`), and for a path the
+     * longest matching rule wins, with Allow winning a tie. The site counts as
+     * blocked when both the homepage and an ordinary page are disallowed.
      *
      * @return array{disallow_all: bool, sitemaps: list<string>}
      */
     public static function parseRobots(string $body): array
     {
         $sitemaps = [];
-        /** @var list<array{agents: list<string>, disallow: list<string>, allow: list<string>}> $groups */
+        /** @var list<array{agents: list<string>, rules: list<array{0: bool, 1: string}>}> $groups */
         $groups = [];
         $current = null;
         $lastWasAgent = false;
@@ -96,7 +103,7 @@ class DeploySiteFilesInspector
 
             if ($key === 'user-agent') {
                 if (! $lastWasAgent || $current === null) {
-                    $groups[] = ['agents' => [], 'disallow' => [], 'allow' => []];
+                    $groups[] = ['agents' => [], 'rules' => []];
                     $current = array_key_last($groups);
                 }
                 $groups[$current]['agents'][] = strtolower($value);
@@ -106,36 +113,75 @@ class DeploySiteFilesInspector
             }
 
             $lastWasAgent = false;
-            if ($current === null) {
+            // An empty Disallow allows everything, so it adds no rule.
+            if ($current === null || $value === '' || ! in_array($key, ['allow', 'disallow'], true)) {
                 continue;
             }
-            if ($key === 'disallow') {
-                $groups[$current]['disallow'][] = $value;
-            } elseif ($key === 'allow') {
-                $groups[$current]['allow'][] = $value;
+            $groups[$current]['rules'][] = [$key === 'allow', $value];
+        }
+
+        $rulesFor = static function (string $agent) use ($groups): ?array {
+            $rules = null;
+            foreach ($groups as $group) {
+                if (in_array($agent, $group['agents'], true)) {
+                    $rules = array_merge($rules ?? [], $group['rules']);
+                }
+            }
+
+            return $rules;
+        };
+
+        $wildcard = $rulesFor('*') ?? [];
+        $googlebot = $rulesFor('googlebot') ?? $wildcard;
+
+        $blocksSite = static fn (array $rules): bool => ! self::isAllowed($rules, '/')
+            && ! self::isAllowed($rules, '/coqui-smoke-check');
+
+        return [
+            'disallow_all' => $blocksSite($wildcard) || $blocksSite($googlebot),
+            'sitemaps' => array_values(array_unique($sitemaps)),
+        ];
+    }
+
+    /**
+     * @param  list<array{0: bool, 1: string}>  $rules  [isAllow, pattern]
+     */
+    private static function isAllowed(array $rules, string $path): bool
+    {
+        $best = null;
+        foreach ($rules as [$allow, $pattern]) {
+            if (! self::patternMatches($pattern, $path)) {
+                continue;
+            }
+            $length = strlen($pattern);
+            if ($best === null || $length > $best[1] || ($length === $best[1] && $allow)) {
+                $best = [$allow, $length];
             }
         }
 
-        $disallowAll = false;
-        foreach ($groups as $group) {
-            $applies = array_intersect($group['agents'], ['*', 'googlebot']) !== [];
-            if (! $applies) {
-                continue;
-            }
+        return $best === null || $best[0];
+    }
 
-            $blocksRoot = array_intersect($group['disallow'], ['/', '/*']) !== [];
-            $allowsRoot = array_intersect($group['allow'], ['/', '/$']) !== [];
-            if ($blocksRoot && ! $allowsRoot) {
-                $disallowAll = true;
-            }
+    /**
+     * robots.txt path matching: `*` matches any run of characters and a
+     * trailing `$` anchors the end; otherwise the pattern is a prefix.
+     */
+    private static function patternMatches(string $pattern, string $path): bool
+    {
+        $anchored = str_ends_with($pattern, '$');
+        if ($anchored) {
+            $pattern = substr($pattern, 0, -1);
         }
 
-        return ['disallow_all' => $disallowAll, 'sitemaps' => array_values(array_unique($sitemaps))];
+        $regex = '#^'.implode('.*', array_map(static fn (string $part): string => preg_quote($part, '#'), explode('*', $pattern))).($anchored ? '$' : '').'#';
+
+        return preg_match($regex, $path) === 1;
     }
 
     /**
      * Number of <url> (or <sitemap>, for an index) entries, or null when the
-     * body isn't a sitemap.
+     * body isn't a sitemap. Entries are counted in the sitemap namespace,
+     * whether it's the default namespace or a prefix like `<s:url>`.
      */
     public static function countSitemapEntries(string $body): ?int
     {
@@ -155,11 +201,19 @@ class DeploySiteFilesInspector
             return null;
         }
 
-        return match (strtolower($xml->getName())) {
-            'urlset' => $xml->count(),
-            'sitemapindex' => $xml->count(),
+        $entry = match (strtolower($xml->getName())) {
+            'urlset' => 'url',
+            'sitemapindex' => 'sitemap',
             default => null,
         };
+        if ($entry === null) {
+            return null;
+        }
+
+        $namespaced = count($xml->children(self::SITEMAP_NAMESPACE)->{$entry});
+        $bare = count($xml->children()->{$entry});
+
+        return max($namespaced, $bare);
     }
 
     private function origin(string $seed): string

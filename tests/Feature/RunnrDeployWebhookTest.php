@@ -788,6 +788,14 @@ Disallow: /
         $this->assertFalse(DeploySiteFilesInspector::parseRobots("User-agent: BadBot\nDisallow: /\n")['disallow_all']);
         $this->assertFalse(DeploySiteFilesInspector::parseRobots("User-agent: *\nDisallow: /admin\n")['disallow_all']);
         $this->assertFalse(DeploySiteFilesInspector::parseRobots("User-agent: *\nDisallow: /\nAllow: /\n")['disallow_all']);
+        // The longer, more specific rule wins: Allow: /* reopens everything.
+        $this->assertFalse(DeploySiteFilesInspector::parseRobots("User-agent: *\nDisallow: /\nAllow: /*\n")['disallow_all']);
+        // Only the homepage is blocked, or only the homepage is open: not a site-wide block.
+        $this->assertFalse(DeploySiteFilesInspector::parseRobots("User-agent: *\nDisallow: /$\n")['disallow_all']);
+        $this->assertFalse(DeploySiteFilesInspector::parseRobots("User-agent: *\nAllow: /$\nDisallow: /\n")['disallow_all']);
+        // Googlebot obeys its own group, but every other crawler is blocked.
+        $this->assertTrue(DeploySiteFilesInspector::parseRobots("User-agent: Googlebot\nAllow: /\n\nUser-agent: *\nDisallow: /\n")['disallow_all']);
+        $this->assertTrue(DeploySiteFilesInspector::parseRobots("User-agent: Googlebot\nDisallow: /\n\nUser-agent: *\nDisallow:\n")['disallow_all']);
         $this->assertTrue(DeploySiteFilesInspector::parseRobots("User-agent: bingbot\nUser-agent: *\nDisallow: /*\n")['disallow_all']);
         $this->assertSame(
             ['https://my-runnr-site.com/sitemap_index.xml'],
@@ -815,6 +823,41 @@ Disallow: /
         $rules = array_column($result['regressions'], 'rule');
         $this->assertContains('sitemap_missing', $rules);
         $this->assertContains('robots_txt_changed', $rules);
+    }
+
+    public function test_sitemap_entries_are_counted_with_a_namespace_prefix(): void
+    {
+        $ns = 'http://www.sitemaps.org/schemas/sitemap/0.9';
+        $this->assertSame(2, DeploySiteFilesInspector::countSitemapEntries(
+            "<s:urlset xmlns:s=\"{$ns}\"><s:url><s:loc>https://a.test/1</s:loc></s:url><s:url><s:loc>https://a.test/2</s:loc></s:url></s:urlset>"
+        ));
+        $this->assertSame(1, DeploySiteFilesInspector::countSitemapEntries(
+            "<sm:sitemapindex xmlns:sm=\"{$ns}\"><sm:sitemap><sm:loc>https://a.test/s.xml</sm:loc></sm:sitemap></sm:sitemapindex>"
+        ));
+        $this->assertSame(3, DeploySiteFilesInspector::countSitemapEntries($this->sitemap(3)));
+        $this->assertSame(1, DeploySiteFilesInspector::countSitemapEntries('<urlset><url><loc>https://a.test/</loc></url></urlset>'));
+        $this->assertNull(DeploySiteFilesInspector::countSitemapEntries('<html><body>Not found</body></html>'));
+    }
+
+    public function test_a_preview_deploy_is_not_the_production_baseline(): void
+    {
+        $this->siteFiles['/sitemap.xml'] = [$this->sitemap(20), 200];
+        $production = $this->smokeRun('08');
+        $this->addCrawledPage($production, 'https://my-runnr-site.com/');
+        app(RunnrDeploySmokeService::class)->evaluate($production);
+
+        // A preview deploy with no sitemap in between...
+        unset($this->siteFiles['/sitemap.xml']);
+        $preview = $this->smokeRun('09', 'preview');
+        $this->addCrawledPage($preview, 'https://my-runnr-site.com/');
+        app(RunnrDeploySmokeService::class)->evaluate($preview);
+
+        // ...doesn't hide the production sitemap disappearing.
+        $next = $this->smokeRun('10');
+        $this->addCrawledPage($next, 'https://my-runnr-site.com/');
+        $result = app(RunnrDeploySmokeService::class)->evaluate($next);
+
+        $this->assertContains('sitemap_missing', array_column($result['regressions'], 'rule'));
     }
 
     public function test_a_sitemap_that_shrinks_by_half_is_a_warning(): void

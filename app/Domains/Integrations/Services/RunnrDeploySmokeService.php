@@ -41,17 +41,21 @@ class RunnrDeploySmokeService
      *
      * @return array<string, mixed>|null
      */
-    private function previousChecks(CrawlRun $run): ?array
+    private function previousChecks(CrawlRun $run, string $environment): ?array
     {
         $previous = CrawlRun::query()
             ->where('project_id', $run->project_id)
             ->where('source', 'deploy_smoke')
             ->where('id', '<', $run->id)
             ->orderByDesc('id')
-            ->limit(10)
+            ->limit(25)
             ->get(['id', 'config']);
 
         foreach ($previous as $candidate) {
+            // A preview deploy is no baseline for production, or vice versa.
+            if ((string) ($candidate->config['deploy']['environment'] ?? 'production') !== $environment) {
+                continue;
+            }
             $checks = $candidate->config['smoke_results']['checks'] ?? null;
             if (is_array($checks) && isset($checks['robots'], $checks['sitemap'])) {
                 return $checks;
@@ -157,7 +161,7 @@ class RunnrDeploySmokeService
         // robots.txt and the sitemap are fetched directly: a crawl blocked by
         // robots.txt finds no pages, so its results can't show the block.
         $checks = $this->files->inspect($run->seed);
-        $previousChecks = $this->previousChecks($run);
+        $previousChecks = $this->previousChecks($run, $environment);
 
         // Check 0: Nothing crawled. There's nothing to judge, so it can't pass.
         if ($totalUrls === 0) {
