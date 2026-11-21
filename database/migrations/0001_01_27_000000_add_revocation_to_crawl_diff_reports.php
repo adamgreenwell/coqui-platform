@@ -23,7 +23,8 @@ return new class extends Migration
             $table->foreignId('revoked_by_user_id')->nullable()->constrained('users')->nullOnDelete();
         });
 
-        DB::table('crawl_diff_reports')->whereNull('uuid')->orderBy('id')->each(function (object $row): void {
+        // By id, so filling rows in doesn't shift later chunks.
+        DB::table('crawl_diff_reports')->whereNull('uuid')->eachById(function (object $row): void {
             DB::table('crawl_diff_reports')->where('id', $row->id)->update(['uuid' => (string) Str::uuid7()]);
         });
 

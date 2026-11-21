@@ -427,6 +427,17 @@ export default function Compare({
               <span>Share Report</span>
               <UpgradePill />
             </Link>
+            {/* Existing links stay revocable after a downgrade. */}
+            {links.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShareModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition cursor-pointer"
+              >
+                <Share2 className="h-3.5 w-3.5" />
+                <span>Manage links ({links.length})</span>
+              </button>
+            )}
           </div>
         )}
 
@@ -1135,7 +1146,7 @@ export default function Compare({
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-base font-semibold text-white flex items-center gap-2">
                 <Share2 className="h-4 w-4 text-emerald-400" />
-                <span>Create Shareable Diff Report</span>
+                <span>{canShare ? 'Create Shareable Diff Report' : 'Share Links'}</span>
               </h3>
               <button
                 type="button"
@@ -1151,10 +1162,18 @@ export default function Compare({
 
             {!generatedShareUrl ? (
               <div className="space-y-4">
-                <p className="text-xs text-slate-400">
-                  Generate a secure, read-only public report link to share this technical crawl comparison with clients, stakeholders, or developers.
-                </p>
+                {canShare ? (
+                  <p className="text-xs text-slate-400">
+                    Generate a secure, read-only public report link to share this technical crawl comparison with clients, stakeholders, or developers.
+                  </p>
+                ) : (
+                  <p className="text-xs text-slate-400">
+                    Your plan no longer includes new client share links. You can still revoke the links below.
+                  </p>
+                )}
 
+                {canShare && (
+                <>
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">
                     Custom Report Title (Optional)
@@ -1182,6 +1201,8 @@ export default function Compare({
                     <option value={90}>Expires in 90 days</option>
                   </select>
                 </div>
+                </>
+                )}
 
                 {links.length > 0 && (
                   <div className="pt-2 border-t border-slate-800">
@@ -1216,16 +1237,18 @@ export default function Compare({
                     onClick={() => setShareModalOpen(false)}
                     className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white"
                   >
-                    Cancel
+                    {canShare ? 'Cancel' : 'Close'}
                   </button>
-                  <button
-                    type="button"
-                    onClick={handleCreateShareLink}
-                    disabled={shareLoading}
-                    className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs transition cursor-pointer disabled:opacity-50"
-                  >
-                    {shareLoading ? 'Generating...' : 'Generate Link'}
-                  </button>
+                  {canShare && (
+                    <button
+                      type="button"
+                      onClick={handleCreateShareLink}
+                      disabled={shareLoading}
+                      className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs transition cursor-pointer disabled:opacity-50"
+                    >
+                      {shareLoading ? 'Generating...' : 'Generate Link'}
+                    </button>
+                  )}
                 </div>
               </div>
             ) : (
