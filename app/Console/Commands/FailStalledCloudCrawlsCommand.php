@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Domains\Crawls\Events\CrawlProgressUpdated;
 use App\Domains\Crawls\Models\CrawlRun;
+use App\Domains\Integrations\Services\RunnrDeploySmokeService;
 use App\Domains\Projects\Models\ProjectActivity;
 use Illuminate\Console\Command;
 
@@ -81,6 +82,13 @@ class FailStalledCloudCrawlsCommand extends Command
                         'crawl_id' => $run->external_crawl_id,
                         'reason' => 'stalled',
                     ],
+                );
+            }
+
+            if ($run->source === 'deploy_smoke') {
+                app(RunnrDeploySmokeService::class)->reportFailure(
+                    $run,
+                    "The crawl worker sent no progress for {$minutes} minutes.",
                 );
             }
         });

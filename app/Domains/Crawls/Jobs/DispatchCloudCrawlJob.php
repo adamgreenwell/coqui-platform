@@ -8,6 +8,7 @@ use App\Domains\Billing\PlanFeature;
 use App\Domains\Crawls\Events\CrawlProgressUpdated;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Crawls\Services\CoquiWorkerClient;
+use App\Domains\Integrations\Services\RunnrDeploySmokeService;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use Illuminate\Bus\Queueable;
@@ -121,6 +122,10 @@ class DispatchCloudCrawlJob implements ShouldQueue
                 opportunityCount: (int) $run->opportunity_count,
                 status: 'failed',
             )));
+
+            if ($run->source === 'deploy_smoke') {
+                app(RunnrDeploySmokeService::class)->reportFailure($run, $reason);
+            }
 
             throw $e;
         }

@@ -4,15 +4,21 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Domains\Crawls\Jobs\DispatchCloudCrawlJob;
 use App\Domains\Crawls\Models\CrawlRun;
+use App\Domains\Crawls\Services\CoquiWorkerClient;
 use App\Domains\Integrations\Services\RunnrDeploySmokeService;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
 use App\Features\RunnrIntegration;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
+use Illuminate\Testing\TestResponse;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -153,7 +159,8 @@ class RunnrDeployWebhookTest extends TestCase
         $run = CrawlRun::query()->where('external_crawl_id', $crawlId)->firstOrFail();
         $this->assertSame('deploy_smoke', $run->source);
         $this->assertSame('https://preview-123.my-runnr-site.com/', $run->seed);
-        $this->assertSame('pending', $run->status);
+        // Dispatched through the crawl queue (sync in tests), which marks it running.
+        $this->assertSame('running', $run->status);
 
         $this->assertIsArray($run->config);
         $this->assertSame('dep_runnr_999', $run->config['deploy']['deploy_id']);
@@ -527,6 +534,120 @@ class RunnrDeployWebhookTest extends TestCase
         $this->assertDatabaseMissing('project_integrations', [
             'project_id' => $this->project->id,
             'provider' => 'runnr',
+        ]);
+    }
+
+    /**
+     * @return array{0: string, 1: string}
+     */
+    private function signedDeploy(string $secret): array
+    {
+        $payload = json_encode([
+            'site_id' => 'site_runnr_12345',
+            'deploy_url' => 'https://my-runnr-site.com/',
+            'deploy_id' => 'dep_down_1',
+            'environment' => 'production',
+            'callback_url' => 'https://runnr.io/api/deploys/down/callback',
+        ], JSON_THROW_ON_ERROR);
+
+        return [$payload, hash_hmac('sha256', $payload, $secret)];
+    }
+
+    private function postDeploy(string $payload, string $signature): TestResponse
+    {
+        return $this->call('POST', '/api/webhooks/runnr/deploy', [], [], [], [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_ACCEPT' => 'application/json',
+            'HTTP_X_RUNNR_SIGNATURE' => $signature,
+        ], $payload);
+    }
+
+    public function test_runnr_gets_a_2xx_and_a_failed_callback_when_the_worker_is_down(): void
+    {
+        config()->set('services.runnr.webhook_secret', 'runnr-secret-key');
+        config()->set('coqui.worker.url', 'http://coqui-worker:8085');
+        config()->set('coqui.worker.token', 'worker-secret');
+
+        Http::fake([
+            'http://coqui-worker:8085/*' => fn () => throw new ConnectionException('Connection refused'),
+            'https://runnr.io/*' => Http::response(['acknowledged' => true], 200),
+        ]);
+
+        [$payload, $signature] = $this->signedDeploy('runnr-secret-key');
+
+        // The webhook only queues the dispatch, so Runnr gets its 202 whatever
+        // state the worker is in.
+        Queue::fake();
+        $response = $this->postDeploy($payload, $signature);
+        $response->assertStatus(202)->assertJson(['status' => 'queued']);
+
+        $run = CrawlRun::query()->where('external_crawl_id', (string) $response->json('crawlId'))->firstOrFail();
+        Queue::assertPushed(DispatchCloudCrawlJob::class, 1);
+
+        // Then Horizon runs the dispatch against the unreachable worker.
+        $job = Queue::pushed(DispatchCloudCrawlJob::class)->first();
+        try {
+            $job->handle(app(CoquiWorkerClient::class));
+            $this->fail('Expected the connection error to be rethrown for Horizon.');
+        } catch (ConnectionException) {
+            // Expected.
+        }
+
+        $run->refresh();
+        $this->assertSame('failed', $run->status);
+        $this->assertFalse($run->config['smoke_results']['passed']);
+
+        Http::assertSent(fn (HttpRequest $request): bool => $request->url() === 'https://runnr.io/api/deploys/down/callback'
+            && $request['status'] === 'failed'
+            && $request['passed'] === false
+            && $request['totalUrlsChecked'] === 0
+            && str_contains((string) $request['summary'], 'could not be reached')
+            && $request->hasHeader('X-Runnr-Signature'));
+    }
+
+    public function test_runnr_gets_a_failed_callback_when_no_worker_is_set_up(): void
+    {
+        config()->set('services.runnr.webhook_secret', 'runnr-secret-key');
+        config()->set('coqui.worker.token', '');
+
+        Http::fake(['https://runnr.io/*' => Http::response(['acknowledged' => true], 200)]);
+
+        [$payload, $signature] = $this->signedDeploy('runnr-secret-key');
+        $response = $this->postDeploy($payload, $signature)->assertStatus(202);
+
+        $run = CrawlRun::query()->where('external_crawl_id', (string) $response->json('crawlId'))->firstOrFail();
+        $this->assertSame('failed', $run->status);
+        $this->assertNotNull($run->finalized_at);
+        Http::assertSent(fn (HttpRequest $request): bool => $request->url() === 'https://runnr.io/api/deploys/down/callback'
+            && $request['status'] === 'failed');
+        Http::assertNotSent(fn (HttpRequest $request): bool => str_contains($request->url(), 'coqui-worker'));
+    }
+
+    public function test_a_stalled_smoke_crawl_reports_failure_to_runnr(): void
+    {
+        config()->set('services.runnr.webhook_secret', 'runnr-secret-key');
+        Http::fake(['https://runnr.io/*' => Http::response(['acknowledged' => true], 200)]);
+
+        $run = CrawlRun::query()->create([
+            'project_id' => $this->project->id,
+            'external_crawl_id' => '99999999-9999-4999-8999-999999999950',
+            'source' => 'deploy_smoke',
+            'seed' => 'https://my-runnr-site.com/',
+            'seed_kind' => 'url',
+            'status' => 'running',
+            'config' => ['deploy' => ['deploy_id' => 'dep_stall', 'callback_url' => 'https://runnr.io/api/deploys/stall/callback']],
+        ]);
+        CrawlRun::query()->whereKey($run->id)->update(['updated_at' => now()->subHour()]);
+
+        $this->artisan('coqui:fail-stalled-crawls')->assertSuccessful();
+
+        $this->assertSame('failed', $run->refresh()->status);
+        Http::assertSent(fn (HttpRequest $request): bool => $request->url() === 'https://runnr.io/api/deploys/stall/callback'
+            && $request['status'] === 'failed'
+            && $request['deployId'] === 'dep_stall');
+        $this->assertDatabaseHas('project_activities', [
+            'project_id' => $this->project->id,
+            'event_type' => 'deploy.smoke_failed',
         ]);
     }
 }
