@@ -20,6 +20,9 @@ pub const MAX_URLS: usize = 200;
 const MAX_REDIRECTS: usize = 5;
 const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 const CONCURRENCY: usize = 8;
+/// Error for a page too large to read in full without finding the link.
+/// Laravel treats any observation with an error as inconclusive.
+pub const INCOMPLETE: &str = "page is larger than 2 MB and the link wasn't in the part read";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -165,12 +168,14 @@ async fn inspect_one(client: &reqwest::Client, url: &str, target: Option<&Target
             .any(robots_says_noindex);
 
         let mut body = Vec::new();
+        let mut truncated = false;
         loop {
             match response.chunk().await {
                 Ok(Some(chunk)) => {
                     let room = MAX_BODY_BYTES.saturating_sub(body.len());
                     body.extend_from_slice(&chunk[..chunk.len().min(room)]);
-                    if body.len() >= MAX_BODY_BYTES {
+                    if chunk.len() > room {
+                        truncated = true;
                         break;
                     }
                 }
@@ -180,6 +185,10 @@ async fn inspect_one(client: &reqwest::Client, url: &str, target: Option<&Target
         }
         let html = String::from_utf8_lossy(&body);
         let (has_link, rel, meta_noindex) = analyse_html(&html, &current, target);
+        // A link found in the first 2 MB is conclusive; its absence isn't.
+        if truncated && !has_link && target.is_some() {
+            return Observation::failed(url, INCOMPLETE.into());
+        }
         return observation(
             url,
             status.as_u16(),

@@ -650,4 +650,34 @@ class RunnrDeployWebhookTest extends TestCase
             'event_type' => 'deploy.smoke_failed',
         ]);
     }
+
+    public function test_a_smoke_crawl_the_worker_reports_failed_is_not_a_pass(): void
+    {
+        config()->set('services.runnr.webhook_secret', 'runnr-secret-key');
+        config()->set('coqui.worker.token', 'worker-secret');
+        Http::fake(['https://runnr.io/*' => Http::response(['acknowledged' => true], 200)]);
+
+        $run = CrawlRun::query()->create([
+            'project_id' => $this->project->id,
+            'external_crawl_id' => '99999999-9999-4999-8999-999999999951',
+            'source' => 'deploy_smoke',
+            'seed' => 'https://my-runnr-site.com/',
+            'seed_kind' => 'url',
+            'status' => 'running',
+            'config' => ['deploy' => ['deploy_id' => 'dep_worker_failed', 'callback_url' => 'https://runnr.io/api/deploys/wf/callback']],
+        ]);
+
+        $this->withToken('worker-secret')
+            ->postJson('/api/internal/crawls/callback', ['crawlId' => $run->external_crawl_id, 'status' => 'failed'])
+            ->assertOk();
+
+        $this->assertSame('failed', $run->refresh()->status);
+        $this->assertFalse($run->config['smoke_results']['passed']);
+        Http::assertSent(fn (HttpRequest $request): bool => $request->url() === 'https://runnr.io/api/deploys/wf/callback'
+            && $request['status'] === 'failed'
+            && $request['passed'] === false
+            && str_contains((string) $request['summary'], 'reported that the crawl failed'));
+        Http::assertNotSent(fn (HttpRequest $request): bool => $request->url() === 'https://runnr.io/api/deploys/wf/callback'
+            && $request['passed'] === true);
+    }
 }

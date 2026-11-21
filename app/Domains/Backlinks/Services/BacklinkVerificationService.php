@@ -49,7 +49,9 @@ class BacklinkVerificationService
                 $links->mapWithKeys(fn (MonitoredBacklink $link): array => [$link->source_url => $link->target_url])->all(),
             );
             foreach (($result['results'] ?? []) as $item) {
-                if (is_array($item) && isset($item['url'])) {
+                // An observation with an error (unreachable, or a page too
+                // large to check in full) isn't conclusive: inspect directly.
+                if (is_array($item) && isset($item['url']) && ! isset($item['error'])) {
                     $observations[(string) $item['url']] = $item;
                 }
             }
@@ -111,7 +113,7 @@ class BacklinkVerificationService
             }
             $result = $this->worker->inspectUrls([$link->source_url], $project->domain, [$link->source_url => $link->target_url]);
             $items = $result['results'] ?? [];
-            if (is_array($items) && isset($items[0]) && is_array($items[0])) {
+            if (is_array($items) && isset($items[0]) && is_array($items[0]) && ! isset($items[0]['error'])) {
                 $obs = $items[0];
             }
         } catch (Throwable) {

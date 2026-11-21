@@ -362,4 +362,37 @@ CSV;
         Http::assertSent(fn (Request $request): bool => $request->url() === 'http://coqui-worker:8085/jobs/inspect'
             && json_decode($request->body(), true)['targetUrls'] === ['https://partner.com/review' => 'https://coquiseo.com/pricing']);
     }
+
+    public function test_an_inconclusive_worker_result_is_checked_directly(): void
+    {
+        config()->set('coqui.worker.url', 'http://coqui-worker:8085');
+        config()->set('coqui.worker.token', 'worker-secret');
+
+        /** @var MonitoredBacklink $link */
+        $link = MonitoredBacklink::query()->create([
+            'project_id' => $this->project->id,
+            'source_url' => 'https://partner.com/huge-page',
+            'source_url_hash' => hash('sha256', 'https://partner.com/huge-page'),
+            'target_url' => 'https://coquiseo.com/',
+            'expected_rel' => 'dofollow',
+            'state' => 'active',
+        ]);
+
+        Http::fake([
+            'http://coqui-worker:8085/jobs/inspect' => Http::response(['results' => [[
+                'url' => 'https://partner.com/huge-page',
+                'status' => null,
+                'hasTargetLink' => false,
+                'observedRel' => null,
+                'noindex' => false,
+                'error' => "page is larger than 2 MB and the link wasn't in the part read",
+            ]]], 200),
+            'https://partner.com/huge-page' => Http::response('<html><body><a href="https://coquiseo.com/">Coqui</a></body></html>', 200),
+        ]);
+
+        $this->actingAs($this->user)
+            ->post("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks/watchlist/{$link->uuid}/verify");
+
+        $this->assertSame('active', $link->fresh()->state);
+    }
 }

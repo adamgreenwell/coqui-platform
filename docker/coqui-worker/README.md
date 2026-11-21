@@ -156,8 +156,10 @@ Up to 200 URLs. Answers:
 
 `observedRel` is one of `nofollow`, `sponsored`, `ugc`, `dofollow`, taken from
 the first link that matches the target. A URL that couldn't
-be fetched has `status: null` and an `error`. URLs not finished by the deadline
-are left out.
+be fetched has `status: null` and an `error`, and so does a page over 2 MB
+where no matching link was found in the part that was read. Laravel treats any
+result with an `error` as inconclusive and checks that URL itself. URLs not
+finished by the deadline are left out.
 
 ### `GET /health`
 
