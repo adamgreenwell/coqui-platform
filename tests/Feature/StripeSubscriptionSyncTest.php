@@ -177,17 +177,82 @@ class StripeSubscriptionSyncTest extends TestCase
         $this->assertSame(1798761600, $subscription->ends_at?->getTimestamp());
     }
 
-    public function test_an_unpaid_subscription_update_does_not_change_the_plan(): void
+    public function test_a_past_due_subscription_keeps_its_plan_during_the_grace_period(): void
     {
         $this->subscribeToPro();
 
+        $this->postEvent('invoice.payment_failed', [
+            'id' => 'in_failed', 'object' => 'invoice', 'customer' => 'cus_sync', 'subscription' => 'sub_base',
+        ])->assertOk();
+        $this->postEvent('customer.subscription.updated', $this->subscription('sub_base', 'price_pro_test', [
+            'status' => 'past_due',
+        ]))->assertOk();
+
+        $this->workspace->refresh();
+        $this->assertSame('pro', $this->workspace->plan_tier);
+        $this->assertSame('past_due', $this->workspace->subscription_status);
+    }
+
+    public function test_an_unpaid_subscription_moves_the_workspace_to_free_and_back_once_paid(): void
+    {
+        $this->subscribeToPro();
+
+        // An unpaid update never applies the price it carries.
         $this->postEvent('customer.subscription.updated', $this->subscription('sub_base', 'price_agency_test', [
             'status' => 'unpaid',
         ]))->assertOk();
 
         $this->workspace->refresh();
-        $this->assertSame('pro', $this->workspace->plan_tier);
+        $this->assertSame('free', $this->workspace->plan_tier);
+        $this->assertSame(100, $this->workspace->tracked_keyword_limit);
         $this->assertSame('unpaid', $this->workspace->subscription_status);
+
+        $this->postEvent('customer.subscription.updated', $this->subscription('sub_base', 'price_pro_test'))->assertOk();
+
+        $this->workspace->refresh();
+        $this->assertSame('pro', $this->workspace->plan_tier);
+        $this->assertSame('active', $this->workspace->subscription_status);
+    }
+
+    public function test_an_expired_first_payment_moves_the_workspace_to_free(): void
+    {
+        $this->subscribeToPro();
+
+        $this->postEvent('customer.subscription.updated', $this->subscription('sub_base', 'price_pro_test', [
+            'status' => 'incomplete_expired',
+        ]))->assertOk();
+
+        $this->assertSame('free', $this->workspace->refresh()->plan_tier);
+    }
+
+    public function test_an_unpaid_add_on_stops_unlocking_runnr_until_paid(): void
+    {
+        $this->subscribeToPro();
+        $this->addRunnrAddon();
+
+        $this->postEvent('customer.subscription.updated', $this->subscription('sub_addon', 'price_runnr_test', [
+            'status' => 'unpaid',
+        ]))->assertOk();
+
+        $this->workspace->refresh();
+        $this->assertFalse($this->workspace->has_runnr_addon);
+        $this->assertSame('pro', $this->workspace->plan_tier);
+
+        $this->postEvent('customer.subscription.updated', $this->subscription('sub_addon', 'price_runnr_test'))->assertOk();
+
+        $this->assertTrue($this->workspace->refresh()->has_runnr_addon);
+    }
+
+    public function test_a_failed_add_on_payment_does_not_mark_the_base_plan_past_due(): void
+    {
+        $this->subscribeToPro();
+        $this->addRunnrAddon();
+
+        $this->postEvent('invoice.payment_failed', [
+            'id' => 'in_addon', 'object' => 'invoice', 'customer' => 'cus_sync', 'subscription' => 'sub_addon',
+        ])->assertOk();
+
+        $this->assertSame('active', $this->workspace->refresh()->subscription_status);
     }
 
     public function test_an_add_on_update_leaves_the_base_subscription_alone(): void
