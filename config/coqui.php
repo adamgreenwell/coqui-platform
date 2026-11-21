@@ -179,4 +179,13 @@ return [
         'max_links_per_chunk' => 2500,
         'max_issues_per_chunk' => 2500,
     ],
+
+    /*
+    | Login created by `php artisan db:seed` (DemoDataSeeder) on local stacks.
+    | The seeder refuses to run when APP_ENV=production.
+    */
+    'demo' => [
+        'email' => env('DEMO_USER_EMAIL', 'demo@coqui.test'),
+        'password' => env('DEMO_USER_PASSWORD', 'password'),
+    ],
 ];
