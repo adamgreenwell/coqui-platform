@@ -32,6 +32,16 @@ class TrafficAttributionTest extends TestCase
 
     private TrafficAttributionService $trafficService;
 
+    /**
+     * A GA4 integration connected through Google OAuth, token still valid.
+     */
+    private const GA4_TOKENS = [
+        'access_token' => 'ga4-access-token',
+        'refresh_token' => 'ga4-refresh-token',
+        'token_type' => 'Bearer',
+        'expires_at' => '2099-01-01T00:00:00+00:00',
+    ];
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -53,29 +63,6 @@ class TrafficAttributionTest extends TestCase
         ]);
 
         $this->trafficService = app(TrafficAttributionService::class);
-    }
-
-    public function test_can_connect_ga4_integration_and_store_credentials(): void
-    {
-        Http::fake([
-            'https://analyticsdata.googleapis.com/*' => Http::response(['rows' => []], 200),
-        ]);
-
-        $response = $this->actingAs($this->user)
-            ->post("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/integrations/ga4/connect", [
-                'property_id' => 'properties/987654321',
-                'api_key' => 'ga4-test-secret',
-            ]);
-
-        $response->assertRedirect();
-        $response->assertSessionHas('success');
-
-        $this->assertDatabaseHas('project_integrations', [
-            'project_id' => $this->project->id,
-            'provider' => 'ga4',
-            'external_identifier' => 'properties/987654321',
-            'status' => 'connected',
-        ]);
     }
 
     public function test_can_connect_plausible_integration_and_store_credentials(): void
@@ -110,9 +97,7 @@ class TrafficAttributionTest extends TestCase
             'site_url' => 'properties/123456789',
             'external_identifier' => 'properties/123456789',
             'status' => 'connected',
-            'credentials_encrypted' => [
-                'api_key' => 'test-api-key',
-            ],
+            'credentials_encrypted' => self::GA4_TOKENS,
         ]);
 
         $today = Carbon::now()->format('Ymd');
@@ -423,7 +408,7 @@ class TrafficAttributionTest extends TestCase
             'site_url' => 'properties/123456789',
             'external_identifier' => 'properties/123456789',
             'status' => 'connected',
-            'credentials_encrypted' => ['api_key' => 'test-api-key'],
+            'credentials_encrypted' => self::GA4_TOKENS,
         ]);
 
         Http::fake(['https://ga4-proxy.test/*' => Http::response(['rows' => []], 200)]);
@@ -565,7 +550,7 @@ class TrafficAttributionTest extends TestCase
             'site_url' => 'properties/123456789',
             'external_identifier' => 'properties/123456789',
             'status' => 'connected',
-            'credentials_encrypted' => ['api_key' => 'token'],
+            'credentials_encrypted' => self::GA4_TOKENS,
         ]);
 
         Http::fake([

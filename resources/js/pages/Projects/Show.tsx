@@ -206,7 +206,7 @@ export default function ProjectShow({
   const [runnrSiteId, setRunnrSiteId] = useState(project.runnr_site_id || '');
   const [ga4ModalOpen, setGa4ModalOpen] = useState(false);
   const [ga4PropertyId, setGa4PropertyId] = useState('');
-  const [ga4ApiKey, setGa4ApiKey] = useState('');
+  const [ga4Error, setGa4Error] = useState<string | null>(null);
   const [plausibleModalOpen, setPlausibleModalOpen] = useState(false);
   const [plausibleSiteId, setPlausibleSiteId] = useState(project.domain || '');
   const [plausibleApiKey, setPlausibleApiKey] = useState('');
@@ -973,6 +973,10 @@ export default function ProjectShow({
                   <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
                     <CheckCircle2 className="h-3 w-3" /> Connected
                   </span>
+                ) : ga4Integration?.status === 'needs_reconnect' ? (
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                    Reconnect Needed
+                  </span>
                 ) : (
                   <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-800 text-slate-400 border border-slate-700">
                     Not Connected
@@ -1018,11 +1022,14 @@ export default function ProjectShow({
                   ) : (
                     <button
                       type="button"
-                      onClick={() => setGa4ModalOpen(true)}
+                      onClick={() => {
+                        setGa4PropertyId(ga4Integration?.site_url ?? '');
+                        setGa4ModalOpen(true);
+                      }}
                       className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-medium text-xs transition cursor-pointer shadow-md shadow-amber-500/10"
                     >
                       <Plus className="h-3.5 w-3.5" />
-                      <span>Connect GA4 Property</span>
+                      <span>{ga4Integration ? 'Reconnect GA4' : 'Connect GA4 Property'}</span>
                     </button>
                   )
                 )}
@@ -1584,11 +1591,12 @@ export default function ProjectShow({
                   e.preventDefault();
                   router.post(
                     `/workspaces/${workspace.id}/projects/${project.id}/integrations/ga4/connect`,
+                    { property_id: ga4PropertyId },
                     {
-                      property_id: ga4PropertyId,
-                      api_key: ga4ApiKey,
-                    },
-                    { onSuccess: () => setGa4ModalOpen(false) }
+                      onStart: () => setGa4Error(null),
+                      onSuccess: () => setGa4ModalOpen(false),
+                      onError: (errs) => setGa4Error(errs.property_id ?? null),
+                    }
                   );
                 }}
                 className="space-y-4 text-xs"
@@ -1606,27 +1614,16 @@ export default function ProjectShow({
                     className="mt-1 block w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
                     placeholder="e.g. 123456789 or properties/123456789"
                   />
+                  {ga4Error && <p className="mt-1 text-[11px] text-red-400">{ga4Error}</p>}
                   <p className="mt-1 text-[11px] text-slate-500">
                     Found in Google Analytics Admin &gt; Property Settings &gt; Property details.
                   </p>
                 </div>
 
-                <div>
-                  <label htmlFor="ga4-api-key" className="block text-xs font-medium text-slate-300">
-                    API Key or Bearer Token (optional)
-                  </label>
-                  <input
-                    id="ga4-api-key"
-                    type="password"
-                    value={ga4ApiKey}
-                    onChange={(e) => setGa4ApiKey(e.target.value)}
-                    className="mt-1 block w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-                    placeholder="Optional service token or API secret"
-                  />
-                  <p className="mt-1 text-[11px] text-slate-500">
-                    OAuth token or Google Cloud API key authorized for Google Analytics Data API.
-                  </p>
-                </div>
+                <p className="text-[11px] text-slate-400">
+                  Next, you&apos;ll sign in with Google and allow read-only access to Analytics. Use a Google account
+                  that can view this property.
+                </p>
 
                 <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-800">
                   <button
@@ -1640,7 +1637,7 @@ export default function ProjectShow({
                     type="submit"
                     className="px-4 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs transition cursor-pointer shadow-md shadow-amber-500/20"
                   >
-                    Connect GA4
+                    Continue with Google
                   </button>
                 </div>
               </form>
