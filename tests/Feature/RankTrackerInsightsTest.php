@@ -311,6 +311,50 @@ class RankTrackerInsightsTest extends TestCase
         Carbon::setTestNow();
     }
 
+    public function test_a_keyword_last_checked_long_before_the_window_still_counts(): void
+    {
+        Carbon::setTestNow('2026-11-21 12:00:00');
+        $paused = $this->keyword('paused keyword');
+        $active = $this->keyword('active keyword');
+
+        $snap = fn (TrackedKeyword $kw, string $date, ?int $rank) => KeywordRankSnapshot::query()->create([
+            'tracked_keyword_id' => $kw->id,
+            'project_id' => $this->project->id,
+            'domain' => 'coqui.io',
+            'rank_group' => $rank,
+            'has_ai_overview' => false,
+            'has_featured_snippet' => false,
+            'serp_features' => [],
+            'checked_on' => $date,
+        ]);
+
+        // Checks paused for months: only the latest old check matters.
+        $snap($paused, '2026-05-01', 50);
+        $snap($paused, '2026-06-01', 8);
+        $snap($active, '2026-11-20', 3);
+        $snap($active, '2026-11-21', 3);
+
+        $series = collect(app(RankTrendService::class)->daily('coqui.io', [$paused->id, $active->id], 3))->keyBy('date');
+
+        $this->assertSame(1, $series['2026-11-19']['tracked']);
+        $this->assertSame(8.0, $series['2026-11-19']['avg_rank']);
+        $this->assertSame(2, $series['2026-11-21']['tracked']);
+        $this->assertSame(5.5, $series['2026-11-21']['avg_rank']);
+
+        // Charts don't disappear when every check is old.
+        $onlyOld = app(RankTrendService::class)->daily('coqui.io', [$paused->id], 3);
+        $this->assertCount(3, $onlyOld);
+        $this->assertSame(1, $onlyOld[2]['tracked']);
+
+        // When checks resume, movement is measured from the old position:
+        // paused 8 -> 12 and active 3 -> 3 average 2 positions.
+        $snap($paused, '2026-11-21', 12);
+        $series = collect(app(RankTrendService::class)->daily('coqui.io', [$paused->id, $active->id], 3))->keyBy('date');
+        $this->assertSame(2.0, $series['2026-11-21']['volatility']);
+
+        Carbon::setTestNow();
+    }
+
     public function test_the_keywords_page_and_history_include_trends_citations_and_serp_extras(): void
     {
         Carbon::setTestNow('2026-11-21 12:00:00');

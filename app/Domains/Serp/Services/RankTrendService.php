@@ -45,14 +45,38 @@ class RankTrendService
         $end = Carbon::today();
         $start = $end->copy()->subDays($days - 1);
 
-        // Earlier checks seed each keyword's position on the first day and
-        // give the first check in the window something to move from.
-        $snapshots = KeywordRankSnapshot::query()
+        $startDate = $start->toDateString();
+        $columns = ['tracked_keyword_id', 'rank_group', 'has_ai_overview', 'serp_features', 'checked_on'];
+        $table = (new KeywordRankSnapshot)->getTable();
+
+        $inWindow = KeywordRankSnapshot::query()
             ->whereIn('tracked_keyword_id', $keywordIds)
             ->where('domain', $domain)
-            ->whereDate('checked_on', '>=', $start->copy()->subDays(60)->toDateString())
-            ->orderBy('checked_on')
-            ->get(['tracked_keyword_id', 'rank_group', 'has_ai_overview', 'serp_features', 'checked_on']);
+            ->whereDate('checked_on', '>=', $startDate)
+            ->get($columns);
+
+        // Each keyword's latest check before the window, however old, seeds
+        // its position on the first day and gives the first check in the
+        // window something to move from. (Like the keywords table, an old
+        // check still counts until a newer one arrives.)
+        $seedDates = KeywordRankSnapshot::query()
+            ->selectRaw('tracked_keyword_id, MAX(checked_on) AS seed_on')
+            ->whereIn('tracked_keyword_id', $keywordIds)
+            ->where('domain', $domain)
+            ->whereDate('checked_on', '<', $startDate)
+            ->groupBy('tracked_keyword_id');
+
+        $seeds = KeywordRankSnapshot::query()
+            ->joinSub($seedDates, 'seed', function ($join) use ($table): void {
+                $join->on("{$table}.tracked_keyword_id", '=', 'seed.tracked_keyword_id')
+                    ->on("{$table}.checked_on", '=', 'seed.seed_on');
+            })
+            ->where("{$table}.domain", $domain)
+            ->get(array_map(fn (string $c): string => "{$table}.{$c}", $columns));
+
+        $snapshots = $seeds->concat($inWindow)
+            ->sortBy(fn (KeywordRankSnapshot $s): string => $this->dateOf($s))
+            ->values();
 
         if ($snapshots->isEmpty()) {
             return [];
