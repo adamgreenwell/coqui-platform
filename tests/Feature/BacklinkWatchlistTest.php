@@ -584,6 +584,37 @@ CSV;
         $this->assertEqualsWithDelta($reserved + 0.15, (float) Cache::get($key), 0.001);
     }
 
+    public function test_pacing_never_waits_past_the_deadline(): void
+    {
+        config()->set('coqui.backlinks.verify_host_delay_ms', 150);
+        Http::fake(['*' => Http::response('Not Found', 404)]);
+        $link = $this->monitor('https://busy.example/one');
+
+        // Another run holds this host's slots for the next ten seconds.
+        $key = 'backlink-verify:host:'.md5('busy.example');
+        $reserved = microtime(true) + 10;
+        Cache::put($key, $reserved, now()->addMinutes(5));
+
+        $started = microtime(true);
+        $left = app(BacklinkVerificationService::class)->verifyLinks($this->project, collect([$link]), microtime(true) + 0.5);
+
+        $this->assertLessThan(1.0, microtime(true) - $started);
+        $this->assertCount(1, $left);
+        Http::assertNothingSent();
+        // No slot was taken for a request that didn't happen.
+        $this->assertEqualsWithDelta($reserved, (float) Cache::get($key), 0.001);
+    }
+
+    public function test_a_run_including_one_last_direct_check_fits_inside_the_job_timeout(): void
+    {
+        $job = new VerifyMonitoredBacklinksJob($this->project->id, []);
+
+        $this->assertLessThan(
+            $job->timeout,
+            VerifyMonitoredBacklinksJob::BUDGET_SECONDS + BacklinkVerificationService::DIRECT_INSPECTION_MAX_SECONDS,
+        );
+    }
+
     public function test_the_scheduled_command_queues_by_default_and_can_run_inline(): void
     {
         $this->monitor('https://site-a.com/page');

@@ -23,6 +23,15 @@ class BacklinkVerificationService
     /** Most URLs per worker request (the worker's own limit). */
     public const WORKER_BATCH = 200;
 
+    /** Per-request timeout for a direct inspection. */
+    public const DIRECT_REQUEST_TIMEOUT_SECONDS = 6;
+
+    /**
+     * Longest one direct inspection can take: the page plus every redirect
+     * SafeHttpClient follows, each with its own timeout.
+     */
+    public const DIRECT_INSPECTION_MAX_SECONDS = self::DIRECT_REQUEST_TIMEOUT_SECONDS * (SafeHttpClient::DEFAULT_MAX_REDIRECTS + 1);
+
     public function __construct(
         private readonly CoquiWorkerClient $worker,
         private readonly DataForSeoClient $dataForSeo,
@@ -90,7 +99,14 @@ class BacklinkVerificationService
                 continue;
             }
 
-            $this->paceHost($link->source_url);
+            // Pacing never waits past the deadline: if this host's next slot
+            // is later, leave the link for the next run.
+            if (! $this->paceHost($link->source_url, $deadline)) {
+                $unverified->push($link);
+
+                continue;
+            }
+
             $this->applyObservation($project, $link, $this->inspectDirectly($link->source_url, $link->target_url));
             $checked++;
         }
@@ -247,12 +263,16 @@ class BacklinkVerificationService
      * Wait until the configured gap since the last direct check of this host
      * has passed. Shared through the cache, so it holds across runs.
      */
-    private function paceHost(string $url): void
+    /**
+     * Wait for this host's next request slot. Returns false, without
+     * reserving a slot, when that slot falls after the deadline.
+     */
+    private function paceHost(string $url, ?float $deadline = null): bool
     {
         $delayMs = (int) config('coqui.backlinks.verify_host_delay_ms', 1000);
         $host = strtolower((string) parse_url($url, PHP_URL_HOST));
         if ($delayMs <= 0 || $host === '') {
-            return;
+            return true;
         }
 
         $key = 'backlink-verify:host:'.md5($host);
@@ -261,19 +281,28 @@ class BacklinkVerificationService
         // Reserve this request's slot under a lock so parallel runs hitting
         // the same host queue up behind each other instead of reading the
         // same timestamp. The wait happens after the lock is released.
-        $slot = Cache::lock($key.':lock', 10)->block(10, function () use ($key, $gap): float {
+        $slot = Cache::lock($key.':lock', 10)->block(10, function () use ($key, $gap, $deadline): ?float {
             $now = microtime(true);
             $last = Cache::get($key);
             $slot = is_numeric($last) ? max($now, (float) $last + $gap) : $now;
+            if ($deadline !== null && $slot > $deadline) {
+                return null;
+            }
             Cache::put($key, $slot, now()->addMinutes(5));
 
             return $slot;
         });
 
+        if ($slot === null) {
+            return false;
+        }
+
         $wait = $slot - microtime(true);
         if ($wait > 0) {
             usleep((int) ceil($wait * 1_000_000));
         }
+
+        return true;
     }
 
     /**
@@ -285,7 +314,7 @@ class BacklinkVerificationService
     {
         try {
             // Validates every redirect hop and pins DNS (see SafeHttpClient).
-            $response = $this->http->get($sourceUrl, timeoutSeconds: 6);
+            $response = $this->http->get($sourceUrl, timeoutSeconds: self::DIRECT_REQUEST_TIMEOUT_SECONDS);
 
             $status = $response->status();
             if ($status >= 400) {
