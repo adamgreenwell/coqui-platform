@@ -170,6 +170,8 @@ class SeoProviderRouter
 
         if ($dataForSeoPayload !== []) {
             foreach (DataForSeoKeywordParser::overviewItems($dataForSeoPayload, $locationCode, $languageCode) as $keyword => $row) {
+                // PHP turns a numeric keyword key like "2026" into an int.
+                $keyword = (string) $keyword;
                 $rows[$keyword] ??= [
                     'keyword' => $keyword,
                     'search_volume' => isset($row['search_volume']) ? (int) $row['search_volume'] : null,

@@ -281,4 +281,20 @@ class SeRankingProviderRouterTest extends TestCase
         $this->assertContains('bad keyword', $result['unavailable']);
         $this->assertSame(100, $result['cost']['seranking_credits']);
     }
+
+    public function test_a_numeric_keyword_stays_a_string(): void
+    {
+        $this->configureProviders();
+        Http::fake([
+            'sandbox.dataforseo.com/v3/dataforseo_labs/google/keyword_overview/live' => Http::response(
+                $this->dataForSeoOverview(['2026']),
+                200,
+            ),
+        ]);
+
+        $result = app(SeoProviderRouter::class)->lookupKeywords(['2026']);
+
+        $this->assertSame('2026', $result['keywords'][0]['keyword']);
+        $this->assertSame([], $result['unavailable']);
+    }
 }
