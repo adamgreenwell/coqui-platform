@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers\Webhooks;
 
+use App\Domains\Serp\Actions\LogDataForSeoTaskFailure;
 use App\Domains\Serp\Jobs\ProcessDataForSeoPostbackJob;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\JsonResponse;
@@ -69,7 +70,7 @@ class DataForSeoWebhookController extends Controller
         if (is_array($firstTask)) {
             $taskStatusCode = (int) ($firstTask['status_code'] ?? 20000);
             if ($taskStatusCode >= 40000) {
-                DB::table('dataforseo_tasks')
+                $marked = DB::table('dataforseo_tasks')
                     ->where('id', $task->id)
                     ->where('status', 'pending')
                     ->update([
@@ -77,6 +78,10 @@ class DataForSeoWebhookController extends Controller
                         'result_payload' => json_encode($payload, JSON_THROW_ON_ERROR),
                         'updated_at' => now(),
                     ]);
+
+                if ($marked > 0) {
+                    LogDataForSeoTaskFailure::handle($task, $taskStatusCode, (string) ($firstTask['status_message'] ?? ''));
+                }
 
                 return response()->json([
                     'status' => 'failed',

@@ -15,6 +15,7 @@ use App\Domains\Projects\Models\Workspace;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Event;
@@ -55,6 +56,9 @@ class CoquiWorkerJobBridgeTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+
+        config()->set('coqui.worker.url', 'http://coqui-worker:8085');
+        config()->set('coqui.worker.token', 'worker-token-xyz');
 
         $this->user = User::factory()->create();
         $this->workspace = Workspace::query()->create([
@@ -217,8 +221,6 @@ class CoquiWorkerJobBridgeTest extends TestCase
         Http::fake([
             'http://coqui-worker:8085/jobs/crawl' => Http::response('Worker connection refused', 503),
         ]);
-
-        config()->set('coqui.worker.url', 'http://coqui-worker:8085');
 
         $crawlId = (string) Str::uuid();
         $run = CrawlRun::query()->create([
@@ -383,5 +385,153 @@ class CoquiWorkerJobBridgeTest extends TestCase
                 && $event->totalUrls === 120
                 && $event->status === 'running';
         });
+    }
+
+    public function test_dispatch_says_cloud_crawling_is_not_set_up_without_a_worker_token(): void
+    {
+        Queue::fake();
+        config()->set('coqui.worker.token', '');
+        $url = "/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/crawls/dispatch";
+
+        $this->actingAs($this->user)->from('/dashboard')->post($url)
+            ->assertRedirect('/dashboard')
+            ->assertSessionHas('error', CoquiWorkerClient::NOT_CONFIGURED_MESSAGE);
+        $this->actingAs($this->user)->postJson($url)
+            ->assertStatus(503)
+            ->assertJsonPath('message', CoquiWorkerClient::NOT_CONFIGURED_MESSAGE);
+
+        Queue::assertNothingPushed();
+        $this->assertDatabaseCount('crawl_runs', 0);
+    }
+
+    public function test_scheduled_crawls_skip_without_a_worker_token(): void
+    {
+        Queue::fake();
+        config()->set('coqui.worker.token', '');
+
+        $this->artisan('coqui:run-scheduled-crawls')
+            ->expectsOutputToContain('crawl worker is not configured')
+            ->assertSuccessful();
+
+        Queue::assertNothingPushed();
+        $this->assertDatabaseCount('crawl_runs', 0);
+    }
+
+    public function test_an_unreachable_worker_fails_the_run_once_with_a_clear_reason(): void
+    {
+        Event::fake([CrawlProgressUpdated::class]);
+        Http::fake(fn () => throw new ConnectionException('cURL error 7: Failed to connect to coqui-worker port 8085'));
+
+        $crawlId = (string) Str::uuid();
+        $run = CrawlRun::query()->create([
+            'project_id' => $this->project->id,
+            'external_crawl_id' => $crawlId,
+            'source' => 'worker',
+            'seed' => 'https://acme.test/',
+            'seed_kind' => 'url',
+            'status' => 'pending',
+            'config' => ['maxDepth' => 3, 'maxUrls' => 750],
+        ]);
+
+        $job = new DispatchCloudCrawlJob($this->project, $crawlId, ['maxUrls' => 750]);
+        $this->assertSame(1, $job->tries);
+
+        try {
+            $job->handle(new CoquiWorkerClient(new FakeDnsSsrfProtectionGuard(['acme.test' => ['93.184.216.34']])));
+            $this->fail('Expected the connection error to be rethrown.');
+        } catch (ConnectionException) {
+            // Rethrown so the job also shows as failed in Horizon.
+        }
+
+        $run->refresh();
+        $this->assertSame('failed', $run->status);
+        $this->assertNotNull($run->finalized_at);
+        $this->assertDatabaseHas('project_activities', [
+            'project_id' => $this->project->id,
+            'event_type' => 'crawl.failed',
+            'description' => "Failed to dispatch cloud crawl [{$crawlId}]: The crawl worker could not be reached.",
+        ]);
+
+        // A late callback for the closed run is refused, so the worker stops.
+        $this->withToken('worker-token-xyz')
+            ->postJson('/api/internal/crawls/callback', ['crawlId' => $crawlId, 'status' => 'running'])
+            ->assertStatus(409);
+    }
+
+    public function test_crawls_the_worker_stopped_reporting_on_are_marked_failed(): void
+    {
+        Event::fake([CrawlProgressUpdated::class]);
+        config()->set('coqui.worker.stall_minutes', 30);
+
+        $make = function (string $source, string $status, int $minutesAgo): CrawlRun {
+            $run = CrawlRun::query()->create([
+                'project_id' => $this->project->id,
+                'external_crawl_id' => (string) Str::uuid(),
+                'source' => $source,
+                'seed' => 'https://acme.test/',
+                'seed_kind' => 'url',
+                'status' => $status,
+                'config' => [],
+            ]);
+            CrawlRun::query()->whereKey($run->id)->update(['updated_at' => now()->subMinutes($minutesAgo)]);
+
+            return $run;
+        };
+
+        $stalled = $make('worker', 'running', 45);
+        $stalledPending = $make('worker', 'pending', 90);
+        $alive = $make('worker', 'running', 10);
+        $desktop = $make('desktop', 'running', 120);
+        $done = $make('worker', 'completed', 120);
+
+        $this->artisan('coqui:fail-stalled-crawls')
+            ->expectsOutputToContain('Marked 2 stalled')
+            ->assertSuccessful();
+
+        $this->assertSame('failed', $stalled->refresh()->status);
+        $this->assertNotNull($stalled->finalized_at);
+        $this->assertSame('failed', $stalledPending->refresh()->status);
+        $this->assertSame('running', $alive->refresh()->status);
+        $this->assertSame('running', $desktop->refresh()->status);
+        $this->assertSame('completed', $done->refresh()->status);
+
+        $this->assertDatabaseHas('project_activities', [
+            'project_id' => $this->project->id,
+            'event_type' => 'crawl.failed',
+            'title' => 'Cloud crawl stopped responding',
+        ]);
+        Event::assertDispatched(CrawlProgressUpdated::class, fn (CrawlProgressUpdated $e) => $e->status === 'failed'
+            && $e->externalCrawlId === $stalled->external_crawl_id);
+    }
+
+    public function test_worker_heartbeats_keep_a_long_crawl_from_being_swept(): void
+    {
+        Event::fake([CrawlProgressUpdated::class]);
+
+        $crawlId = (string) Str::uuid();
+        $run = CrawlRun::query()->create([
+            'project_id' => $this->project->id,
+            'external_crawl_id' => $crawlId,
+            'source' => 'worker',
+            'seed' => 'https://acme.test/',
+            'seed_kind' => 'url',
+            'status' => 'running',
+            'total_urls' => 120,
+            'config' => [],
+        ]);
+        CrawlRun::query()->whereKey($run->id)->update(['updated_at' => now()->subMinutes(45)]);
+
+        // Nothing changed since the last post, but the worker is alive.
+        $this->withToken('worker-token-xyz')
+            ->postJson('/api/internal/crawls/callback', [
+                'crawlId' => $crawlId,
+                'status' => 'running',
+                'crawledUrls' => 60,
+                'totalUrls' => 120,
+            ])
+            ->assertOk();
+
+        $this->artisan('coqui:fail-stalled-crawls')->assertSuccessful();
+        $this->assertSame('running', $run->refresh()->status);
     }
 }

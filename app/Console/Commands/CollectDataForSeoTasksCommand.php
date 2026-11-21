@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Domains\Serp\Actions\LogDataForSeoTaskFailure;
 use App\Domains\Serp\Actions\RecordDataForSeoTaskResult;
 use App\Domains\Serp\DataForSeo\DataForSeoClient;
 use App\Domains\Serp\Jobs\ProcessDataForSeoPostbackJob;
@@ -110,7 +111,7 @@ class CollectDataForSeoTasksCommand extends Command
             }
 
             if ($taskStatusCode >= 40000) {
-                DB::table('dataforseo_tasks')
+                $marked = DB::table('dataforseo_tasks')
                     ->where('id', $task->id)
                     ->where('status', 'pending')
                     ->update([
@@ -119,6 +120,10 @@ class CollectDataForSeoTasksCommand extends Command
                         'error_message' => mb_substr(sprintf('Task failed with status %d: %s', $taskStatusCode, (string) ($firstTask['status_message'] ?? '')), 0, 1000),
                         'updated_at' => now(),
                     ]);
+
+                if ($marked > 0) {
+                    LogDataForSeoTaskFailure::handle($task, $taskStatusCode, (string) ($firstTask['status_message'] ?? ''));
+                }
 
                 $this->warn("Task [{$taskId}] failed with status code [{$taskStatusCode}]: {$firstTask['status_message']}");
 

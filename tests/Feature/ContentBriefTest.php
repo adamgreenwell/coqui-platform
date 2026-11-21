@@ -6,12 +6,21 @@ namespace Tests\Feature;
 
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
+use App\Domains\Serp\DataForSeo\DataForSeoClient;
+use App\Domains\Serp\Events\ContentBriefUpdated;
+use App\Domains\Serp\Jobs\GenerateContentBriefJob;
 use App\Domains\Serp\Models\ContentBrief;
+use App\Domains\Serp\Services\ContentBriefService;
 use App\Domains\Serp\Services\HtmlPageOutlineExtractor;
+use App\Domains\Serp\SpendRefusedException;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
+use Mockery\MockInterface;
 use Tests\TestCase;
 
 class ContentBriefTest extends TestCase
@@ -369,6 +378,200 @@ HTML;
 
         $this->assertNull($competitors[1]['status']);
         $this->assertStringContainsString('SSRF', (string) $competitors[1]['error']);
+    }
+
+    private function briefUrl(): string
+    {
+        return "/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keywords/brief";
+    }
+
+    /**
+     * @param  list<array{0: string, 1: string}>  $organic  [domain, url]
+     * @return array<string, mixed>
+     */
+    private function serpResponse(array $organic): array
+    {
+        $items = [];
+        foreach ($organic as $i => [$domain, $url]) {
+            $items[] = ['type' => 'organic', 'rank_group' => $i + 1, 'domain' => $domain, 'title' => ucfirst($domain), 'url' => $url];
+        }
+
+        return ['status_code' => 20000, 'tasks' => [['status_code' => 20000, 'result' => [['items' => $items]]]]];
+    }
+
+    public function test_generating_a_brief_queues_it_and_returns_at_once(): void
+    {
+        Queue::fake();
+        Http::fake();
+
+        $this->actingAs($this->user)
+            ->postJson($this->briefUrl(), ['keyword' => 'Technical SEO Audit'])
+            ->assertStatus(202)
+            ->assertJson(['keyword' => 'technical seo audit', 'status' => 'pending']);
+
+        // Nothing paid or fetched inside the request.
+        Http::assertNothingSent();
+        Queue::assertPushedOn('serp', GenerateContentBriefJob::class);
+
+        $brief = ContentBrief::query()->where('project_id', $this->project->id)->firstOrFail();
+        $this->assertSame(ContentBrief::STATUS_PENDING, $brief->status);
+        $this->assertNull($brief->recommended_words_min);
+
+        // The page shows it as pending rather than as an empty brief.
+        $this->actingAs($this->user)
+            ->get($this->briefUrl().'?keyword=technical+seo+audit')
+            ->assertInertia(fn ($page) => $page
+                ->where('brief.status', 'pending')
+                ->where('brief.data', null));
+
+        // A second click while it runs doesn't queue (or pay for) another.
+        $this->actingAs($this->user)
+            ->postJson($this->briefUrl(), ['keyword' => 'technical seo audit'])
+            ->assertStatus(202);
+        Queue::assertPushed(GenerateContentBriefJob::class, 1);
+    }
+
+    public function test_a_fresh_request_skips_the_shared_cache_in_the_job(): void
+    {
+        Queue::fake();
+
+        $this->actingAs($this->user)
+            ->postJson($this->briefUrl(), ['keyword' => 'crawl budget', 'fresh' => true])
+            ->assertStatus(202);
+        Queue::assertPushed(GenerateContentBriefJob::class, fn (GenerateContentBriefJob $job): bool => $job->bypassCache);
+
+        $this->actingAs($this->user)
+            ->postJson($this->briefUrl(), ['keyword' => 'log analysis'])
+            ->assertStatus(202);
+        Queue::assertPushed(GenerateContentBriefJob::class, fn (GenerateContentBriefJob $job): bool => $job->brief->keyword === 'log analysis' && ! $job->bypassCache);
+    }
+
+    public function test_a_superseded_job_exits_without_buying_a_lookup(): void
+    {
+        Queue::fake();
+        Http::fake();
+
+        $this->actingAs($this->user)->postJson($this->briefUrl(), ['keyword' => 'crawl budget'])->assertStatus(202);
+        /** @var GenerateContentBriefJob $first */
+        $first = Queue::pushed(GenerateContentBriefJob::class)->first();
+
+        // The queue stalled: past the in-flight window, the user asks again.
+        $this->travel(6)->minutes();
+        $this->actingAs($this->user)->postJson($this->briefUrl(), ['keyword' => 'crawl budget'])->assertStatus(202);
+        Queue::assertPushed(GenerateContentBriefJob::class, 2);
+
+        // The older job finally runs: it fetches nothing and fails nothing.
+        $first->handle(app(ContentBriefService::class));
+        $first->failed(null);
+        Http::assertNothingSent();
+        $brief = ContentBrief::query()->where('project_id', $this->project->id)->sole();
+        $this->assertSame(ContentBrief::STATUS_PENDING, $brief->status);
+        $this->assertNotSame($first->generation, $brief->generation);
+    }
+
+    public function test_a_running_job_cannot_be_replaced(): void
+    {
+        Queue::fake();
+
+        $this->actingAs($this->user)->postJson($this->briefUrl(), ['keyword' => 'crawl budget'])->assertStatus(202);
+        /** @var GenerateContentBriefJob $job */
+        $job = Queue::pushed(GenerateContentBriefJob::class)->first();
+
+        // The job starts just inside the window and claims the brief...
+        $this->travel(4)->minutes();
+        $this->assertTrue((fn (): bool => $this->claim())->call($job));
+
+        // ...so a submit past the original window still sees it in flight.
+        $this->travel(2)->minutes();
+        $this->actingAs($this->user)->postJson($this->briefUrl(), ['keyword' => 'crawl budget'])->assertStatus(202);
+        Queue::assertPushed(GenerateContentBriefJob::class, 1);
+    }
+
+    public function test_the_job_completes_the_brief_and_broadcasts(): void
+    {
+        Event::fake([ContentBriefUpdated::class]);
+        Http::fake([
+            'https://sandbox.dataforseo.com/v3/serp/google/organic/live/advanced' => Http::response($this->serpResponse([
+                ['working.com', 'https://working.com/page'],
+            ]), 200),
+            'https://working.com/*' => Http::response('<html><body><h1>Guide</h1><h2>Setup</h2><p>'.str_repeat('word ', 1500).'</p></body></html>', 200),
+        ]);
+
+        $this->actingAs($this->user)->post($this->briefUrl(), ['keyword' => 'job keyword'])->assertRedirect();
+
+        $brief = ContentBrief::query()->where('project_id', $this->project->id)->firstOrFail();
+        $this->assertSame(ContentBrief::STATUS_COMPLETED, $brief->status);
+        $this->assertFalse($brief->data['incomplete']);
+        $this->assertNotNull($brief->recommended_words_min);
+        Event::assertDispatched(ContentBriefUpdated::class, fn (ContentBriefUpdated $e): bool => $e->briefId === $brief->id && $e->status === 'completed');
+    }
+
+    public function test_a_refresh_uses_the_projects_current_market_and_language(): void
+    {
+        Http::fake([
+            'https://sandbox.dataforseo.com/v3/serp/google/organic/live/advanced' => Http::response($this->serpResponse([
+                ['working.com', 'https://working.com/page'],
+            ]), 200),
+            'https://working.com/*' => Http::response('<html><body><h1>Guide</h1><p>'.str_repeat('word ', 800).'</p></body></html>', 200),
+        ]);
+
+        $this->actingAs($this->user)->post($this->briefUrl(), ['keyword' => 'market keyword'])->assertRedirect();
+
+        $this->project->update(['location_code' => 2826, 'language_code' => 'de']);
+
+        $this->actingAs($this->user)->post($this->briefUrl(), ['keyword' => 'market keyword'])->assertRedirect();
+
+        $brief = ContentBrief::query()->where('project_id', $this->project->id)->firstOrFail();
+        $this->assertSame(2826, (int) $brief->location_code);
+        $this->assertSame('de', $brief->language_code);
+        Http::assertSent(function (Request $request): bool {
+            $task = $request->data()[0] ?? [];
+
+            return str_contains($request->url(), '/v3/serp/') && ($task['location_code'] ?? null) === 2826 && ($task['language_code'] ?? null) === 'de';
+        });
+    }
+
+    public function test_a_brief_with_no_fetched_pages_says_so_instead_of_inventing_a_target(): void
+    {
+        Http::fake([
+            'https://sandbox.dataforseo.com/v3/serp/google/organic/live/advanced' => Http::response($this->serpResponse([
+                ['notfound.com', 'https://notfound.com/missing'],
+                ['timeout.com', 'https://timeout.com/hang'],
+            ]), 200),
+            'https://notfound.com/*' => Http::response('Not Found', 404),
+            'https://timeout.com/*' => fn () => throw new ConnectionException('Connection timed out after 6000ms'),
+        ]);
+
+        $this->actingAs($this->user)->post($this->briefUrl(), ['keyword' => 'unreachable keyword'])->assertRedirect();
+
+        $brief = ContentBrief::query()->where('project_id', $this->project->id)->firstOrFail();
+        $this->assertSame(ContentBrief::STATUS_COMPLETED, $brief->status);
+        $this->assertTrue($brief->data['incomplete']);
+        $this->assertStringContainsString('could be fetched', (string) $brief->data['incompleteReason']);
+        $this->assertNull($brief->recommended_words_min);
+        $this->assertNull($brief->recommended_words_max);
+        $this->assertNull($brief->data['metrics']['avgWordCountTop10']);
+        $this->assertNull($brief->data['recommendations']['suggestedWordCount']);
+        $this->assertStringNotContainsString('1850', $brief->markdown);
+        $this->assertStringContainsString('Recommended Word Count:** Not available', $brief->markdown);
+    }
+
+    public function test_a_spend_refusal_fails_the_brief_with_its_message(): void
+    {
+        $this->mock(DataForSeoClient::class, fn (MockInterface $mock) => $mock->shouldIgnoreMissing(true)
+            ->shouldReceive('serpLive')
+            ->andThrow(new SpendRefusedException('This workspace has used its monthly SEO data budget.')));
+        Http::fake();
+
+        $this->actingAs($this->user)
+            ->post($this->briefUrl(), ['keyword' => 'over budget keyword'])
+            ->assertRedirect()
+            ->assertSessionHas('error');
+
+        $brief = ContentBrief::query()->where('project_id', $this->project->id)->firstOrFail();
+        $this->assertSame(ContentBrief::STATUS_FAILED, $brief->status);
+        $this->assertSame('This workspace has used its monthly SEO data budget.', $brief->error);
+        Http::assertNothingSent();
     }
 
     public function test_download_content_brief_markdown(): void

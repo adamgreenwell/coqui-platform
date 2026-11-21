@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domains\Integrations\Services;
 
 use App\Domains\Billing\PlanFeature;
+use App\Domains\Crawls\Jobs\DispatchCloudCrawlJob;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Crawls\Services\CoquiWorkerClient;
 use App\Domains\Projects\Models\Project;
@@ -15,6 +16,7 @@ class RunnrDeployWebhookHandler
 {
     public function __construct(
         private readonly CoquiWorkerClient $worker,
+        private readonly RunnrDeploySmokeService $smoke,
     ) {}
 
     /**
@@ -81,7 +83,16 @@ class RunnrDeployWebhookHandler
             ],
         );
 
-        $this->worker->dispatchCrawl($project, $crawlId, [
+        // Runnr gets its 2xx straight away; a worker that's missing or down
+        // fails the run and Runnr hears about it through the callback.
+        if (! $this->worker->isConfigured()) {
+            $run->update(['status' => 'failed', 'finalized_at' => now()]);
+            $this->smoke->reportFailure($run, 'The crawl worker is not set up on this server.');
+
+            return $run;
+        }
+
+        DispatchCloudCrawlJob::dispatch($project, $crawlId, [
             'seed' => $seed,
             'maxDepth' => 2,
             'maxUrls' => $smokeMaxUrls,
