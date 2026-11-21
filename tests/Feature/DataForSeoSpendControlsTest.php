@@ -212,7 +212,8 @@ class DataForSeoSpendControlsTest extends TestCase
         $b = app(DataForSeoClient::class)->keywordOverview(['seo crawler'], $second);
 
         Http::assertSentCount(1);
-        $this->assertSame($a, $b);
+        // Same data; Postgres jsonb does not keep key order.
+        $this->assertEquals($a, $b);
         $this->assertSame(1, DB::table('dataforseo_spend_ledger')->count());
 
         $stats = DB::table('dataforseo_cache_stats')->where('endpoint', '/v3/dataforseo_labs/google/keyword_overview/live')->sole();
