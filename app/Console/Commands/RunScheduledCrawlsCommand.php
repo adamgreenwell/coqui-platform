@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Domains\Crawls\Jobs\DispatchCloudCrawlJob;
 use App\Domains\Crawls\Models\CrawlRun;
+use App\Domains\Crawls\Services\CoquiWorkerClient;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use Carbon\Carbon;
@@ -20,8 +21,14 @@ class RunScheduledCrawlsCommand extends Command
 
     protected $description = 'Dispatch scheduled cloud site audits to coqui-worker.';
 
-    public function handle(): int
+    public function handle(CoquiWorkerClient $worker): int
     {
+        if (! $worker->isConfigured()) {
+            $this->info('Skipped: the crawl worker is not configured (COQUI_WORKER_URL / COQUI_WORKER_TOKEN).');
+
+            return self::SUCCESS;
+        }
+
         $projectId = $this->option('project');
         $force = (bool) $this->option('force');
 

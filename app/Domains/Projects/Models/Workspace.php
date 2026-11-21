@@ -124,6 +124,14 @@ class Workspace extends Model
     }
 
     /**
+     * @return HasMany<WorkspaceActivity, $this>
+     */
+    public function activities(): HasMany
+    {
+        return $this->hasMany(WorkspaceActivity::class);
+    }
+
+    /**
      * @return HasMany<WorkspaceSubscription, $this>
      */
     public function subscriptions(): HasMany

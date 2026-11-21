@@ -9,6 +9,7 @@ use App\Domains\Billing\Models\WorkspaceSubscription;
 use App\Domains\Projects\Models\Workspace;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 /**
  * Operator-only: forget a workspace's Stripe billing so it starts over on Free.
@@ -32,7 +33,11 @@ class ResetWorkspaceBillingCommand extends Command
         $identifier = trim((string) $this->argument('workspace'));
         $matches = Workspace::query()
             ->where(function ($query) use ($identifier): void {
-                $query->where('slug', $identifier)->orWhere('uuid', $identifier);
+                $query->where('slug', $identifier);
+                // Postgres rejects a non-UUID compared with a uuid column.
+                if (Str::isUuid($identifier)) {
+                    $query->orWhere('uuid', $identifier);
+                }
                 if (ctype_digit($identifier)) {
                     $query->orWhere('id', (int) $identifier);
                 }

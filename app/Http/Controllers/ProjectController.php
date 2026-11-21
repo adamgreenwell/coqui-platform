@@ -11,6 +11,8 @@ use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\ProjectCompetitor;
 use App\Domains\Projects\Models\Workspace;
+use App\Domains\Projects\Models\WorkspaceActivity;
+use App\Domains\Serp\Support\VisibilityScore;
 use App\Features\RunnrIntegration;
 use App\Models\User;
 use Carbon\CarbonInterface;
@@ -232,8 +234,9 @@ class ProjectController extends Controller
             ])
             ->all();
 
-        /** @var list<array{id: int, eventType: string, title: string, description: string|null, properties: array<string, mixed>|null, userName: string|null, createdAt: string}> $activities */
-        $activities = $project->activities()
+        // The project's own events plus workspace-level ones (membership
+        // changes), newest first.
+        $projectActivities = $project->activities()
             ->with('user')
             ->latest('id')
             ->limit(20)
@@ -246,8 +249,32 @@ class ProjectController extends Controller
                 'properties' => $a->properties,
                 'userName' => $a->user?->name,
                 'createdAt' => $a->created_at->toIso8601String(),
-            ])
+            ]);
+        $workspaceActivities = $workspace->activities()
+            ->with('user')
+            ->latest('id')
+            ->limit(20)
+            ->get()
+            ->map(fn (WorkspaceActivity $a): array => [
+                // Negative, so it can't collide with a project activity's id.
+                'id' => -$a->id,
+                'eventType' => $a->event_type,
+                'title' => $a->title,
+                'description' => $a->description,
+                'properties' => $a->properties,
+                'userName' => $a->user?->name,
+                'createdAt' => $a->created_at->toIso8601String(),
+            ]);
+
+        /** @var list<array{id: int, eventType: string, title: string, description: string|null, properties: array<string, mixed>|null, userName: string|null, createdAt: string}> $activities */
+        $activities = $projectActivities->concat($workspaceActivities)
+            ->sortByDesc('createdAt')
+            ->take(20)
+            ->values()
             ->all();
+
+        // Baselines for the overview cards.
+        $latestBacklinks = $project->backlinkHistorySnapshots()->latest('snapshot_date')->first();
 
         $projectProps = [
             'id' => $project->uuid,
@@ -293,6 +320,13 @@ class ProjectController extends Controller
             ] : null,
             'trackedKeywordsCount' => $project->trackedKeywords()->count(),
             'monitoredBacklinksCount' => $project->monitoredBacklinks()->count(),
+            'keywordVisibility' => VisibilityScore::forProject($project),
+            'backlinkBaseline' => $latestBacklinks !== null ? [
+                'backlinks' => $latestBacklinks->backlinks_count,
+                'referringDomains' => $latestBacklinks->referring_domains_count,
+                'rank' => $latestBacklinks->rank,
+                'date' => $latestBacklinks->snapshot_date->toDateString(),
+            ] : null,
             'competitors' => $competitors,
             'integrations' => $project->integrations()
                 ->select(['id', 'uuid', 'provider', 'site_url', 'external_identifier', 'status', 'last_synced_at'])

@@ -41,7 +41,10 @@ interface MonitoredBacklinkItem {
   target_url: string;
   expected_anchor: string | null;
   expected_rel: string | null;
-  state: 'active' | 'lost' | 'rel_changed' | 'error' | string;
+  state: 'active' | 'lost' | 'rel_changed' | 'anchor_changed' | 'error' | string;
+  // Text of the link as last seen; differs from expected_anchor when the
+  // state is anchor_changed.
+  last_observed_anchor?: string | null;
   last_http_status: number | null;
   last_observed_rel: string | null;
   last_page_noindex: boolean;
@@ -54,6 +57,7 @@ interface WatchlistMetrics {
   active: number;
   lost: number;
   rel_changed: number;
+  anchor_changed?: number;
   error: number;
   noindex: number;
 }
@@ -91,7 +95,7 @@ export default function BacklinkWatchlist({
   links = [],
   metrics,
 }: WatchlistPageProps) {
-  const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'lost' | 'rel_changed' | 'error'>('all');
+  const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'lost' | 'rel_changed' | 'anchor_changed' | 'error'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [verifyingAll, setVerifyingAll] = useState(false);
   const [verifyingId, setVerifyingId] = useState<string | null>(null);
@@ -490,6 +494,17 @@ export default function BacklinkWatchlist({
               </button>
               <button
                 type="button"
+                onClick={() => setActiveFilter('anchor_changed')}
+                className={`px-2.5 py-1 rounded-md font-medium transition cursor-pointer ${
+                  activeFilter === 'anchor_changed'
+                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                    : 'text-amber-400/80 hover:text-amber-300'
+                }`}
+              >
+                Anchor Changed ({metrics.anchor_changed ?? 0})
+              </button>
+              <button
+                type="button"
                 onClick={() => setActiveFilter('error')}
                 className={`px-2.5 py-1 rounded-md font-medium transition cursor-pointer ${
                   activeFilter === 'error'
@@ -594,6 +609,11 @@ export default function BacklinkWatchlist({
                         <span className="text-slate-300 truncate block" title={item.expected_anchor || '—'}>
                           {item.expected_anchor || <span className="text-slate-600">—</span>}
                         </span>
+                        {item.state === 'anchor_changed' && item.last_observed_anchor != null && (
+                          <span className="text-amber-300 truncate block text-[11px]" title={item.last_observed_anchor}>
+                            Now: {item.last_observed_anchor || '(no text)'}
+                          </span>
+                        )}
                       </td>
 
                       {/* Rel Match */}
@@ -644,7 +664,7 @@ export default function BacklinkWatchlist({
                             ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
                             : item.state === 'lost'
                             ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
-                            : item.state === 'rel_changed'
+                            : item.state === 'rel_changed' || item.state === 'anchor_changed'
                             ? 'bg-amber-500/20 text-amber-300 border-amber-500/30'
                             : 'bg-slate-800 text-slate-400 border-slate-700'
                         }`}>
