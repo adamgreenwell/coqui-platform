@@ -58,7 +58,7 @@ class CoquiWorkerClient
                 'concurrency' => $overrides['concurrency'] ?? 4,
                 'requestTimeoutMs' => 15000,
                 'sameHostOnly' => true,
-                'respectRobots' => true,
+                'respectRobots' => (bool) ($overrides['respectRobots'] ?? true),
             ],
         ];
 
