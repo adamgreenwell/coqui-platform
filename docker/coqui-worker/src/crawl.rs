@@ -375,76 +375,200 @@ async fn upload(
     crawl_id: &str,
     workdir: &std::path::Path,
 ) -> Result<(), JobError> {
-    let (urls, links, issues) = {
+    // Results are read and sent one bounded batch at a time: a link-heavy
+    // crawl can hold millions of link rows, far more than the worker's
+    // memory limit if they were all loaded at once.
+    let total = blocking({
         let store = store.clone();
         let id = crawl_id.to_string();
-        let issues_csv = workdir.join("issues.csv");
-        tokio::task::spawn_blocking(move || -> Result<_, String> {
-            let urls = store.all_urls(&id).map_err(|error| error.to_string())?;
-            let links = store.all_links(&id).map_err(|error| error.to_string())?;
+        move || store.total_urls(&id).map_err(|error| error.to_string())
+    })
+    .await?;
+
+    let mut sent_urls = 0usize;
+    let mut page = 1u32;
+    loop {
+        let rows = blocking({
+            let store = store.clone();
+            let id = crawl_id.to_string();
+            move || {
+                store
+                    .list_urls(&id, page, URL_CHUNK as u32, None)
+                    .map(|page| page.rows)
+                    .map_err(|error| error.to_string())
+            }
+        })
+        .await?;
+        let last_page = rows.len() < URL_CHUNK;
+        let chunk: Vec<WireUrl<'_>> = rows
+            .iter()
+            .filter(|row| url_fits(&row.url))
+            .map(WireUrl::from)
+            .collect();
+        if !chunk.is_empty() {
+            callback
+                .send(&json!({
+                    "crawlId": crawl_id,
+                    "status": "running",
+                    "totalUrls": total,
+                    "urls": chunk,
+                }))
+                .await?;
+            sent_urls += chunk.len();
+        }
+        if last_page {
+            break;
+        }
+        page += 1;
+    }
+
+    let db_path = workdir.join("crawl.db");
+    let mut sent_links = 0usize;
+    let mut after = 0i64;
+    loop {
+        let (rows, next) = blocking({
+            let db_path = db_path.clone();
+            let id = crawl_id.to_string();
+            move || read_links_after(&db_path, &id, after, LINK_CHUNK)
+        })
+        .await?;
+        let last_page = rows.len() < LINK_CHUNK;
+        let chunk: Vec<WireLink<'_>> = rows
+            .iter()
+            .filter(|row| url_fits(&row.from_url) && url_fits(&row.to_url))
+            .map(WireLink::from)
+            .collect();
+        if !chunk.is_empty() {
+            callback
+                .send(&json!({ "crawlId": crawl_id, "status": "running", "links": chunk }))
+                .await?;
+            sent_links += chunk.len();
+        }
+        if last_page {
+            break;
+        }
+        after = next;
+    }
+
+    let issues_csv = workdir.join("issues.csv");
+    let mut reader = blocking({
+        let store = store.clone();
+        let id = crawl_id.to_string();
+        move || {
             store
                 .export_issues_csv(&id, &issues_csv)
                 .map_err(|error| error.to_string())?;
-            let issues = read_issues(&issues_csv)?;
-            Ok((urls, links, issues))
+            csv::Reader::from_path(&issues_csv).map_err(|error| error.to_string())
+        }
+    })
+    .await?;
+    let mut sent_issues = 0usize;
+    loop {
+        let (returned, chunk, done) = blocking(move || {
+            let (chunk, done) = read_issue_batch(&mut reader, ISSUE_CHUNK)?;
+            Ok((reader, chunk, done))
         })
-        .await
-        .map_err(|error| JobError::Crawl(format!("read results: {error}")))?
-        .map_err(JobError::Crawl)?
-    };
-
-    let total = urls.len();
-    let urls: Vec<WireUrl<'_>> = urls
-        .iter()
-        .filter(|row| url_fits(&row.url))
-        .map(WireUrl::from)
-        .collect();
-    for chunk in urls.chunks(URL_CHUNK) {
-        callback
-            .send(&json!({
-                "crawlId": crawl_id,
-                "status": "running",
-                "totalUrls": total,
-                "urls": chunk,
-            }))
-            .await?;
-    }
-
-    let links: Vec<WireLink<'_>> = links
-        .iter()
-        .filter(|row| url_fits(&row.from_url) && url_fits(&row.to_url))
-        .map(WireLink::from)
-        .collect();
-    for chunk in links.chunks(LINK_CHUNK) {
-        callback
-            .send(&json!({ "crawlId": crawl_id, "status": "running", "links": chunk }))
-            .await?;
-    }
-
-    for chunk in issues.chunks(ISSUE_CHUNK) {
-        callback
-            .send(&json!({ "crawlId": crawl_id, "status": "running", "issues": chunk }))
-            .await?;
+        .await?;
+        reader = returned;
+        if !chunk.is_empty() {
+            callback
+                .send(&json!({ "crawlId": crawl_id, "status": "running", "issues": chunk }))
+                .await?;
+            sent_issues += chunk.len();
+        }
+        if done {
+            break;
+        }
     }
 
     tracing::info!(
         crawl_id,
-        urls = urls.len(),
-        links = links.len(),
-        issues = issues.len(),
+        urls = sent_urls,
+        links = sent_links,
+        issues = sent_issues,
         "results uploaded"
     );
     Ok(())
 }
 
+/// Run blocking store or file work off the async runtime.
+async fn blocking<T, F>(work: F) -> Result<T, JobError>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|error| JobError::Crawl(format!("read results: {error}")))?
+        .map_err(JobError::Crawl)
+}
+
+/// Up to `limit` links with a row id above `after`, plus the last row id read.
+///
+/// The pinned store crate only offers `all_links`, which loads every row, so
+/// this reads the crawl's SQLite file directly with the same query, a page
+/// at a time.
+fn read_links_after(
+    db_path: &std::path::Path,
+    crawl_id: &str,
+    after: i64,
+    limit: usize,
+) -> Result<(Vec<LinkRecord>, i64), String> {
+    let conn =
+        rusqlite::Connection::open_with_flags(db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|error| error.to_string())?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT l.id, f.url, t.url, l.anchor, l.rel, l.internal
+             FROM links l
+             JOIN url_map f ON f.id = l.from_id
+             JOIN url_map t ON t.id = l.to_id
+             WHERE l.crawl_id = ?1 AND l.id > ?2
+             ORDER BY l.id
+             LIMIT ?3",
+        )
+        .map_err(|error| error.to_string())?;
+    let mut last = after;
+    let mut links = Vec::with_capacity(limit.min(4_096));
+    let rows = stmt
+        .query_map(rusqlite::params![crawl_id, after, limit as i64], |row| {
+            let anchor: String = row.get(3)?;
+            Ok((
+                row.get::<_, i64>(0)?,
+                LinkRecord {
+                    from_url: row.get(1)?,
+                    to_url: row.get(2)?,
+                    anchor: (!anchor.is_empty()).then_some(anchor),
+                    rel: row.get(4)?,
+                    internal: row.get::<_, i64>(5)? != 0,
+                },
+            ))
+        })
+        .map_err(|error| error.to_string())?;
+    for row in rows {
+        let (id, link) = row.map_err(|error| error.to_string())?;
+        last = id;
+        links.push(link);
+    }
+    Ok((links, last))
+}
+
 /// Issues come out of the store through its CSV export, which applies the
 /// crawl's severity overrides and suppressions the same way the desktop app
-/// does.
-fn read_issues(path: &std::path::Path) -> Result<Vec<WireIssue>, String> {
-    let mut reader = csv::Reader::from_path(path).map_err(|error| error.to_string())?;
-    let mut issues = Vec::new();
-    for record in reader.records() {
-        let record = record.map_err(|error| error.to_string())?;
+/// does. Reads up to `limit` usable rows; `true` once the file is exhausted.
+fn read_issue_batch<R: std::io::Read>(
+    reader: &mut csv::Reader<R>,
+    limit: usize,
+) -> Result<(Vec<WireIssue>, bool), String> {
+    let mut issues = Vec::with_capacity(limit.min(1_024));
+    let mut record = csv::StringRecord::new();
+    while issues.len() < limit {
+        if !reader
+            .read_record(&mut record)
+            .map_err(|error| error.to_string())?
+        {
+            return Ok((issues, true));
+        }
         let url = record.get(0).unwrap_or_default();
         let rule = record.get(1).unwrap_or_default();
         if url.is_empty() || rule.is_empty() || !url_fits(url) || rule.len() > 96 {
@@ -461,7 +585,7 @@ fn read_issues(path: &std::path::Path) -> Result<Vec<WireIssue>, String> {
             detail,
         });
     }
-    Ok(issues)
+    Ok((issues, false))
 }
 
 async fn heartbeat_loop(
@@ -554,5 +678,66 @@ mod tests {
     fn clip_respects_character_boundaries() {
         assert_eq!(clip("héllo", 2), "h");
         assert_eq!(clip("abc", 10), "abc");
+    }
+
+    #[test]
+    fn links_are_read_in_bounded_pages() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("crawl.db");
+        let store = Store::open(&path).unwrap();
+        let config = request(json!({ "crawlId": "c1", "seed": "https://example.com/" }))
+            .engine_config(&limits(), "http://proxy:8081")
+            .unwrap();
+        store
+            .create_crawl("c1", "https://example.com/", "url", &config, 0)
+            .unwrap();
+        let home = store.ensure_url_id("c1", "https://example.com/").unwrap();
+        for i in 0..7 {
+            let to = store
+                .ensure_url_id("c1", &format!("https://example.com/p/{i}"))
+                .unwrap();
+            let anchor = if i == 0 { None } else { Some("Page") };
+            store
+                .insert_link("c1", home, to, anchor, None, true)
+                .unwrap();
+        }
+
+        let mut after = 0;
+        let mut pages = Vec::new();
+        loop {
+            let (rows, next) = read_links_after(&path, "c1", after, 3).unwrap();
+            pages.push(rows.len());
+            if rows.len() < 3 {
+                break;
+            }
+            after = next;
+        }
+        assert_eq!(pages, vec![3, 3, 1]);
+
+        let (first, _) = read_links_after(&path, "c1", 0, 1).unwrap();
+        assert_eq!(first[0].from_url, "https://example.com/");
+        assert_eq!(first[0].to_url, "https://example.com/p/0");
+        assert_eq!(first[0].anchor, None);
+        assert!(first[0].internal);
+    }
+
+    #[test]
+    fn issues_are_read_in_bounded_batches() {
+        let data = "url,rule,severity,detail\n\
+                    https://example.com/a,missing_title,error,\n\
+                    ,missing_title,error,\n\
+                    https://example.com/b,thin_content,warning,120 words\n\
+                    https://example.com/c,missing_h1,warning,\n";
+        let mut reader = csv::Reader::from_reader(data.as_bytes());
+
+        let (first, done) = read_issue_batch(&mut reader, 2).unwrap();
+        assert!(!done);
+        assert_eq!(first.len(), 2);
+        assert_eq!(first[1].detail.as_deref(), Some("120 words"));
+
+        let (rest, done) = read_issue_batch(&mut reader, 2).unwrap();
+        assert!(done);
+        assert_eq!(rest.len(), 1);
+        assert_eq!(rest[0].rule, "missing_h1");
     }
 }

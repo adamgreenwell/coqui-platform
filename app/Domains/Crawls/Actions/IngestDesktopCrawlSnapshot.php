@@ -6,6 +6,7 @@ namespace App\Domains\Crawls\Actions;
 
 use App\Domains\Crawls\DTOs\CrawlSyncPayload;
 use App\Domains\Crawls\Events\CrawlProgressUpdated;
+use App\Domains\Crawls\Events\CrawlSynced;
 use App\Domains\Crawls\Exceptions\CrawlOwnershipConflictException;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Integrations\Services\RunnrDeploySmokeService;
@@ -17,6 +18,20 @@ use Illuminate\Support\Facades\DB;
 class IngestDesktopCrawlSnapshot
 {
     public const DESKTOP_SOURCE = 'desktop';
+
+    /**
+     * Whether a run takes no more chunks. A paused desktop crawl can resume
+     * and upload more; anything else that was finalized is sealed.
+     */
+    public static function isSealed(CrawlRun $run): bool
+    {
+        return $run->finalized_at !== null && $run->status !== 'paused';
+    }
+
+    public static function linkHash(string $from, string $to, ?string $anchor, ?string $rel): string
+    {
+        return hash('sha256', implode("\0", [$from, $to, $anchor ?? '', $rel ?? '']));
+    }
 
     /**
      * Create or update a desktop-synced run for this project.
@@ -50,6 +65,12 @@ class IngestDesktopCrawlSnapshot
         if ($existing !== null) {
             if ($existing->project_id !== $project->id || $existing->source !== self::DESKTOP_SOURCE) {
                 throw CrawlOwnershipConflictException::forCrawl($payload->externalCrawlId);
+            }
+
+            // Resuming a paused run reopens it, so its chunks are accepted
+            // again until the next finalize.
+            if ($existing->finalized_at !== null && $existing->status === 'paused' && $payload->status !== 'paused') {
+                $attributes['finalized_at'] = null;
             }
 
             $existing->update($attributes);
@@ -142,19 +163,35 @@ class IngestDesktopCrawlSnapshot
             }
 
             if ($links !== []) {
-                $linkRows = array_map(static fn (array $row): array => [
-                    'crawl_run_id' => $run->id,
-                    'from_url' => (string) $row['fromUrl'],
-                    'to_url' => (string) $row['toUrl'],
-                    'anchor' => $row['anchor'] ?? null,
-                    'rel' => $row['rel'] ?? null,
-                    'internal' => (bool) ($row['internal'] ?? true),
-                    'created_at' => $now,
-                    'updated_at' => $now,
-                ], $links);
+                // Keyed by a hash of the link so a retried chunk upserts the
+                // same rows instead of duplicating them.
+                $linkRows = [];
+                foreach ($links as $row) {
+                    $from = (string) $row['fromUrl'];
+                    $to = (string) $row['toUrl'];
+                    $anchor = isset($row['anchor']) ? (string) $row['anchor'] : null;
+                    $rel = isset($row['rel']) ? (string) $row['rel'] : null;
+                    $hash = self::linkHash($from, $to, $anchor, $rel);
 
-                foreach (array_chunk($linkRows, 500) as $batch) {
-                    DB::table('crawl_links')->insert($batch);
+                    $linkRows[$hash] = [
+                        'crawl_run_id' => $run->id,
+                        'link_hash' => $hash,
+                        'from_url' => $from,
+                        'to_url' => $to,
+                        'anchor' => $anchor,
+                        'rel' => $rel,
+                        'internal' => (bool) ($row['internal'] ?? true),
+                        'created_at' => $now,
+                        'updated_at' => $now,
+                    ];
+                }
+
+                foreach (array_chunk(array_values($linkRows), 500) as $batch) {
+                    DB::table('crawl_links')->upsert(
+                        $batch,
+                        ['crawl_run_id', 'link_hash'],
+                        ['internal', 'updated_at'],
+                    );
                 }
             }
 
@@ -210,14 +247,32 @@ class IngestDesktopCrawlSnapshot
         ];
     }
 
-    public function finalize(CrawlRun $run, ?string $status = null): CrawlRun
+    /**
+     * Seal a run and set its totals. `$issueCounts` (the client's
+     * `Array<{rule, severity, count}>`) wins over counting the uploaded
+     * issues, since a client may not upload every issue it found.
+     *
+     * @param  list<array{rule: string, severity: string, count: int}>|null  $issueCounts
+     */
+    public function finalize(CrawlRun $run, ?string $status = null, ?array $issueCounts = null): CrawlRun
     {
         $totalUrls = DB::table('crawl_urls')->where('crawl_run_id', $run->id)->count();
-        $counts = DB::table('crawl_issues')
-            ->selectRaw('severity, count(*) as aggregate')
-            ->where('crawl_run_id', $run->id)
-            ->groupBy('severity')
-            ->pluck('aggregate', 'severity');
+
+        $config = $run->config;
+        if ($issueCounts !== null) {
+            $counts = ['error' => 0, 'warning' => 0, 'opportunity' => 0];
+            foreach ($issueCounts as $row) {
+                $counts[$row['severity']] = ($counts[$row['severity']] ?? 0) + max(0, (int) $row['count']);
+            }
+            $config['issue_counts'] = $issueCounts;
+        } else {
+            $counts = DB::table('crawl_issues')
+                ->selectRaw('severity, count(*) as aggregate')
+                ->where('crawl_run_id', $run->id)
+                ->groupBy('severity')
+                ->pluck('aggregate', 'severity')
+                ->all();
+        }
 
         $run->update([
             'status' => $status ?? 'completed',
@@ -225,6 +280,7 @@ class IngestDesktopCrawlSnapshot
             'error_count' => (int) ($counts['error'] ?? 0),
             'warning_count' => (int) ($counts['warning'] ?? 0),
             'opportunity_count' => (int) ($counts['opportunity'] ?? 0),
+            'config' => $config,
             'finalized_at' => now(),
         ]);
 
@@ -241,6 +297,17 @@ class IngestDesktopCrawlSnapshot
             warningCount: (int) $refreshed->warning_count,
             opportunityCount: (int) $refreshed->opportunity_count,
             status: $refreshed->status,
+        )), report: true);
+
+        rescue(fn () => broadcast(new CrawlSynced(
+            projectId: $refreshed->project_id,
+            externalCrawlId: $refreshed->external_crawl_id,
+            status: $refreshed->status,
+            totalUrls: (int) $refreshed->total_urls,
+            errorCount: (int) $refreshed->error_count,
+            warningCount: (int) $refreshed->warning_count,
+            opportunityCount: (int) $refreshed->opportunity_count,
+            source: (string) $refreshed->source,
         )), report: true);
 
         $project = $refreshed->project;
