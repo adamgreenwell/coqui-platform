@@ -50,6 +50,7 @@ class ContentBrief extends Model
         'markdown',
         'status',
         'error',
+        'generation',
     ];
 
     /**

@@ -46,6 +46,7 @@ class GenerateContentBriefJob implements ShouldQueue
         public readonly ContentBrief $brief,
         public readonly ?User $user = null,
         public readonly bool $bypassCache = false,
+        public readonly ?string $generation = null,
     ) {
         $this->onQueue(self::QUEUE);
     }
@@ -55,6 +56,12 @@ class GenerateContentBriefJob implements ShouldQueue
         $brief = $this->brief;
         /** @var Project $project */
         $project = $brief->project;
+
+        // A newer request replaced this one while it waited in the queue:
+        // that job builds the brief, so don't pay for a second lookup.
+        if ($this->superseded()) {
+            return;
+        }
 
         try {
             // The project's current market and language, so a refresh after
@@ -86,8 +93,22 @@ class GenerateContentBriefJob implements ShouldQueue
 
     public function failed(?Throwable $e): void
     {
-        // The worker died or timed out: don't leave the brief pending.
+        // The worker died or timed out: don't leave the brief pending,
+        // unless a newer job now owns it.
+        if ($this->superseded()) {
+            return;
+        }
         $this->markFailed($this->brief->fresh() ?? $this->brief, $e);
+    }
+
+    private function superseded(): bool
+    {
+        if ($this->generation === null) {
+            return false;
+        }
+        $current = ContentBrief::query()->whereKey($this->brief->getKey())->value('generation');
+
+        return $current !== $this->generation;
     }
 
     private function markFailed(ContentBrief $brief, ?Throwable $e): void

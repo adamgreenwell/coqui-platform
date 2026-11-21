@@ -10,6 +10,7 @@ use App\Domains\Serp\DataForSeo\DataForSeoClient;
 use App\Domains\Serp\Events\ContentBriefUpdated;
 use App\Domains\Serp\Jobs\GenerateContentBriefJob;
 use App\Domains\Serp\Models\ContentBrief;
+use App\Domains\Serp\Services\ContentBriefService;
 use App\Domains\Serp\Services\HtmlPageOutlineExtractor;
 use App\Domains\Serp\SpendRefusedException;
 use App\Models\User;
@@ -443,6 +444,29 @@ HTML;
             ->postJson($this->briefUrl(), ['keyword' => 'log analysis'])
             ->assertStatus(202);
         Queue::assertPushed(GenerateContentBriefJob::class, fn (GenerateContentBriefJob $job): bool => $job->brief->keyword === 'log analysis' && ! $job->bypassCache);
+    }
+
+    public function test_a_superseded_job_exits_without_buying_a_lookup(): void
+    {
+        Queue::fake();
+        Http::fake();
+
+        $this->actingAs($this->user)->postJson($this->briefUrl(), ['keyword' => 'crawl budget'])->assertStatus(202);
+        /** @var GenerateContentBriefJob $first */
+        $first = Queue::pushed(GenerateContentBriefJob::class)->first();
+
+        // The queue stalled: past the in-flight window, the user asks again.
+        $this->travel(6)->minutes();
+        $this->actingAs($this->user)->postJson($this->briefUrl(), ['keyword' => 'crawl budget'])->assertStatus(202);
+        Queue::assertPushed(GenerateContentBriefJob::class, 2);
+
+        // The older job finally runs: it fetches nothing and fails nothing.
+        $first->handle(app(ContentBriefService::class));
+        $first->failed(null);
+        Http::assertNothingSent();
+        $brief = ContentBrief::query()->where('project_id', $this->project->id)->sole();
+        $this->assertSame(ContentBrief::STATUS_PENDING, $brief->status);
+        $this->assertNotSame($first->generation, $brief->generation);
     }
 
     public function test_the_job_completes_the_brief_and_broadcasts(): void

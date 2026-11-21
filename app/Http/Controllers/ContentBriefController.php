@@ -118,6 +118,7 @@ class ContentBriefController extends Controller
                 return $brief;
             }
 
+            $generation = (string) Str::uuid();
             if ($brief === null) {
                 /** @var ContentBrief $brief */
                 $brief = $project->contentBriefs()->create([
@@ -129,13 +130,14 @@ class ContentBriefController extends Controller
                     'data' => [],
                     'markdown' => '',
                     'status' => ContentBrief::STATUS_PENDING,
+                    'generation' => $generation,
                 ]);
             } else {
                 // A refresh keeps the previous brief visible until the new one lands.
-                $brief->update(['status' => ContentBrief::STATUS_PENDING, 'error' => null]);
+                $brief->update(['status' => ContentBrief::STATUS_PENDING, 'error' => null, 'generation' => $generation]);
             }
 
-            GenerateContentBriefJob::dispatch($brief, $user, $fresh);
+            GenerateContentBriefJob::dispatch($brief, $user, $fresh, $generation);
 
             return $brief;
         });
