@@ -860,6 +860,30 @@ Disallow: /
         $this->assertContains('sitemap_missing', array_column($result['regressions'], 'rule'));
     }
 
+    public function test_many_preview_deploys_do_not_push_out_the_production_baseline(): void
+    {
+        $this->siteFiles['/sitemap.xml'] = [$this->sitemap(20), 200];
+        $production = $this->smokeRun('11');
+        $this->addCrawledPage($production, 'https://my-runnr-site.com/');
+        app(RunnrDeploySmokeService::class)->evaluate($production);
+
+        for ($i = 12; $i <= 41; $i++) {
+            $this->smokeRun((string) $i, 'preview');
+        }
+
+        unset($this->siteFiles['/sitemap.xml']);
+        $next = $this->smokeRun('42');
+        $this->addCrawledPage($next, 'https://my-runnr-site.com/');
+        $result = app(RunnrDeploySmokeService::class)->evaluate($next);
+
+        $this->assertContains('sitemap_missing', array_column($result['regressions'], 'rule'));
+    }
+
+    public function test_a_robots_txt_with_a_byte_order_mark_is_parsed(): void
+    {
+        $this->assertTrue(DeploySiteFilesInspector::parseRobots("\u{FEFF}User-agent: *\nDisallow: /\n")['disallow_all']);
+    }
+
     public function test_a_sitemap_that_shrinks_by_half_is_a_warning(): void
     {
         $this->siteFiles['/sitemap.xml'] = [$this->sitemap(40), 200];

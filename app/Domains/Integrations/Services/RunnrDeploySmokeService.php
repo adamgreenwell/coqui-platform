@@ -43,26 +43,25 @@ class RunnrDeploySmokeService
      */
     private function previousChecks(CrawlRun $run, string $environment): ?array
     {
+        // Filtered in the query, so any number of other-environment runs in
+        // between can't push the baseline out of reach.
         $previous = CrawlRun::query()
             ->where('project_id', $run->project_id)
             ->where('source', 'deploy_smoke')
             ->where('id', '<', $run->id)
+            // A preview deploy is no baseline for production, or vice versa
+            // (a run without an environment counts as production).
+            ->where(fn ($query) => $query
+                ->where('config->deploy->environment', $environment)
+                ->when($environment === 'production', fn ($q) => $q->orWhereNull('config->deploy->environment')))
+            ->whereNotNull('config->smoke_results->checks->robots')
+            ->whereNotNull('config->smoke_results->checks->sitemap')
             ->orderByDesc('id')
-            ->limit(25)
-            ->get(['id', 'config']);
+            ->first(['id', 'config']);
 
-        foreach ($previous as $candidate) {
-            // A preview deploy is no baseline for production, or vice versa.
-            if ((string) ($candidate->config['deploy']['environment'] ?? 'production') !== $environment) {
-                continue;
-            }
-            $checks = $candidate->config['smoke_results']['checks'] ?? null;
-            if (is_array($checks) && isset($checks['robots'], $checks['sitemap'])) {
-                return $checks;
-            }
-        }
+        $checks = $previous?->config['smoke_results']['checks'] ?? null;
 
-        return null;
+        return is_array($checks) ? $checks : null;
     }
 
     /**

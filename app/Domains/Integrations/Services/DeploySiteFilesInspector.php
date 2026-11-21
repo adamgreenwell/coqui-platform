@@ -83,6 +83,8 @@ class DeploySiteFilesInspector
         $groups = [];
         $current = null;
         $lastWasAgent = false;
+        // A UTF-8 byte order mark would otherwise stick to the first key.
+        $body = (string) preg_replace('/^\xEF\xBB\xBF/', '', $body);
 
         foreach (preg_split('/\r\n|\r|\n/', $body) ?: [] as $line) {
             $line = trim((string) preg_replace('/#.*$/', '', $line));
