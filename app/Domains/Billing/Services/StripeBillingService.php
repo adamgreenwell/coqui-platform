@@ -126,8 +126,9 @@ class StripeBillingService
     /**
      * Statuses that end access without a customer.subscription.deleted
      * event: retries ran out and Stripe marked it unpaid, or the first
-     * payment never completed. Paying later makes it active again, and the
-     * plan comes back with it.
+     * payment never completed. Paying an unpaid subscription's invoice makes
+     * it active again and the plan comes back with it; incomplete_expired is
+     * final, so the customer has to check out again.
      */
     private const LAPSED_STATUSES = ['unpaid', 'incomplete_expired', 'canceled'];
 

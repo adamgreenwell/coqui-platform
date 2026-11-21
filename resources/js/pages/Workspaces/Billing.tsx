@@ -150,12 +150,21 @@ export default function WorkspaceBilling({
             </span>
           </div>
         )}
-        {['unpaid', 'incomplete_expired'].includes(workspace.subscription_status) && (
+        {workspace.subscription_status === 'unpaid' && (
           <div className="flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-xs text-rose-200">
             <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
             <span>
               We couldn&apos;t collect payment, so this workspace is on the Free plan. Pay the open invoice in the
               Stripe Customer Portal and your plan comes back automatically.
+            </span>
+          </div>
+        )}
+        {workspace.subscription_status === 'incomplete_expired' && (
+          <div className="flex items-start gap-2 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-xs text-rose-200">
+            <AlertCircle className="h-4 w-4 shrink-0 text-rose-400" />
+            <span>
+              Your first payment didn&apos;t complete, so this workspace is on the Free plan. Choose a plan below to
+              subscribe again.
             </span>
           </div>
         )}
