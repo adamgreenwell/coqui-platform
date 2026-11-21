@@ -206,6 +206,21 @@ return [
         'spam_window_days' => (int) env('BACKLINK_SPAM_WINDOW_DAYS', 30),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Crawl export imports (object storage)
+    |--------------------------------------------------------------------------
+    |
+    | Uploads go straight to object storage through a presigned URL, never
+    | through this application's disk. "r2" is the Cloudflare R2 bucket; with
+    | no credentials the import endpoints answer 503 rather than accepting a
+    | file this server cannot store.
+    |
+    */
+    'imports' => [
+        'disk' => env('IMPORTS_DISK', 'r2'),
+    ],
+
     'sync' => [
         'max_urls_per_chunk' => 1000,
         'max_links_per_chunk' => 2500,
