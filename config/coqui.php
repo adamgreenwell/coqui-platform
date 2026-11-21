@@ -27,6 +27,20 @@ return [
         'scheduled_spend' => (bool) env('DATAFORSEO_SCHEDULED_SPEND', false),
         'daily_cap_usd' => (float) env('DATAFORSEO_DAILY_CAP_USD', 5.00),
         'monthly_cap_usd' => (float) env('DATAFORSEO_MONTHLY_CAP_USD', 100.00),
+        // How long a paid call waits for the spend lock (cap check + ledger
+        // reservation) before it's refused.
+        'spend_lock_wait_seconds' => (int) env('DATAFORSEO_SPEND_LOCK_WAIT_SECONDS', 10),
+
+        // Raw request/response archive for paid calls.
+        'archive_responses' => (bool) env('DATAFORSEO_ARCHIVE_RESPONSES', true),
+        'archive_retention_days' => (int) env('DATAFORSEO_ARCHIVE_RETENTION_DAYS', 30),
+
+        // Hourly reconciliation alerts (emailed to platform operators).
+        'alerts' => [
+            'drift_usd' => (float) env('DATAFORSEO_DRIFT_ALERT_USD', 1.00),
+            'low_balance_usd' => (float) env('DATAFORSEO_LOW_BALANCE_ALERT_USD', 10.00),
+            'cap_ratio' => (float) env('DATAFORSEO_CAP_ALERT_RATIO', 0.8),
+        ],
 
         'cache_ttl_hours' => [
             'keyword_overview' => 24 * 30,
