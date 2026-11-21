@@ -16,10 +16,12 @@ use App\Domains\Integrations\Models\SearchPerformanceQuery;
 use App\Domains\Serp\Models\ContentBrief;
 use App\Domains\Serp\Models\TrackedKeyword;
 use App\Models\Concerns\HasPublicUuid;
+use App\Models\User;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
@@ -37,6 +39,9 @@ use Illuminate\Support\Str;
  * @property string|null $runnr_site_id
  * @property string|null $deploy_badge_token
  * @property CarbonInterface|null $last_crawled_at
+ * @property CarbonInterface|null $backlink_history_checked_at
+ * @property string|null $backlink_digest_slack_webhook
+ * @property CarbonInterface|null $backlink_digest_sent_at
  * @property CarbonInterface|null $deleted_at
  * @property CarbonInterface|null $created_at
  * @property CarbonInterface|null $updated_at
@@ -81,6 +86,14 @@ class Project extends Model
         'crawl_cadence',
         'runnr_site_id',
         'last_crawled_at',
+        'backlink_history_checked_at',
+        'backlink_digest_slack_webhook',
+        'backlink_digest_sent_at',
+    ];
+
+    /** @var list<string> */
+    protected $hidden = [
+        'backlink_digest_slack_webhook',
     ];
 
     /**
@@ -92,6 +105,9 @@ class Project extends Model
             'workspace_id' => 'integer',
             'location_code' => 'integer',
             'last_crawled_at' => 'datetime',
+            'backlink_history_checked_at' => 'datetime',
+            'backlink_digest_slack_webhook' => 'encrypted',
+            'backlink_digest_sent_at' => 'datetime',
         ];
     }
 
@@ -181,6 +197,16 @@ class Project extends Model
     public function backlinkHistorySnapshots(): HasMany
     {
         return $this->hasMany(BacklinkHistorySnapshot::class);
+    }
+
+    /**
+     * Members who get the weekly backlink digest by email.
+     *
+     * @return BelongsToMany<User, $this>
+     */
+    public function backlinkDigestSubscribers(): BelongsToMany
+    {
+        return $this->belongsToMany(User::class, 'backlink_digest_subscribers')->withTimestamps();
     }
 
     /**

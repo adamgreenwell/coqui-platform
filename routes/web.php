@@ -91,6 +91,8 @@ Route::middleware(['auth'])->group(function (): void {
     Route::middleware('feature:backlink-intelligence')->group(function (): void {
         Route::get('/workspaces/{workspace}/projects/{project}/backlinks', [BacklinkController::class, 'index'])->name('workspaces.projects.backlinks.index');
         Route::post('/workspaces/{workspace}/projects/{project}/backlinks/refresh', [BacklinkController::class, 'refresh'])->name('workspaces.projects.backlinks.refresh');
+        Route::post('/workspaces/{workspace}/projects/{project}/backlinks/digest/subscription', [BacklinkController::class, 'updateDigestSubscription'])->name('workspaces.projects.backlinks.digest.subscription');
+        Route::put('/workspaces/{workspace}/projects/{project}/backlinks/digest/slack', [BacklinkController::class, 'updateDigestSlack'])->name('workspaces.projects.backlinks.digest.slack');
         Route::get('/workspaces/{workspace}/projects/{project}/backlinks/watchlist', [BacklinkWatchlistController::class, 'index'])->name('workspaces.projects.backlinks.watchlist.index');
         Route::post('/workspaces/{workspace}/projects/{project}/backlinks/watchlist', [BacklinkWatchlistController::class, 'store'])->name('workspaces.projects.backlinks.watchlist.store');
         Route::post('/workspaces/{workspace}/projects/{project}/backlinks/watchlist/verify', [BacklinkWatchlistController::class, 'verifyAll'])->name('workspaces.projects.backlinks.watchlist.verify-all');

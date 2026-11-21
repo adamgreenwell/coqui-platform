@@ -51,6 +51,8 @@ return [
             'labs_domain_intersection_task' => 0.012,
             'labs_domain_intersection_item' => 0.00012,
             'backlinks_task' => 0.024,
+            // Per timeseries_summary / timeseries_new_lost_summary request.
+            'backlinks_timeseries_task' => 0.02,
             'backlinks_item' => 0.000036,
         ],
     ],
@@ -144,6 +146,15 @@ return [
     | Coqui Desktop Sync Contract Limits
     |--------------------------------------------------------------------------
     */
+    'backlinks' => [
+        // A backlink history (even an empty one) is fetched again only after
+        // this many days, on view or by the scheduled alert check.
+        'history_recheck_days' => (int) env('BACKLINK_HISTORY_RECHECK_DAYS', 7),
+        // Referring domains first seen within this window count toward a
+        // spam spike alert.
+        'spam_window_days' => (int) env('BACKLINK_SPAM_WINDOW_DAYS', 30),
+    ],
+
     'sync' => [
         'max_urls_per_chunk' => 1000,
         'max_links_per_chunk' => 2500,

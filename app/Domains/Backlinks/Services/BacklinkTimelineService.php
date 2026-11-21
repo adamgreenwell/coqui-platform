@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domains\Backlinks\Services;
 
 use App\Domains\Backlinks\Events\BacklinkAlertTriggered;
+use App\Domains\Backlinks\Models\BacklinkAlert;
 use App\Domains\Backlinks\Models\BacklinkHistorySnapshot;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Serp\DataForSeo\DataForSeoClient;
@@ -13,16 +14,15 @@ use Throwable;
 
 class BacklinkTimelineService
 {
-    public const HISTORY_ENDPOINT = '/v3/backlinks/history/live';
-
     public function __construct(
         private readonly DataForSeoClient $dataForSeo,
         private readonly BacklinkProfileService $profileService,
     ) {}
 
     /**
-     * Retrieve the backlink timeseries velocity for a project, caching snapshots in PostgreSQL
-     * to avoid re-querying DataForSEO on subsequent page loads.
+     * The backlink timeline for a project from stored daily snapshots, with
+     * the stored alerts. Fetches history only when none has been checked
+     * recently, so repeat views make no paid calls and send no alerts.
      *
      * @return array{
      *     timeline: list<array<string, mixed>>,
@@ -32,7 +32,7 @@ class BacklinkTimelineService
      *     alerts: list<array<string, mixed>>,
      * }
      */
-    public function getTimelineData(Project $project, int $days = 90, bool $fresh = false): array
+    public function getTimelineData(Project $project, int $days = 90, bool $fresh = false, bool $allowFetch = true): array
     {
         $startDate = now()->subDays($days)->toDateString();
 
@@ -41,7 +41,10 @@ class BacklinkTimelineService
             ->orderBy('snapshot_date', 'asc')
             ->get();
 
-        if ($snapshots->isEmpty() || $fresh) {
+        // Fetch only on the first view (or an explicit refresh). An empty
+        // result is remembered too, so a project with no history isn't
+        // fetched again on every page load.
+        if ($allowFetch && ($fresh || ($snapshots->isEmpty() && ! $this->historyCheckedRecently($project)))) {
             $this->syncHistorySnapshots($project, $days);
 
             $snapshots = $project->backlinkHistorySnapshots()
@@ -63,102 +66,141 @@ class BacklinkTimelineService
             'rank' => $s->rank,
         ])->all();
 
-        // New vs Lost referring domains breakdown
+        // Example new and lost domains, from the cached referring domains.
         $domainsBreakdown = $this->extractNewAndLostDomains($project, $days);
 
-        // Detect sudden backlink drops or spam spikes
-        $alerts = $this->detectAndTriggerAlerts($project, $timeline, $domainsBreakdown);
+        // Totals come from the full daily new/lost series, not the sample.
+        $totalNew = (int) $snapshots->sum('new_referring_domains');
+        $totalLost = (int) $snapshots->sum('lost_referring_domains');
+        $net = $totalNew - $totalLost;
 
         return [
             'timeline' => $timeline,
             'new_domains' => $domainsBreakdown['new_domains'],
             'lost_domains' => $domainsBreakdown['lost_domains'],
-            'velocity' => $domainsBreakdown['velocity'],
-            'alerts' => $alerts,
+            'velocity' => [
+                'days' => $days,
+                'total_new' => $totalNew,
+                'total_lost' => $totalLost,
+                'net_velocity' => $net,
+                'trend' => $net > 0 ? 'growing' : ($net < 0 ? 'declining' : 'stable'),
+            ],
+            // Alerts are evaluated on a schedule; viewing only reads them.
+            'alerts' => BacklinkAlert::query()
+                ->where('project_id', $project->id)
+                ->where('detected_at', '>=', now()->subDays($days))
+                ->latest('detected_at')
+                ->limit(20)
+                ->get()
+                ->map(fn (BacklinkAlert $a): array => $a->toPayload())
+                ->values()
+                ->all(),
         ];
     }
 
+    public function historyCheckedRecently(Project $project): bool
+    {
+        $days = max(1, (int) config('coqui.backlinks.history_recheck_days', 7));
+
+        return $project->backlink_history_checked_at !== null
+            && $project->backlink_history_checked_at->isAfter(now()->subDays($days));
+    }
+
     /**
-     * Fetch historical backlink timeseries from DataForSEO and persist into database.
+     * Fetch the daily backlink timeseries (totals plus new and lost) and
+     * store one snapshot per day. Records the attempt on the project, so an
+     * empty or failed result isn't fetched again on the next page view.
      */
-    public function syncHistorySnapshots(Project $project, int $days = 90): int
+    public function syncHistorySnapshots(Project $project, int $days = 90, bool $isScheduled = false): int
     {
         $target = $this->resolveTarget($project);
         $dateFrom = now()->subDays($days)->toDateString();
         $dateTo = now()->toDateString();
 
         try {
-            $response = $this->dataForSeo->backlinksHistory($target, $project, $dateFrom, $dateTo);
-            $items = $response['tasks'][0]['result'][0]['items'] ?? [];
-            if (! is_array($items)) {
-                return 0;
-            }
+            $totals = $this->itemsByDate($this->dataForSeo->backlinksTimeseriesSummary($target, $project, $dateFrom, $dateTo, $isScheduled));
+            $changes = $this->itemsByDate($this->dataForSeo->backlinksTimeseriesNewLost($target, $project, $dateFrom, $dateTo, $isScheduled));
+        } catch (Throwable $e) {
+            report($e);
 
-            $count = 0;
-            foreach ($items as $item) {
-                if (! is_array($item)) {
-                    continue;
-                }
-
-                $rawDate = (string) ($item['date'] ?? '');
-                if ($rawDate === '') {
-                    continue;
-                }
-
-                $snapshotDate = Carbon::parse($rawDate)->toDateString();
-                $backlinks = (int) ($item['backlinks'] ?? 0);
-                $domains = (int) ($item['referring_domains'] ?? 0);
-                $newBacklinks = (int) ($item['new_backlinks'] ?? 0);
-                $lostBacklinks = (int) ($item['lost_backlinks'] ?? 0);
-                $newDomains = (int) ($item['new_referring_domains'] ?? 0);
-                $lostDomains = (int) ($item['lost_referring_domains'] ?? 0);
-                $rank = (int) ($item['rank'] ?? 0);
-
-                BacklinkHistorySnapshot::query()->updateOrCreate(
-                    [
-                        'project_id' => $project->id,
-                        'snapshot_date' => $snapshotDate,
-                    ],
-                    [
-                        'backlinks_count' => $backlinks,
-                        'referring_domains_count' => $domains,
-                        'new_backlinks' => $newBacklinks,
-                        'lost_backlinks' => $lostBacklinks,
-                        'new_referring_domains' => $newDomains,
-                        'lost_referring_domains' => $lostDomains,
-                        'rank' => $rank,
-                    ]
-                );
-
-                $count++;
-            }
-
-            return $count;
-        } catch (Throwable) {
             return 0;
+        } finally {
+            $project->forceFill(['backlink_history_checked_at' => now()])->save();
         }
+
+        $count = 0;
+        foreach (array_unique(array_merge(array_keys($totals), array_keys($changes))) as $date) {
+            $total = $totals[$date] ?? [];
+            $change = $changes[$date] ?? [];
+
+            BacklinkHistorySnapshot::query()->updateOrCreate(
+                [
+                    'project_id' => $project->id,
+                    'snapshot_date' => $date,
+                ],
+                [
+                    'backlinks_count' => (int) ($total['backlinks'] ?? 0),
+                    'referring_domains_count' => (int) ($total['referring_domains'] ?? 0),
+                    'new_backlinks' => (int) ($change['new_backlinks'] ?? 0),
+                    'lost_backlinks' => (int) ($change['lost_backlinks'] ?? 0),
+                    'new_referring_domains' => (int) ($change['new_referring_domains'] ?? 0),
+                    'lost_referring_domains' => (int) ($change['lost_referring_domains'] ?? 0),
+                    'rank' => (int) ($total['rank'] ?? 0),
+                ]
+            );
+
+            $count++;
+        }
+
+        return $count;
     }
 
     /**
+     * @param  array<string, mixed>  $response
+     * @return array<string, array<string, mixed>> items keyed by Y-m-d
+     */
+    private function itemsByDate(array $response): array
+    {
+        $items = $response['tasks'][0]['result'][0]['items'] ?? [];
+        if (! is_array($items)) {
+            return [];
+        }
+
+        $byDate = [];
+        foreach ($items as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            // e.g. "2021-12-31 00:00:00 +00:00": the day is the leading date.
+            $raw = trim((string) ($item['date'] ?? ''));
+            if (preg_match('/^\d{4}-\d{2}-\d{2}/', $raw, $m) !== 1) {
+                continue;
+            }
+            $byDate[$m[0]] = $item;
+        }
+
+        return $byDate;
+    }
+
+    /**
+     * Example new and lost referring domains, from the cached referring
+     * domains only (never a paid call).
+     *
      * @return array{
      *     new_domains: list<array<string, mixed>>,
      *     lost_domains: list<array<string, mixed>>,
-     *     velocity: array<string, mixed>
      * }
      */
     private function extractNewAndLostDomains(Project $project, int $days): array
     {
-        $profile = $this->profileService->getBacklinkProfile($project, false);
-        $allDomains = $profile['referring_domains'];
-
         $cutoff = now()->subDays($days);
 
         $new = [];
         $lost = [];
 
-        foreach ($allDomains as $d) {
-            $firstSeen = isset($d['first_seen']) ? Carbon::parse((string) $d['first_seen']) : null;
-            $lastSeen = isset($d['last_seen']) ? Carbon::parse((string) $d['last_seen']) : null;
+        foreach ($this->profileService->cachedReferringDomains($project) as $d) {
+            $firstSeen = $this->seenAt($d['first_seen'] ?? null);
+            $lastSeen = $this->seenAt($d['last_seen'] ?? null);
 
             if ($firstSeen !== null && $firstSeen->isAfter($cutoff)) {
                 $new[] = array_merge($d, [
@@ -167,7 +209,7 @@ class BacklinkTimelineService
                 ]);
             }
 
-            // A domain is considered "lost" if last seen is before the recent window or marked as inactive
+            // Lost when last seen before the window.
             if ($lastSeen !== null && $lastSeen->isBefore($cutoff)) {
                 $lost[] = array_merge($d, [
                     'event_type' => 'lost',
@@ -176,109 +218,116 @@ class BacklinkTimelineService
             }
         }
 
-        $totalNew = count($new);
-        $totalLost = count($lost);
-        $netVelocity = $totalNew - $totalLost;
-
         return [
             'new_domains' => $new,
             'lost_domains' => $lost,
-            'velocity' => [
-                'days' => $days,
-                'total_new' => $totalNew,
-                'total_lost' => $totalLost,
-                'net_velocity' => $netVelocity,
-                'trend' => $netVelocity > 0 ? 'growing' : ($netVelocity < 0 ? 'declining' : 'stable'),
-            ],
         ];
     }
 
     /**
-     * @param  list<array<string, mixed>>  $timeline
-     * @param  array{new_domains: list<array<string, mixed>>, lost_domains: list<array<string, mixed>>, velocity: array<string, mixed>}  $domainsBreakdown
-     * @return list<array<string, mixed>>
+     * Check the stored history and the cached referring domains for a
+     * sudden drop or a spam spike. Each event is stored and broadcast once;
+     * seeing it again changes nothing. Makes no paid calls.
+     *
+     * @return list<BacklinkAlert> alerts created by this run
      */
-    private function detectAndTriggerAlerts(Project $project, array $timeline, array $domainsBreakdown): array
+    public function evaluateAlerts(Project $project): array
     {
-        $alerts = [];
+        $created = [];
 
-        // 1. Check for sudden backlink drops in latest timeline snapshot
-        if ($timeline !== []) {
-            $latest = end($timeline);
-            $lostBacklinks = (int) ($latest['lost_backlinks'] ?? 0);
-            $totalBacklinks = (int) ($latest['backlinks'] ?? 0);
-
-            if ($lostBacklinks >= 25 && $totalBacklinks > 0 && ($lostBacklinks / $totalBacklinks) >= 0.15) {
-                $message = sprintf(
-                    'Sudden backlink drop detected for %s: lost %d links on %s.',
-                    $project->domain,
-                    $lostBacklinks,
-                    $latest['date'] ?? 'recently'
-                );
-
-                $alerts[] = [
-                    'type' => 'backlink_drop',
-                    'severity' => 'warning',
-                    'message' => $message,
-                    'detected_at' => now()->toIso8601String(),
-                    'meta' => [
-                        'lost_backlinks' => $lostBacklinks,
-                        'total_backlinks' => $totalBacklinks,
-                        'drop_date' => $latest['date'] ?? null,
-                    ],
-                ];
-
-                BacklinkAlertTriggered::dispatch(
-                    $project->id,
+        /** @var BacklinkHistorySnapshot|null $latest */
+        $latest = $project->backlinkHistorySnapshots()->orderByDesc('snapshot_date')->first();
+        if ($latest !== null) {
+            $lost = $latest->lost_backlinks;
+            $total = $latest->backlinks_count;
+            if ($lost >= 25 && $total > 0 && ($lost / $total) >= 0.15) {
+                $date = $latest->snapshot_date->toDateString();
+                $created[] = $this->recordAlert(
+                    $project,
                     'backlink_drop',
                     'warning',
-                    $message,
-                    $project->canonical_url,
-                    [
-                        'lost_backlinks' => $lostBacklinks,
-                        'total_backlinks' => $totalBacklinks,
-                    ]
+                    'drop:'.$date,
+                    sprintf('Sudden backlink drop detected for %s: lost %d links on %s.', $project->domain, $lost, $date),
+                    ['lost_backlinks' => $lost, 'total_backlinks' => $total, 'drop_date' => $date],
                 );
             }
         }
 
-        // 2. Check for spam spikes in new referring domains
-        $newDomains = $domainsBreakdown['new_domains'];
-        $highSpamCount = 0;
-        foreach ($newDomains as $nd) {
-            if ((int) ($nd['spam_score'] ?? 0) >= 60) {
-                $highSpamCount++;
+        $cutoff = now()->subDays(max(1, (int) config('coqui.backlinks.spam_window_days', 30)));
+        $spammy = [];
+        foreach ($this->profileService->cachedReferringDomains($project) as $d) {
+            $firstSeen = $this->seenAt($d['first_seen'] ?? null);
+            $domain = strtolower(trim((string) ($d['domain'] ?? '')));
+            if ($domain !== '' && $firstSeen !== null && $firstSeen->isAfter($cutoff) && (int) ($d['spam_score'] ?? 0) >= 60) {
+                $spammy[$domain] = true;
             }
         }
+        $spammy = array_keys($spammy);
+        sort($spammy);
 
-        if ($highSpamCount >= 3) {
-            $message = sprintf(
-                'Toxic link spam alert for %s: %d newly acquired domain(s) have a spam score over 60%%.',
-                $project->domain,
-                $highSpamCount
-            );
-
-            $alerts[] = [
-                'type' => 'spam_spike',
-                'severity' => 'critical',
-                'message' => $message,
-                'detected_at' => now()->toIso8601String(),
-                'meta' => [
-                    'high_spam_domains_count' => $highSpamCount,
-                ],
-            ];
-
-            BacklinkAlertTriggered::dispatch(
-                $project->id,
+        if (count($spammy) >= 3) {
+            $created[] = $this->recordAlert(
+                $project,
                 'spam_spike',
                 'critical',
-                $message,
-                $project->canonical_url,
-                ['high_spam_domains_count' => $highSpamCount]
+                // A new alert only when the set of spammy domains changes.
+                'spam:'.sha1(implode(',', $spammy)),
+                sprintf('Toxic link spam alert for %s: %d newly acquired domain(s) have a spam score over 60%%.', $project->domain, count($spammy)),
+                ['high_spam_domains_count' => count($spammy), 'domains' => array_slice($spammy, 0, 20)],
             );
         }
 
-        return $alerts;
+        return array_values(array_filter($created));
+    }
+
+    /**
+     * @param  array<string, mixed>  $meta
+     */
+    private function recordAlert(Project $project, string $type, string $severity, string $dedupeKey, string $message, array $meta): ?BacklinkAlert
+    {
+        $inserted = BacklinkAlert::query()->insertOrIgnore([
+            'project_id' => $project->id,
+            'type' => $type,
+            'severity' => $severity,
+            'dedupe_key' => $dedupeKey,
+            'message' => $message,
+            'meta' => json_encode($meta, JSON_THROW_ON_ERROR),
+            'detected_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        if ($inserted === 0) {
+            return null;
+        }
+
+        rescue(static fn () => BacklinkAlertTriggered::dispatch(
+            $project->id,
+            $type,
+            $severity,
+            $message,
+            $project->canonical_url,
+            $meta,
+        ));
+
+        return BacklinkAlert::query()
+            ->where('project_id', $project->id)
+            ->where('type', $type)
+            ->where('dedupe_key', $dedupeKey)
+            ->first();
+    }
+
+    private function seenAt(mixed $value): ?Carbon
+    {
+        if (! is_string($value) || trim($value) === '') {
+            return null;
+        }
+
+        try {
+            return Carbon::parse($value);
+        } catch (Throwable) {
+            return null;
+        }
     }
 
     private function resolveTarget(Project $project): string

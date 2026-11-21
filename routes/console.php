@@ -30,6 +30,17 @@ Schedule::command('coqui:verify-backlinks')
     ->weeklyOn(1, '03:30')
     ->withoutOverlapping();
 
+// Free: records backlink drop and spam alerts once each from stored data.
+// With DATAFORSEO_SCHEDULED_SPEND it first refreshes week-old histories.
+Schedule::command('backlinks:evaluate-alerts')
+    ->dailyAt('05:40')
+    ->withoutOverlapping();
+
+// Weekly backlink digest by email and Slack.
+Schedule::command('backlinks:send-digests')
+    ->weeklyOn(1, '07:00')
+    ->withoutOverlapping();
+
 // Nightly synchronization of Google Search Console and Bing Webmaster performance metrics.
 Schedule::command('search-console:sync')
     ->dailyAt('04:00')
