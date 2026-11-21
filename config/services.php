@@ -41,6 +41,8 @@ return [
 
     'runnr' => [
         'webhook_secret' => env('RUNNR_WEBHOOK_SECRET'),
+        // Deliveries whose X-Runnr-Timestamp is further than this from now are refused.
+        'webhook_tolerance_seconds' => (int) env('RUNNR_WEBHOOK_TOLERANCE_SECONDS', 300),
         'telemetry_token' => env('RUNNR_TELEMETRY_TOKEN'),
     ],
 ];

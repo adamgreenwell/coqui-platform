@@ -7,6 +7,9 @@ namespace Tests\Feature;
 use App\Domains\Crawls\Jobs\DispatchCloudCrawlJob;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Crawls\Services\CoquiWorkerClient;
+use App\Domains\Crawls\Services\SafeHttpClient;
+use App\Domains\Crawls\Services\SsrfProtectionGuard;
+use App\Domains\Integrations\Services\DeploySiteFilesInspector;
 use App\Domains\Integrations\Services\RunnrDeploySmokeService;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
@@ -32,12 +35,41 @@ class RunnrDeployWebhookTest extends TestCase
 
     private Project $project;
 
+    /**
+     * robots.txt / sitemap bodies served to the smoke check, by path.
+     *
+     * @var array<string, array{0: string, 1: int}>
+     */
+    private array $siteFiles = [];
+
     protected function setUp(): void
     {
         parent::setUp();
 
         // These tests exercise the Runnr surface, which is hidden unless the flag is on.
         RunnrIntegration::activate();
+        // Signatures cover the delivery timestamp; keep "now" fixed.
+        $this->freezeTime();
+
+        // The smoke check fetches robots.txt and the sitemap itself: resolve
+        // test hosts to a public address and serve $siteFiles (404 otherwise).
+        $guard = new class extends SsrfProtectionGuard
+        {
+            public function resolveSafeIps(string $url): array
+            {
+                return ['93.184.216.34'];
+            }
+        };
+        $this->app->instance(DeploySiteFilesInspector::class, new DeploySiteFilesInspector(new SafeHttpClient($guard)));
+        Http::fake(function (HttpRequest $request) {
+            $path = (string) parse_url($request->url(), PHP_URL_PATH);
+            if (! in_array($path, ['/robots.txt', '/sitemap.xml'], true)) {
+                return null;
+            }
+            [$body, $status] = $this->siteFiles[$path] ?? ['', 404];
+
+            return Http::response($body, $status);
+        });
 
         $this->user = User::factory()->create();
         $this->workspace = Workspace::query()->create([
@@ -80,6 +112,7 @@ class RunnrDeployWebhookTest extends TestCase
         config()->set('services.runnr.webhook_secret', 'runnr-secret-key');
 
         $this->withHeader('X-Runnr-Signature', 'invalid-hex-hmac')
+            ->withHeader('X-Runnr-Timestamp', (string) now()->getTimestamp())
             ->postJson('/api/webhooks/runnr/deploy', [
                 'site_id' => 'site_runnr_12345',
             ])->assertStatus(403)
@@ -92,7 +125,7 @@ class RunnrDeployWebhookTest extends TestCase
         config()->set('services.runnr.webhook_secret', $secret);
 
         $payload = json_encode(['site_id' => 'unknown_site'], JSON_THROW_ON_ERROR);
-        $signature = hash_hmac('sha256', $payload, $secret);
+        $signature = hash_hmac('sha256', now()->getTimestamp().'.'.$payload, $secret);
 
         $response = $this->call(
             'POST',
@@ -104,6 +137,7 @@ class RunnrDeployWebhookTest extends TestCase
                 'CONTENT_TYPE' => 'application/json',
                 'HTTP_ACCEPT' => 'application/json',
                 'HTTP_X_RUNNR_SIGNATURE' => $signature,
+                'HTTP_X_RUNNR_TIMESTAMP' => (string) now()->getTimestamp(),
             ],
             $payload,
         );
@@ -134,7 +168,7 @@ class RunnrDeployWebhookTest extends TestCase
             'commit_sha' => 'c0ffee1234',
             'callback_url' => 'https://runnr.io/api/deploys/999/callback',
         ], JSON_THROW_ON_ERROR);
-        $signature = hash_hmac('sha256', $payload, $secret);
+        $signature = hash_hmac('sha256', now()->getTimestamp().'.'.$payload, $secret);
 
         $response = $this->call(
             'POST',
@@ -146,6 +180,7 @@ class RunnrDeployWebhookTest extends TestCase
                 'CONTENT_TYPE' => 'application/json',
                 'HTTP_ACCEPT' => 'application/json',
                 'HTTP_X_RUNNR_SIGNATURE' => $signature,
+                'HTTP_X_RUNNR_TIMESTAMP' => (string) now()->getTimestamp(),
             ],
             $payload,
         );
@@ -205,16 +240,9 @@ class RunnrDeployWebhookTest extends TestCase
             'updated_at' => now(),
         ]);
 
-        DB::table('crawl_issues')->insert([
-            'crawl_run_id' => $run->id,
-            'url' => 'https://my-runnr-site.com/',
-            'url_hash' => hash('sha256', 'https://my-runnr-site.com/'),
-            'rule' => 'robots_disallowed',
-            'severity' => 'error',
-            'detail' => 'Disallow: / detected',
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+        $this->siteFiles['/robots.txt'] = ['User-agent: *
+Disallow: /
+', 200];
 
         $service = app(RunnrDeploySmokeService::class);
         $result = $service->evaluate($run);
@@ -550,7 +578,7 @@ class RunnrDeployWebhookTest extends TestCase
             'callback_url' => 'https://runnr.io/api/deploys/down/callback',
         ], JSON_THROW_ON_ERROR);
 
-        return [$payload, hash_hmac('sha256', $payload, $secret)];
+        return [$payload, hash_hmac('sha256', now()->getTimestamp().'.'.$payload, $secret)];
     }
 
     private function postDeploy(string $payload, string $signature): TestResponse
@@ -559,6 +587,7 @@ class RunnrDeployWebhookTest extends TestCase
             'CONTENT_TYPE' => 'application/json',
             'HTTP_ACCEPT' => 'application/json',
             'HTTP_X_RUNNR_SIGNATURE' => $signature,
+            'HTTP_X_RUNNR_TIMESTAMP' => (string) now()->getTimestamp(),
         ], $payload);
     }
 
@@ -679,5 +708,197 @@ class RunnrDeployWebhookTest extends TestCase
             && str_contains((string) $request['summary'], 'reported that the crawl failed'));
         Http::assertNotSent(fn (HttpRequest $request): bool => $request->url() === 'https://runnr.io/api/deploys/wf/callback'
             && $request['passed'] === true);
+    }
+
+    private function smokeRun(string $suffix, string $environment = 'production', ?string $callbackUrl = null): CrawlRun
+    {
+        return CrawlRun::query()->create([
+            'project_id' => $this->project->id,
+            'external_crawl_id' => '99999999-9999-4999-8999-9999999998'.$suffix,
+            'source' => 'deploy_smoke',
+            'seed' => 'https://my-runnr-site.com/',
+            'seed_kind' => 'url',
+            'status' => 'completed',
+            'config' => ['deploy' => array_filter([
+                'deploy_id' => 'dep_'.$suffix,
+                'environment' => $environment,
+                'callback_url' => $callbackUrl,
+            ])],
+        ]);
+    }
+
+    private function addCrawledPage(CrawlRun $run, string $url): void
+    {
+        DB::table('crawl_urls')->insert([
+            'crawl_run_id' => $run->id,
+            'url' => $url,
+            'url_hash' => hash('sha256', $url),
+            'status' => 200,
+            'canonical' => $url,
+            'meta_robots' => 'index, follow',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    private function sitemap(int $entries): string
+    {
+        $urls = '';
+        for ($i = 1; $i <= $entries; $i++) {
+            $urls .= "<url><loc>https://my-runnr-site.com/p/{$i}</loc></url>";
+        }
+
+        return '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'.$urls.'</urlset>';
+    }
+
+    public function test_a_smoke_run_that_crawled_nothing_fails(): void
+    {
+        config()->set('services.runnr.webhook_secret', 'runnr-secret-key');
+        Http::fake(['https://runnr.io/*' => Http::response(['acknowledged' => true], 200)]);
+        $run = $this->smokeRun('01', 'preview', 'https://runnr.io/api/deploys/zero/callback');
+
+        $result = app(RunnrDeploySmokeService::class)->evaluate($run);
+
+        $this->assertFalse($result['passed']);
+        $this->assertSame('failed', $result['status']);
+        $this->assertSame(['no_urls_crawled'], array_column($result['regressions'], 'rule'));
+        Http::assertSent(fn (HttpRequest $request): bool => $request->url() === 'https://runnr.io/api/deploys/zero/callback'
+            && $request['passed'] === false
+            && $request['totalUrlsChecked'] === 0);
+    }
+
+    public function test_a_deploy_that_blocks_all_crawling_is_a_failure(): void
+    {
+        // Disallow: / for everyone, with a Googlebot-specific group too.
+        $this->siteFiles['/robots.txt'] = ["# deploy\nUser-agent: Googlebot\nDisallow:\n\nUser-agent: *\nDisallow: /\n", 200];
+        $run = $this->smokeRun('02');
+
+        $result = app(RunnrDeploySmokeService::class)->evaluate($run);
+
+        $this->assertFalse($result['passed']);
+        $rules = array_column($result['regressions'], 'rule');
+        $this->assertContains('no_urls_crawled', $rules);
+        $this->assertContains('robots_txt_disallow_all', $rules);
+        $this->assertStringContainsString('robots.txt blocks all crawling', $result['regressions'][0]['message']);
+        $this->assertTrue($run->refresh()->config['smoke_results']['checks']['robots']['disallow_all']);
+    }
+
+    public function test_robots_rules_for_one_bot_or_a_subfolder_are_not_disallow_all(): void
+    {
+        $this->assertFalse(DeploySiteFilesInspector::parseRobots("User-agent: BadBot\nDisallow: /\n")['disallow_all']);
+        $this->assertFalse(DeploySiteFilesInspector::parseRobots("User-agent: *\nDisallow: /admin\n")['disallow_all']);
+        $this->assertFalse(DeploySiteFilesInspector::parseRobots("User-agent: *\nDisallow: /\nAllow: /\n")['disallow_all']);
+        $this->assertTrue(DeploySiteFilesInspector::parseRobots("User-agent: bingbot\nUser-agent: *\nDisallow: /*\n")['disallow_all']);
+        $this->assertSame(
+            ['https://my-runnr-site.com/sitemap_index.xml'],
+            DeploySiteFilesInspector::parseRobots("Sitemap: https://my-runnr-site.com/sitemap_index.xml\nUser-agent: *\nDisallow:\n")['sitemaps'],
+        );
+    }
+
+    public function test_a_sitemap_that_disappears_since_the_last_deploy_is_flagged(): void
+    {
+        $this->siteFiles['/robots.txt'] = ["User-agent: *\nDisallow:\n", 200];
+        $this->siteFiles['/sitemap.xml'] = [$this->sitemap(20), 200];
+        $first = $this->smokeRun('03');
+        $this->addCrawledPage($first, 'https://my-runnr-site.com/');
+        $this->assertTrue(app(RunnrDeploySmokeService::class)->evaluate($first)['passed']);
+
+        // Next deploy: sitemap gone, robots.txt edited.
+        $this->siteFiles['/robots.txt'] = ["User-agent: *\nDisallow: /tmp\n", 200];
+        unset($this->siteFiles['/sitemap.xml']);
+        $second = $this->smokeRun('04');
+        $this->addCrawledPage($second, 'https://my-runnr-site.com/');
+
+        $result = app(RunnrDeploySmokeService::class)->evaluate($second);
+
+        $this->assertFalse($result['passed']);
+        $rules = array_column($result['regressions'], 'rule');
+        $this->assertContains('sitemap_missing', $rules);
+        $this->assertContains('robots_txt_changed', $rules);
+    }
+
+    public function test_a_sitemap_that_shrinks_by_half_is_a_warning(): void
+    {
+        $this->siteFiles['/sitemap.xml'] = [$this->sitemap(40), 200];
+        $first = $this->smokeRun('05');
+        $this->addCrawledPage($first, 'https://my-runnr-site.com/');
+        app(RunnrDeploySmokeService::class)->evaluate($first);
+
+        $this->siteFiles['/sitemap.xml'] = [$this->sitemap(12), 200];
+        $second = $this->smokeRun('06');
+        $this->addCrawledPage($second, 'https://my-runnr-site.com/');
+
+        $result = app(RunnrDeploySmokeService::class)->evaluate($second);
+
+        $this->assertTrue($result['passed']);
+        $this->assertSame('warning', $result['status']);
+        $this->assertSame(['sitemap_shrunk'], array_column($result['regressions'], 'rule'));
+    }
+
+    public function test_stale_or_unstamped_deliveries_are_refused(): void
+    {
+        config()->set('services.runnr.webhook_secret', 'runnr-secret-key');
+        $payload = json_encode(['site_id' => 'site_runnr_12345'], JSON_THROW_ON_ERROR);
+        $old = (string) now()->subMinutes(10)->getTimestamp();
+
+        $send = fn (array $headers): TestResponse => $this->call('POST', '/api/webhooks/runnr/deploy', [], [], [], [
+            'CONTENT_TYPE' => 'application/json',
+            'HTTP_ACCEPT' => 'application/json',
+            ...$headers,
+        ], $payload);
+
+        // Correctly signed, but ten minutes old: a replay.
+        $send([
+            'HTTP_X_RUNNR_SIGNATURE' => hash_hmac('sha256', $old.'.'.$payload, 'runnr-secret-key'),
+            'HTTP_X_RUNNR_TIMESTAMP' => $old,
+        ])->assertStatus(401)->assertJson(['message' => 'Stale webhook delivery.']);
+
+        // The old body-only signature, with no timestamp.
+        $send(['HTTP_X_RUNNR_SIGNATURE' => hash_hmac('sha256', $payload, 'runnr-secret-key')])
+            ->assertStatus(401)->assertJson(['message' => 'Missing webhook timestamp.']);
+
+        // A fresh timestamp can't be swapped onto an old signature.
+        $send([
+            'HTTP_X_RUNNR_SIGNATURE' => hash_hmac('sha256', $old.'.'.$payload, 'runnr-secret-key'),
+            'HTTP_X_RUNNR_TIMESTAMP' => (string) now()->getTimestamp(),
+        ])->assertStatus(403);
+    }
+
+    public function test_a_redelivered_deploy_does_not_start_a_second_crawl(): void
+    {
+        config()->set('services.runnr.webhook_secret', 'runnr-secret-key');
+        config()->set('coqui.worker.url', 'http://coqui-worker:8085');
+        config()->set('coqui.worker.token', 'worker-secret');
+        Http::fake(['http://coqui-worker:8085/jobs/crawl' => Http::response(['jobId' => 'job_1'], 202)]);
+
+        [$payload, $signature] = $this->signedDeploy('runnr-secret-key');
+        $first = $this->postDeploy($payload, $signature)->assertStatus(202);
+        $second = $this->postDeploy($payload, $signature)->assertStatus(202);
+
+        $this->assertSame($first->json('crawlId'), $second->json('crawlId'));
+        $this->assertSame(1, CrawlRun::query()->where('source', 'deploy_smoke')->count());
+        Http::assertSentCount(1);
+        Http::assertSent(fn (HttpRequest $request): bool => $request->url() === 'http://coqui-worker:8085/jobs/crawl'
+            && $request['config']['respectRobots'] === false);
+    }
+
+    public function test_callbacks_to_runnr_carry_a_timestamped_signature(): void
+    {
+        config()->set('services.runnr.webhook_secret', 'runnr-secret-key');
+        Http::fake(['https://runnr.io/*' => Http::response(['acknowledged' => true], 200)]);
+        $run = $this->smokeRun('07', callbackUrl: 'https://runnr.io/api/deploys/ts/callback');
+        $this->addCrawledPage($run, 'https://my-runnr-site.com/');
+
+        app(RunnrDeploySmokeService::class)->evaluate($run);
+
+        Http::assertSent(function (HttpRequest $request): bool {
+            if ($request->url() !== 'https://runnr.io/api/deploys/ts/callback') {
+                return false;
+            }
+            $timestamp = $request->header('X-Runnr-Timestamp')[0] ?? '';
+
+            return $timestamp === (string) now()->getTimestamp()
+                && hash_equals(hash_hmac('sha256', $timestamp.'.'.$request->body(), 'runnr-secret-key'), $request->header('X-Runnr-Signature')[0] ?? '');
+        });
     }
 }

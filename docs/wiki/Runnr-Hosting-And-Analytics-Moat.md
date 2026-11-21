@@ -5,9 +5,17 @@ Connecting Coqui SEO directly to the Runnr hosting platform creates capabilities
 ## Post-Deploy SEO Smoke Tests (`H-01`)
 
 - Projects linked to Runnr via `projects.runnr_site_id` expose `POST /api/webhooks/runnr/deploy`.
-- `RunnrDeployWebhookController` validates the HMAC-SHA256 `X-Runnr-Signature` header (`RUNNR_WEBHOOK_SECRET`).
-- `RunnrDeployWebhookHandler` creates a `CrawlRun` (`source = 'deploy_smoke'`) and dispatches a bounded 100-URL crawl (`maxDepth = 2`) to `coqui-worker`.
-- Smoke checks catch accidental `Disallow: /` in `robots.txt`, staging `noindex` tags leaked to production, 5xx templates, and canonical domain regressions immediately after deploy.
+- `RunnrDeployWebhookController` checks two headers, keyed by `RUNNR_WEBHOOK_SECRET`:
+  - `X-Runnr-Timestamp`: Unix seconds when the delivery was signed. Deliveries more than `RUNNR_WEBHOOK_TOLERANCE_SECONDS` (default 300) away from now are refused with 401, so a captured request can't be replayed later.
+  - `X-Runnr-Signature`: hex HMAC-SHA256 of `"{timestamp}.{raw body}"`. A missing timestamp is a 401, a wrong signature a 403.
+- Result callbacks from Coqui to Runnr's `callback_url` are signed the same way, with the same two headers.
+- `RunnrDeployWebhookHandler` creates a `CrawlRun` (`source = 'deploy_smoke'`) and dispatches a bounded 100-URL crawl (`maxDepth = 2`) to `coqui-worker`. A redelivered `deploy_id` returns the existing run instead of starting another crawl.
+- The smoke crawl ignores `robots.txt`, so a deploy that blocks crawlers still gets its pages checked. `robots.txt` and the XML sitemap are fetched directly and judged on their own:
+  - zero URLs crawled fails the check in any environment;
+  - `Disallow: /` for `*` or Googlebot fails it on production;
+  - a `robots.txt` change since the last smoke run is a low-severity note;
+  - on production, a sitemap that was valid last time and is now missing fails the check, and one that dropped below half its previous size (from at least 10 entries) is a warning.
+- Page checks still catch staging `noindex` tags leaked to production, 5xx templates, and canonical domain regressions immediately after deploy.
 
 ## Server Access-Log Bot & AI Crawler Telemetry (`H-02`)
 
