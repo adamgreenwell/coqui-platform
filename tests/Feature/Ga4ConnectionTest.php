@@ -136,6 +136,28 @@ class Ga4ConnectionTest extends TestCase
         Queue::assertNothingPushed();
     }
 
+    public function test_a_later_web_stream_counts_as_a_match(): void
+    {
+        Queue::fake();
+        // Both properties have a trafficsite.com stream, one of them second.
+        $this->fakeGoogle([
+            'properties/111' => ['Network', ['https://blog.example.org', 'https://trafficsite.com']],
+            'properties/222' => ['Traffic Site', 'https://www.trafficsite.com/'],
+        ]);
+
+        // Two matches: the user chooses instead of one being picked for them.
+        $this->signInCallback()
+            ->assertRedirect(route('workspaces.projects.show', [$this->workspace, $this->project]).'?ga4_picker=1');
+        Queue::assertNothingPushed();
+
+        $this->actingAs($this->user)
+            ->getJson($this->ga4Url('properties'))
+            ->assertJsonPath('properties.0.id', 'properties/111')
+            ->assertJsonPath('properties.0.matches', true)
+            ->assertJsonPath('properties.0.website', 'https://trafficsite.com')
+            ->assertJsonPath('properties.1.matches', true);
+    }
+
     public function test_the_callback_uses_the_only_property_on_the_account(): void
     {
         Queue::fake();
@@ -484,7 +506,7 @@ class Ga4ConnectionTest extends TestCase
     /**
      * Fake Google's token endpoint and the Admin API for these properties.
      *
-     * @param  array<string, array{string, string|null}>  $properties  id => [name, website]
+     * @param  array<string, array{string, string|list<string>|null}>  $properties  id => [name, web stream URL(s)]
      */
     private function fakeGoogle(array $properties): void
     {
@@ -505,10 +527,10 @@ class Ga4ConnectionTest extends TestCase
 
         foreach ($properties as $id => [, $website]) {
             $fakes[self::ADMIN_URL.'/v1beta/'.$id.'/dataStreams*'] = Http::response([
-                'dataStreams' => $website === null ? [] : [[
-                    'type' => 'WEB_DATA_STREAM',
-                    'webStreamData' => ['defaultUri' => $website],
-                ]],
+                'dataStreams' => array_map(
+                    fn (string $uri): array => ['type' => 'WEB_DATA_STREAM', 'webStreamData' => ['defaultUri' => $uri]],
+                    $website === null ? [] : (array) $website,
+                ),
             ], 200);
         }
 

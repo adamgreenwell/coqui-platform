@@ -473,14 +473,25 @@ class ProjectIntegrationController extends Controller implements HasMiddleware
     /**
      * Mark which properties belong to the project's site and list them first.
      *
-     * @param  list<array{id: string, name: string, account: string, website: string|null}>  $properties
-     * @return list<array{id: string, name: string, account: string, website: string|null, matches: bool}>
+     * A property matches when any of its web streams is the project's site,
+     * and then shows that stream's URL.
+     *
+     * @param  list<array{id: string, name: string, account: string, website: string|null, websites: list<string>}>  $properties
+     * @return list<array{id: string, name: string, account: string, website: string|null, websites: list<string>, matches: bool}>
      */
     private function rankGa4Properties(array $properties, Project $project): array
     {
-        $ranked = array_map(fn (array $property): array => $property + [
-            'matches' => Ga4AnalyticsClient::websiteMatchesDomain($property['website'], $project->domain),
-        ], $properties);
+        $ranked = array_map(function (array $property) use ($project): array {
+            $matching = array_values(array_filter(
+                $property['websites'],
+                fn (string $website): bool => Ga4AnalyticsClient::websiteMatchesDomain($website, $project->domain),
+            ));
+
+            return array_merge($property, [
+                'website' => $matching[0] ?? $property['website'],
+                'matches' => $matching !== [],
+            ]);
+        }, $properties);
 
         usort($ranked, fn (array $a, array $b): int => [$b['matches'], strtolower($a['name'])] <=> [$a['matches'], strtolower($b['name'])]);
 

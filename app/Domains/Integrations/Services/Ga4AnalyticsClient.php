@@ -149,7 +149,10 @@ class Ga4AnalyticsClient
      * Analytics Admin API, with each property's website when it has a web
      * data stream (and $withWebsites is on).
      *
-     * @return list<array{id: string, name: string, account: string, website: string|null}>
+     * `websites` holds every web stream's URL; `website` is the first, for
+     * display.
+     *
+     * @return list<array{id: string, name: string, account: string, website: string|null, websites: list<string>}>
      */
     public function listProperties(ProjectIntegration $integration, bool $withWebsites = true): array
     {
@@ -203,6 +206,7 @@ class Ga4AnalyticsClient
                         'name' => is_string($summary['displayName'] ?? null) ? $summary['displayName'] : $id,
                         'account' => $accountName,
                         'website' => null,
+                        'websites' => [],
                     ];
                 }
             }
@@ -231,9 +235,11 @@ class Ga4AnalyticsClient
                 $streams = $streamResponse->json('dataStreams');
                 foreach (is_array($streams) ? $streams : [] as $stream) {
                     $uri = is_array($stream) ? data_get($stream, 'webStreamData.defaultUri') : null;
+                    // A property can have a web stream per site; keep them all
+                    // so any of them can match the project.
                     if (is_string($uri) && $uri !== '') {
-                        $properties[(string) $id]['website'] = $uri;
-                        break;
+                        $properties[(string) $id]['websites'][] = $uri;
+                        $properties[(string) $id]['website'] ??= $uri;
                     }
                 }
             }
