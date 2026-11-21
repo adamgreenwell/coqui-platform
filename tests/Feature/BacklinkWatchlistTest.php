@@ -10,6 +10,7 @@ use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
@@ -327,5 +328,71 @@ CSV;
         $this->assertDatabaseMissing('monitored_backlinks', [
             'id' => $link->id,
         ]);
+    }
+
+    public function test_the_worker_is_told_which_page_each_link_should_point_at(): void
+    {
+        config()->set('coqui.worker.url', 'http://coqui-worker:8085');
+        config()->set('coqui.worker.token', 'worker-secret');
+
+        /** @var MonitoredBacklink $link */
+        $link = MonitoredBacklink::query()->create([
+            'project_id' => $this->project->id,
+            'source_url' => 'https://partner.com/review',
+            'source_url_hash' => hash('sha256', 'https://partner.com/review'),
+            'target_url' => 'https://coquiseo.com/pricing',
+            'expected_rel' => 'dofollow',
+            'state' => 'active',
+        ]);
+
+        Http::fake([
+            'http://coqui-worker:8085/jobs/inspect' => Http::response(['results' => [[
+                'url' => 'https://partner.com/review',
+                'status' => 200,
+                'hasTargetLink' => false,
+                'observedRel' => null,
+                'noindex' => false,
+            ]]], 200),
+        ]);
+
+        $this->actingAs($this->user)
+            ->post("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks/watchlist/{$link->uuid}/verify");
+
+        $this->assertSame('lost', $link->fresh()->state);
+        Http::assertSent(fn (Request $request): bool => $request->url() === 'http://coqui-worker:8085/jobs/inspect'
+            && json_decode($request->body(), true)['targetUrls'] === ['https://partner.com/review' => 'https://coquiseo.com/pricing']);
+    }
+
+    public function test_an_inconclusive_worker_result_is_checked_directly(): void
+    {
+        config()->set('coqui.worker.url', 'http://coqui-worker:8085');
+        config()->set('coqui.worker.token', 'worker-secret');
+
+        /** @var MonitoredBacklink $link */
+        $link = MonitoredBacklink::query()->create([
+            'project_id' => $this->project->id,
+            'source_url' => 'https://partner.com/huge-page',
+            'source_url_hash' => hash('sha256', 'https://partner.com/huge-page'),
+            'target_url' => 'https://coquiseo.com/',
+            'expected_rel' => 'dofollow',
+            'state' => 'active',
+        ]);
+
+        Http::fake([
+            'http://coqui-worker:8085/jobs/inspect' => Http::response(['results' => [[
+                'url' => 'https://partner.com/huge-page',
+                'status' => null,
+                'hasTargetLink' => false,
+                'observedRel' => null,
+                'noindex' => false,
+                'error' => "page is larger than 2 MB and the link wasn't in the part read",
+            ]]], 200),
+            'https://partner.com/huge-page' => Http::response('<html><body><a href="https://coquiseo.com/">Coqui</a></body></html>', 200),
+        ]);
+
+        $this->actingAs($this->user)
+            ->post("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks/watchlist/{$link->uuid}/verify");
+
+        $this->assertSame('active', $link->fresh()->state);
     }
 }
