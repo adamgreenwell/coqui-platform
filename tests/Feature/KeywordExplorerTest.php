@@ -499,6 +499,9 @@ class KeywordExplorerTest extends TestCase
 
     public function test_tracking_preserves_item_specific_locale_and_supports_large_batches(): void
     {
+        // Room for the whole batch; the plan limit is covered separately.
+        $this->workspace->update(['tracked_keyword_limit' => 1000]);
+
         $items = [];
         for ($i = 1; $i <= 120; $i++) {
             $items[] = [

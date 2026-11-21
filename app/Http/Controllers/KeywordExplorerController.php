@@ -251,7 +251,11 @@ class KeywordExplorerController extends Controller
         $items = $validated['keywords'];
         $trackedKeywords = [];
 
-        DB::transaction(function () use ($items, $project, $device, $cadence, $locationCode, $languageCode, $cacheRepo, &$trackedKeywords): void {
+        DB::transaction(function () use ($items, $workspace, $project, $device, $cadence, $locationCode, $languageCode, $cacheRepo, &$trackedKeywords): void {
+            // Only new keywords use up the plan's limit; re-adding or
+            // reactivating an existing one doesn't.
+            $remaining = $workspace->lockKeywordAllowance();
+
             foreach ($items as $item) {
                 $kw = '';
                 $searchVolume = null;
@@ -311,6 +315,12 @@ class KeywordExplorerController extends Controller
                         $existing->update($updates);
                     }
                 } else {
+                    if ($remaining <= 0) {
+                        // Throws the plan-limit message and rolls back the batch.
+                        $workspace->assertCanTrackKeywords(1);
+                    }
+                    $remaining--;
+
                     TrackedKeyword::query()->create([
                         'project_id' => $project->id,
                         'keyword' => $kw,
