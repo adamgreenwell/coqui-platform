@@ -6,11 +6,20 @@ namespace App\Domains\Integrations\Services;
 
 use App\Domains\Integrations\Models\ProjectIntegration;
 use Carbon\CarbonInterface;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
 class Ga4AnalyticsClient
 {
+    /**
+     * GA4 connects through the same Google OAuth client as Search Console,
+     * which owns token refresh.
+     */
+    public function __construct(
+        private readonly GoogleSearchConsoleClient $google,
+    ) {}
+
     /**
      * Fetch landing page metrics from GA4 Data API (v1beta).
      *
@@ -34,19 +43,6 @@ class Ga4AnalyticsClient
         $baseUrl = (string) config('services.google.ga4_base_url', 'https://analyticsdata.googleapis.com');
         $endpoint = rtrim($baseUrl, '/').'/v1beta/'.$propertyId.':runReport';
 
-        $headers = [];
-        $query = [];
-
-        /** @var array<string, mixed>|null $creds */
-        $creds = $integration->credentials_encrypted;
-
-        $accessToken = $integration->getAccessToken();
-        if ($accessToken !== null && $accessToken !== '') {
-            $headers['Authorization'] = 'Bearer '.$accessToken;
-        } elseif (isset($creds['api_key']) && is_string($creds['api_key']) && $creds['api_key'] !== '') {
-            $query['key'] = $creds['api_key'];
-        }
-
         $payload = [
             'dateRanges' => [
                 [
@@ -68,16 +64,25 @@ class Ga4AnalyticsClient
             'limit' => $limit,
         ];
 
-        $request = Http::withHeaders($headers);
-        if ($query !== []) {
-            $response = $request->post($endpoint.'?'.http_build_query($query), $payload);
-        } else {
-            $response = $request->post($endpoint, $payload);
+        // The Data API takes OAuth tokens only; an API key can't read a
+        // property. Integrations saved with just a key have no refresh token,
+        // so this marks them as needing a reconnect.
+        $response = $this->runReport($endpoint, $this->google->getValidAccessToken($integration), $payload);
+
+        // Revoked early or expired between the check and the call: refresh
+        // once and try again.
+        if ($response->status() === 401) {
+            $response = $this->runReport($endpoint, $this->google->refreshToken($integration), $payload);
         }
 
-        if ($response->status() === 401 || $response->status() === 403) {
+        if ($response->status() === 401) {
             $integration->markNeedsReconnect('GA4 API unauthorized or token expired.');
-            throw new SearchConsoleAuthException('Google Analytics 4 API credentials invalid or expired.');
+            throw new SearchConsoleAuthException('Google Analytics 4 authorization expired or was revoked.');
+        }
+
+        if ($response->status() === 403) {
+            $integration->markNeedsReconnect('Google account cannot read this GA4 property.');
+            throw new SearchConsoleAuthException("The connected Google account can't read GA4 {$propertyId}.");
         }
 
         if (! $response->successful()) {
@@ -130,6 +135,14 @@ class Ga4AnalyticsClient
         }
 
         return $results;
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function runReport(string $endpoint, string $accessToken, array $payload): Response
+    {
+        return Http::withToken($accessToken)->post($endpoint, $payload);
     }
 
     /**

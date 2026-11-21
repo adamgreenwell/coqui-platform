@@ -31,6 +31,9 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Inertia\Inertia;
+use RuntimeException;
+use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Throwable;
 
 class ProjectIntegrationController extends Controller implements HasMiddleware
@@ -89,6 +92,7 @@ class ProjectIntegrationController extends Controller implements HasMiddleware
         // in server-side session state keyed by the unguessable OAuth state value.
         $state = Str::random(40);
         $request->session()->put(self::GOOGLE_OAUTH_SESSION_PREFIX.$state, [
+            'provider' => 'gsc',
             'workspace_id' => $workspace->id,
             'project_id' => $project->id,
             'issued_at' => now()->getTimestamp(),
@@ -123,13 +127,21 @@ class ProjectIntegrationController extends Controller implements HasMiddleware
         // see it; check here so a plan change mid-OAuth can't connect anyway.
         $workspace->ensureFeature(PlanFeature::TrafficAttribution);
 
+        $isGa4 = ($pending['provider'] ?? 'gsc') === 'ga4';
+        // GA4 is connected from the project page; Search Console from keywords.
+        $returnTo = $isGa4
+            ? route('workspaces.projects.show', [$workspace, $project])
+            : route('workspaces.projects.keywords.index', [$workspace, $project]);
+
         $code = $request->query('code');
         if (! is_string($code) || $code === '') {
             $errorDesc = $request->query('error_description') ?? $request->query('error') ?? 'Google authorization was denied.';
 
-            return redirect()
-                ->route('workspaces.projects.keywords.index', [$workspace, $project])
-                ->with('error', (string) $errorDesc);
+            return redirect($returnTo)->with('error', (string) $errorDesc);
+        }
+
+        if ($isGa4) {
+            return $this->finishGa4Connect($project, $gscClient, $code, (string) ($pending['property_id'] ?? ''), $returnTo);
         }
 
         try {
@@ -246,39 +258,99 @@ class ProjectIntegrationController extends Controller implements HasMiddleware
             ->with('success', 'Bing Webmaster Tools connected successfully. Data sync has started in the background.');
     }
 
+    /**
+     * Start connecting a GA4 property: remember the property, then send the
+     * user to Google to grant read-only Analytics access. The fixed Google
+     * callback finishes the connection.
+     */
     public function connectGa4(
         Request $request,
         Workspace $workspace,
         Project $project,
-        TrafficAttributionService $trafficService
-    ): RedirectResponse {
+        GoogleSearchConsoleClient $google,
+    ): SymfonyResponse {
         abort_if($project->workspace_id !== $workspace->id, 404);
         Gate::authorize('update', $project);
 
         $validated = $request->validate([
-            'property_id' => ['required', 'string', 'max:100'],
-            'api_key' => ['nullable', 'string', 'max:255'],
+            'property_id' => ['required', 'string', 'max:100', 'regex:/^\s*(properties\/)?\d{1,20}\s*$/'],
+        ], [
+            'property_id.regex' => 'Enter the numeric GA4 property ID, like 123456789.',
         ]);
 
-        $propertyId = trim((string) $validated['property_id']);
-        $creds = [];
-        if (isset($validated['api_key']) && (string) $validated['api_key'] !== '') {
-            $creds['api_key'] = trim((string) $validated['api_key']);
+        $digits = preg_replace('/\D/', '', str_replace('properties/', '', (string) $validated['property_id']));
+        $propertyId = 'properties/'.$digits;
+
+        $state = Str::random(40);
+
+        try {
+            $authUrl = $google->getAuthorizationUrl($project, $this->googleRedirectUri(), $state, GoogleSearchConsoleClient::ANALYTICS_SCOPE);
+        } catch (RuntimeException $e) {
+            return redirect()->back()->with('error', $e->getMessage());
+        }
+
+        $request->session()->put(self::GOOGLE_OAUTH_SESSION_PREFIX.$state, [
+            'provider' => 'ga4',
+            'property_id' => $propertyId,
+            'workspace_id' => $workspace->id,
+            'project_id' => $project->id,
+            'issued_at' => now()->getTimestamp(),
+        ]);
+
+        // The form posts through Inertia, which can't follow a redirect to
+        // another site; Inertia::location makes the browser navigate there.
+        return Inertia::location($authUrl);
+    }
+
+    /**
+     * Second half of the GA4 connection, after Google redirects back: store
+     * the tokens with the property and start the first sync.
+     */
+    private function finishGa4Connect(
+        Project $project,
+        GoogleSearchConsoleClient $google,
+        string $code,
+        string $propertyId,
+        string $returnTo,
+    ): RedirectResponse {
+        if (preg_match('/^properties\/\d{1,20}$/', $propertyId) !== 1) {
+            return redirect($returnTo)->with('error', 'The GA4 property was lost during sign-in. Please try connecting again.');
+        }
+
+        try {
+            $tokens = $google->exchangeCodeForTokens($code, $this->googleRedirectUri());
+        } catch (Throwable $e) {
+            Log::error('GA4 OAuth callback error: '.$e->getMessage());
+
+            return redirect($returnTo)->with('error', 'Failed to connect Google Analytics 4: '.$e->getMessage());
+        }
+
+        // Google lets the user untick a scope on the consent screen.
+        $granted = preg_split('/\s+/', $tokens['scope'], -1, PREG_SPLIT_NO_EMPTY) ?: [];
+        if ($granted !== [] && ! in_array(GoogleSearchConsoleClient::ANALYTICS_SCOPE, $granted, true)) {
+            return redirect($returnTo)->with('error', 'Google Analytics access wasn\'t granted. Connect again and allow access to view your Analytics data.');
         }
 
         /** @var ProjectIntegration $integration */
-        $integration = ProjectIntegration::query()->updateOrCreate(
-            [
-                'project_id' => $project->id,
-                'provider' => 'ga4',
-            ],
-            [
-                'site_url' => $propertyId,
-                'external_identifier' => $propertyId,
-                'status' => 'connected',
-                'credentials_encrypted' => $creds,
-            ]
-        );
+        $integration = ProjectIntegration::query()->firstOrNew([
+            'project_id' => $project->id,
+            'provider' => 'ga4',
+        ]);
+
+        // Google only sends a refresh token on the first consent; keep the old
+        // one when reconnecting.
+        $refreshToken = $tokens['refresh_token'] !== '' ? $tokens['refresh_token'] : ($integration->getRefreshToken() ?? '');
+
+        $integration->site_url = $propertyId;
+        $integration->external_identifier = $propertyId;
+        $integration->status = 'connected';
+        $integration->credentials_encrypted = [
+            'access_token' => $tokens['access_token'],
+            'refresh_token' => $refreshToken,
+            'token_type' => $tokens['token_type'],
+            'expires_at' => Carbon::now()->addSeconds($tokens['expires_in'])->toIso8601String(),
+        ];
+        $integration->save();
 
         ProjectActivity::log(
             project: $project,
@@ -291,15 +363,9 @@ class ProjectIntegrationController extends Controller implements HasMiddleware
             ],
         );
 
-        try {
-            $trafficService->syncGa4($integration);
-        } catch (Throwable $e) {
-            Log::warning('Initial GA4 sync warning: '.$e->getMessage());
-        }
+        SyncTrafficAnalyticsJob::dispatch($integration);
 
-        return redirect()
-            ->back()
-            ->with('success', 'Google Analytics 4 connected successfully.');
+        return redirect($returnTo)->with('success', 'Google Analytics 4 connected. Traffic sync has started in the background.');
     }
 
     /**

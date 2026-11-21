@@ -16,12 +16,18 @@ class GoogleSearchConsoleClient
 
     private const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 
-    private const SCOPE = 'https://www.googleapis.com/auth/webmasters.readonly';
+    public const SCOPE = 'https://www.googleapis.com/auth/webmasters.readonly';
 
     /**
-     * Generate the OAuth redirect URL for connecting Google Search Console.
+     * Read-only access to Google Analytics, for the GA4 Data API.
      */
-    public function getAuthorizationUrl(Project $project, string $redirectUri, string $state): string
+    public const ANALYTICS_SCOPE = 'https://www.googleapis.com/auth/analytics.readonly';
+
+    /**
+     * Generate the OAuth redirect URL for connecting a Google product. Search
+     * Console and GA4 share the client and callback; only the scope differs.
+     */
+    public function getAuthorizationUrl(Project $project, string $redirectUri, string $state, string $scope = self::SCOPE): string
     {
         $clientId = (string) config('services.google.client_id');
         if ($clientId === '') {
@@ -32,7 +38,7 @@ class GoogleSearchConsoleClient
             'client_id' => $clientId,
             'redirect_uri' => $redirectUri,
             'response_type' => 'code',
-            'scope' => self::SCOPE,
+            'scope' => $scope,
             'access_type' => 'offline',
             'prompt' => 'consent',
             'state' => $state,
@@ -45,7 +51,7 @@ class GoogleSearchConsoleClient
     /**
      * Exchange authorization code for access and refresh tokens.
      *
-     * @return array{access_token: string, refresh_token: string, expires_in: int, token_type: string}
+     * @return array{access_token: string, refresh_token: string, expires_in: int, token_type: string, scope: string}
      */
     public function exchangeCodeForTokens(string $code, string $redirectUri): array
     {
@@ -72,6 +78,9 @@ class GoogleSearchConsoleClient
         $refreshToken = isset($data['refresh_token']) && is_string($data['refresh_token']) ? $data['refresh_token'] : '';
         $expiresIn = isset($data['expires_in']) && is_numeric($data['expires_in']) ? (int) $data['expires_in'] : 3600;
         $tokenType = isset($data['token_type']) && is_string($data['token_type']) ? $data['token_type'] : 'Bearer';
+        // Space-separated scopes the user actually granted; Google lets them
+        // untick some on the consent screen.
+        $scope = isset($data['scope']) && is_string($data['scope']) ? $data['scope'] : '';
 
         if ($accessToken === '') {
             throw new SearchConsoleAuthException('Google OAuth response did not contain an access token.');
@@ -82,6 +91,7 @@ class GoogleSearchConsoleClient
             'refresh_token' => $refreshToken,
             'expires_in' => $expiresIn,
             'token_type' => $tokenType,
+            'scope' => $scope,
         ];
     }
 
@@ -93,7 +103,7 @@ class GoogleSearchConsoleClient
         $refreshToken = $integration->getRefreshToken();
         if ($refreshToken === null || $refreshToken === '') {
             $integration->markNeedsReconnect('No refresh token available.');
-            throw new SearchConsoleAuthException('No refresh token available for Google Search Console integration.');
+            throw new SearchConsoleAuthException('No refresh token available for this Google integration. Reconnect it.');
         }
 
         $clientId = (string) config('services.google.client_id');
@@ -109,7 +119,7 @@ class GoogleSearchConsoleClient
         if (! $response->successful()) {
             $error = $response->json('error_description') ?? $response->json('error') ?? $response->body();
             $integration->markNeedsReconnect('Token refresh failed: '.$error);
-            throw new SearchConsoleAuthException('Failed to refresh Google Search Console token: '.$error);
+            throw new SearchConsoleAuthException('Failed to refresh Google token: '.$error);
         }
 
         /** @var array<string, mixed> $data */
