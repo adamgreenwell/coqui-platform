@@ -45,6 +45,7 @@ class GenerateContentBriefJob implements ShouldQueue
     public function __construct(
         public readonly ContentBrief $brief,
         public readonly ?User $user = null,
+        public readonly bool $bypassCache = false,
     ) {
         $this->onQueue(self::QUEUE);
     }
@@ -58,7 +59,7 @@ class GenerateContentBriefJob implements ShouldQueue
         try {
             // The project's current market and language, so a refresh after
             // the project's targeting changed doesn't buy the old market's SERP.
-            $brief = $service->buildBrief($project, $brief->keyword);
+            $brief = $service->buildBrief($project, $brief->keyword, bypassCache: $this->bypassCache);
         } catch (Throwable $e) {
             $this->markFailed($brief, $e);
 

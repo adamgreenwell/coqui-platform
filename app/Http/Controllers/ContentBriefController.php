@@ -94,16 +94,19 @@ class ContentBriefController extends Controller
         /** @var array<string, mixed> $validated */
         $validated = $request->validate([
             'keyword' => ['required', 'string', 'max:255'],
+            'fresh' => ['nullable', 'boolean'],
         ]);
 
         $keyword = strtolower(trim((string) $validated['keyword']));
         /** @var User|null $user */
         $user = $request->user();
+        // A fresh lookup skips the shared cache, so it's for members who can spend.
+        $fresh = (bool) ($validated['fresh'] ?? false) && Gate::allows('spend', $project);
 
         // The SERP lookup and competitor fetches run in a queued job, so the
         // request returns at once. The lock and the pending check stop a
         // double submit from paying for the same brief twice.
-        $brief = Cache::lock("content-brief:{$project->id}:".md5($keyword), 10)->get(function () use ($project, $keyword, $user): ContentBrief {
+        $brief = Cache::lock("content-brief:{$project->id}:".md5($keyword), 10)->get(function () use ($project, $keyword, $user, $fresh): ContentBrief {
             /** @var ContentBrief|null $brief */
             $brief = $project->contentBriefs()->where('keyword', $keyword)->latest('id')->first();
 
@@ -132,7 +135,7 @@ class ContentBriefController extends Controller
                 $brief->update(['status' => ContentBrief::STATUS_PENDING, 'error' => null]);
             }
 
-            GenerateContentBriefJob::dispatch($brief, $user);
+            GenerateContentBriefJob::dispatch($brief, $user, $fresh);
 
             return $brief;
         });

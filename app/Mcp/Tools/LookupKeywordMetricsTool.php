@@ -6,7 +6,6 @@ namespace App\Mcp\Tools;
 
 use App\Domains\Projects\Models\Project;
 use App\Domains\Serp\ProviderNotConfiguredException;
-use App\Domains\Serp\Services\KeywordResearchService;
 use App\Domains\Serp\Services\SeoProviderRouter;
 use App\Domains\Serp\SpendRefusedException;
 use App\Mcp\Concerns\ResolvesAccessibleProject;
@@ -26,7 +25,6 @@ class LookupKeywordMetricsTool extends Tool
 
     public function __construct(
         private readonly SeoProviderRouter $router,
-        private readonly KeywordResearchService $keywordResearch,
     ) {}
 
     public function handle(Request $request): Response
@@ -87,7 +85,7 @@ class LookupKeywordMetricsTool extends Tool
             return Response::error($e->getMessage());
         }
 
-        $metrics = $this->metrics($result['providers'], $locationCode, $languageCode);
+        $metrics = $this->metrics($result['keywords']);
         $missing = array_values(array_filter(
             $keywords,
             static fn (string $keyword): bool => ! isset($metrics[strtolower($keyword)]),
@@ -146,39 +144,19 @@ class LookupKeywordMetricsTool extends Tool
     }
 
     /**
-     * One row per keyword in the same shape whichever source answered, so the
-     * response doesn't reveal where the data came from.
+     * The router's rows without the provider tag, so the response doesn't
+     * reveal where the data came from.
      *
-     * @param  array{seranking: list<array<string, mixed>>, dataforseo: array<string, mixed>}  $providers
+     * @param  list<array{keyword: string, search_volume: int|null, cpc: float|null, competition: float|null, keyword_difficulty: int|null, provider: string}>  $rows
      * @return array<string, array{keyword: string, search_volume: int|null, cpc: float|null, competition: float|null, keyword_difficulty: int|null}>
      */
-    private function metrics(array $providers, int $locationCode, string $languageCode): array
+    private function metrics(array $rows): array
     {
         $metrics = [];
 
-        foreach ($providers['seranking'] as $row) {
-            $keyword = strtolower(trim((string) ($row['keyword'] ?? '')));
-            if ($keyword === '' || ($row['is_data_found'] ?? true) === false) {
-                continue;
-            }
-
-            $metrics[$keyword] = [
-                'keyword' => $keyword,
-                'search_volume' => isset($row['volume']) ? (int) $row['volume'] : null,
-                'cpc' => isset($row['cpc']) ? (float) $row['cpc'] : null,
-                'competition' => isset($row['competition']) ? (float) $row['competition'] : null,
-                'keyword_difficulty' => isset($row['difficulty']) ? (int) $row['difficulty'] : null,
-            ];
-        }
-
-        foreach ($this->keywordResearch->parseOverviewItems($providers['dataforseo'], $locationCode, $languageCode) as $keyword => $row) {
-            $metrics[$keyword] ??= [
-                'keyword' => $keyword,
-                'search_volume' => isset($row['search_volume']) ? (int) $row['search_volume'] : null,
-                'cpc' => isset($row['cpc']) ? (float) $row['cpc'] : null,
-                'competition' => isset($row['competition']) ? (float) $row['competition'] : null,
-                'keyword_difficulty' => isset($row['keyword_difficulty']) ? (int) $row['keyword_difficulty'] : null,
-            ];
+        foreach ($rows as $row) {
+            unset($row['provider']);
+            $metrics[strtolower($row['keyword'])] = $row;
         }
 
         return $metrics;

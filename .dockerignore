@@ -16,3 +16,5 @@ public/build
 public/hot
 public/storage
 tools/github/.tmp
+# The worker builds from its own context; its Rust build output is large.
+docker/coqui-worker/target

@@ -430,6 +430,21 @@ HTML;
         Queue::assertPushed(GenerateContentBriefJob::class, 1);
     }
 
+    public function test_a_fresh_request_skips_the_shared_cache_in_the_job(): void
+    {
+        Queue::fake();
+
+        $this->actingAs($this->user)
+            ->postJson($this->briefUrl(), ['keyword' => 'crawl budget', 'fresh' => true])
+            ->assertStatus(202);
+        Queue::assertPushed(GenerateContentBriefJob::class, fn (GenerateContentBriefJob $job): bool => $job->bypassCache);
+
+        $this->actingAs($this->user)
+            ->postJson($this->briefUrl(), ['keyword' => 'log analysis'])
+            ->assertStatus(202);
+        Queue::assertPushed(GenerateContentBriefJob::class, fn (GenerateContentBriefJob $job): bool => $job->brief->keyword === 'log analysis' && ! $job->bypassCache);
+    }
+
     public function test_the_job_completes_the_brief_and_broadcasts(): void
     {
         Event::fake([ContentBriefUpdated::class]);
