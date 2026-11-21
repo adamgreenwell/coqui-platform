@@ -10,6 +10,7 @@ use App\Domains\Backlinks\Models\BacklinkHistorySnapshot;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Serp\DataForSeo\DataForSeoClient;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class BacklinkTimelineService
@@ -118,8 +119,23 @@ class BacklinkTimelineService
         $dateTo = now()->toDateString();
 
         try {
-            $totals = $this->itemsByDate($this->dataForSeo->backlinksTimeseriesSummary($target, $project, $dateFrom, $dateTo, $isScheduled));
-            $changes = $this->itemsByDate($this->dataForSeo->backlinksTimeseriesNewLost($target, $project, $dateFrom, $dateTo, $isScheduled));
+            $totalsResponse = $this->dataForSeo->backlinksTimeseriesSummary($target, $project, $dateFrom, $dateTo, $isScheduled);
+            $changesResponse = $this->dataForSeo->backlinksTimeseriesNewLost($target, $project, $dateFrom, $dateTo, $isScheduled);
+
+            // Errors can arrive with HTTP 200. Write nothing unless both
+            // series succeeded, so one failure can't zero stored days.
+            if (! $this->succeeded($totalsResponse) || ! $this->succeeded($changesResponse)) {
+                Log::warning('Backlink history fetch returned a task error; stored history left as is.', [
+                    'project_id' => $project->id,
+                    'summary_status' => $totalsResponse['tasks'][0]['status_code'] ?? $totalsResponse['status_code'] ?? null,
+                    'new_lost_status' => $changesResponse['tasks'][0]['status_code'] ?? $changesResponse['status_code'] ?? null,
+                ]);
+
+                return 0;
+            }
+
+            $totals = $this->itemsByDate($totalsResponse);
+            $changes = $this->itemsByDate($changesResponse);
         } catch (Throwable $e) {
             report($e);
 
@@ -153,6 +169,15 @@ class BacklinkTimelineService
         }
 
         return $count;
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    private function succeeded(array $response): bool
+    {
+        return (int) ($response['status_code'] ?? 0) === 20000
+            && (int) ($response['tasks'][0]['status_code'] ?? 0) === 20000;
     }
 
     /**

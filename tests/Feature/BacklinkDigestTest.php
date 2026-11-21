@@ -252,6 +252,37 @@ class BacklinkDigestTest extends TestCase
         $this->assertSame(['2026-11-09', '2026-11-15'], [$lastWeek['period_start'], $lastWeek['period_end']]);
     }
 
+    public function test_the_digest_refreshes_history_first_when_scheduled_spend_is_on(): void
+    {
+        Notification::fake();
+        config()->set('coqui.dataforseo.login', 'test-login');
+        config()->set('coqui.dataforseo.password', 'test-password');
+        config()->set('coqui.dataforseo.base_url', 'https://sandbox.dataforseo.com');
+        config()->set('coqui.dataforseo.scheduled_spend', true);
+        $this->workspace->forceFill(['monthly_dfs_budget_usd' => 100])->save();
+        $this->project->backlinkDigestSubscribers()->attach($this->viewer->id);
+        // Last fetched six days ago: the rest of the week is missing.
+        $this->project->forceFill(['backlink_history_checked_at' => now()->subDays(6)])->save();
+
+        $yesterday = now()->subDay()->toDateString();
+        $items = fn (array $item): array => ['status_code' => 20000, 'tasks' => [['status_code' => 20000, 'result' => [['items' => [$item]]]]]];
+        Http::fake([
+            'https://sandbox.dataforseo.com/v3/backlinks/timeseries_summary/live' => Http::response($items(['date' => $yesterday, 'backlinks' => 120, 'referring_domains' => 30, 'rank' => 210])),
+            'https://sandbox.dataforseo.com/v3/backlinks/timeseries_new_lost_summary/live' => Http::response($items(['date' => $yesterday, 'new_backlinks' => 9, 'lost_backlinks' => 1, 'new_referring_domains' => 5, 'lost_referring_domains' => 2])),
+        ]);
+
+        $this->artisan('backlinks:send-digests')->assertSuccessful();
+
+        Notification::assertSentTo($this->viewer, BacklinkDigestNotification::class, fn (BacklinkDigestNotification $n): bool => $n->digest['new_referring_domains'] === 5);
+        Http::assertSentCount(2);
+
+        // Without scheduled spend nothing is fetched.
+        config()->set('coqui.dataforseo.scheduled_spend', false);
+        $this->project->forceFill(['backlink_history_checked_at' => now()->subDays(6)])->save();
+        $this->artisan('backlinks:send-digests', ['--force' => true])->assertSuccessful();
+        Http::assertSentCount(2);
+    }
+
     public function test_a_slack_failure_does_not_stop_the_email(): void
     {
         Notification::fake();

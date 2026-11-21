@@ -8,6 +8,7 @@ use App\Domains\Backlinks\Events\BacklinkAlertTriggered;
 use App\Domains\Backlinks\Models\BacklinkAlert;
 use App\Domains\Backlinks\Models\BacklinkHistorySnapshot;
 use App\Domains\Backlinks\Services\BacklinkProfileService;
+use App\Domains\Backlinks\Services\BacklinkTimelineService;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
 use App\Domains\Serp\DataForSeo\DataForSeoCacheRepository;
@@ -230,6 +231,28 @@ class BacklinkTimelineTest extends TestCase
 
         $this->actingAs($this->user)->get($this->backlinksUrl())->assertOk();
         $this->assertSame($calls, $this->seriesCalls());
+    }
+
+    public function test_a_task_error_in_one_series_leaves_stored_history_alone(): void
+    {
+        $date = now()->subDays(3)->toDateString();
+        $this->snapshot($date, ['backlinks_count' => 800, 'new_referring_domains' => 2]);
+
+        Http::fake([
+            self::SUMMARY_SERIES => Http::response($this->itemsResponse([
+                ['date' => $date.' 00:00:00 +00:00', 'backlinks' => 900, 'referring_domains' => 95, 'rank' => 390],
+            ])),
+            // An internal error delivered with HTTP 200.
+            self::NEW_LOST_SERIES => Http::response(['status_code' => 20000, 'tasks' => [['status_code' => 50000, 'status_message' => 'Internal error.', 'result' => null]]]),
+        ]);
+
+        $this->assertSame(0, app(BacklinkTimelineService::class)->syncHistorySnapshots($this->project));
+
+        $stored = BacklinkHistorySnapshot::query()->where('project_id', $this->project->id)->sole();
+        $this->assertSame(800, $stored->backlinks_count);
+        $this->assertSame(2, $stored->new_referring_domains);
+        // Still counts as checked, so views don't retry it.
+        $this->assertNotNull($this->project->fresh()?->backlink_history_checked_at);
     }
 
     public function test_read_only_members_never_trigger_a_history_fetch(): void
