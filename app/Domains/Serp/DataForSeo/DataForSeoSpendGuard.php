@@ -81,6 +81,7 @@ class DataForSeoSpendGuard
             'status' => $status,
             'http_status' => $httpStatus,
             'external_task_id' => $externalTaskId,
+            'settled_at' => now(),
             'updated_at' => now(),
         ];
         if ($actualCostUsd !== null) {
@@ -172,6 +173,7 @@ class DataForSeoSpendGuard
             'is_sandbox' => $this->isSandbox(),
             'meta' => json_encode($meta, JSON_THROW_ON_ERROR),
             'recorded_at' => $now,
+            'settled_at' => $now,
             'created_at' => $now,
             'updated_at' => $now,
         ]);

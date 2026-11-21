@@ -61,10 +61,16 @@ class DataForSeoReconciler
         $drift = null;
         if ($previous !== null) {
             $intervalVendor = $vendorSpent - (float) $previous->vendor_spent_usd;
+            // Bucketed by settlement, not reservation: a request reserved
+            // before the last snapshot but settled after it is counted here,
+            // once, at its final cost. Open reservations wait for the
+            // interval they settle in. Rows written before settled_at existed
+            // fall back to recorded_at.
             $intervalLedger = (float) DB::table('dataforseo_spend_ledger')
                 ->where('is_sandbox', false)
-                ->where('recorded_at', '>', $previous->captured_at)
-                ->where('recorded_at', '<=', $now)
+                ->where('status', '!=', DataForSeoSpendGuard::STATUS_RESERVED)
+                ->whereRaw('COALESCE(settled_at, recorded_at) > ?', [$previous->captured_at])
+                ->whereRaw('COALESCE(settled_at, recorded_at) <= ?', [$now])
                 ->sum('actual_cost_usd');
             $drift = $intervalVendor - $intervalLedger;
         }
@@ -138,7 +144,7 @@ class DataForSeoReconciler
         return DB::table('dataforseo_spend_ledger')
             ->where('status', DataForSeoSpendGuard::STATUS_RESERVED)
             ->where('recorded_at', '<', now()->subHour())
-            ->update(['status' => DataForSeoSpendGuard::STATUS_UNKNOWN, 'updated_at' => now()]);
+            ->update(['status' => DataForSeoSpendGuard::STATUS_UNKNOWN, 'settled_at' => now(), 'updated_at' => now()]);
     }
 
     /**

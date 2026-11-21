@@ -14,8 +14,12 @@ return new class extends Migration
         // settled: the response came back; actual cost recorded.
         // unknown: no response (timeout, connection error); the estimate
         //          stays because the call may still have been billed.
+        // settled_at: when the row stopped being a reservation. Reconciliation
+        // buckets spend by it, since a reservation can settle after the
+        // balance snapshot that followed its request.
         Schema::table('dataforseo_spend_ledger', function (Blueprint $table): void {
             $table->string('status', 16)->default('settled')->index();
+            $table->timestamp('settled_at')->nullable()->index();
         });
 
         Schema::create('dataforseo_responses', function (Blueprint $table): void {
@@ -65,8 +69,9 @@ return new class extends Migration
         Schema::dropIfExists('dataforseo_responses');
 
         Schema::table('dataforseo_spend_ledger', function (Blueprint $table): void {
+            $table->dropIndex(['settled_at']);
             $table->dropIndex(['status']);
-            $table->dropColumn('status');
+            $table->dropColumn(['settled_at', 'status']);
         });
     }
 };

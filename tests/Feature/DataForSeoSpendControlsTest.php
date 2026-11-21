@@ -283,6 +283,45 @@ class DataForSeoSpendControlsTest extends TestCase
         Notification::assertSentToTimes($operator, DataForSeoSpendAlert::class, 1);
     }
 
+    public function test_a_reservation_settled_after_a_snapshot_counts_in_the_next_interval(): void
+    {
+        Notification::fake();
+        User::factory()->create(['is_operator' => true]);
+        config()->set('coqui.dataforseo.alerts.drift_usd', 0.01);
+        config()->set('coqui.dataforseo.alerts.low_balance_usd', 0.0);
+
+        Http::fake(['api.dataforseo.com/v3/appendix/user_data' => Http::sequence()
+            ->push($this->userData(balance: 40.00, total: 50.00), 200)
+            // The $0.50 request is billed only after this snapshot.
+            ->push($this->userData(balance: 40.00, total: 50.00), 200)
+            ->push($this->userData(balance: 39.50, total: 50.00), 200),
+        ]);
+
+        $this->artisan('dataforseo:reconcile')->assertSuccessful();
+
+        // Reserved while that first snapshot was the latest...
+        $guard = app(DataForSeoSpendGuard::class);
+        $this->travel(1)->minutes();
+        $ledgerId = $guard->reserve('/v3/serp/google/organic/task_post', 'standard', 0.40);
+
+        // ...a snapshot lands while it is still open...
+        $this->travel(1)->minutes();
+        $this->artisan('dataforseo:reconcile')->assertSuccessful();
+        $this->assertEqualsWithDelta(0.0, (float) DB::table('dataforseo_balance_snapshots')->orderByDesc('id')->value('interval_ledger_usd'), 0.0001);
+
+        // ...and it settles, at a different cost, before the next one.
+        $this->travel(1)->minutes();
+        $guard->settle($ledgerId, DataForSeoSpendGuard::STATUS_SETTLED, 0.50, 200);
+        $this->travel(1)->minutes();
+        $this->artisan('dataforseo:reconcile')->assertSuccessful();
+
+        $snapshot = DB::table('dataforseo_balance_snapshots')->orderByDesc('id')->first();
+        $this->assertEqualsWithDelta(0.50, (float) $snapshot->interval_vendor_usd, 0.0001);
+        $this->assertEqualsWithDelta(0.50, (float) $snapshot->interval_ledger_usd, 0.0001);
+        $this->assertEqualsWithDelta(0.0, (float) $snapshot->drift_usd, 0.0001);
+        Notification::assertNothingSent();
+    }
+
     public function test_reconciliation_alerts_on_low_balance_and_spend_near_a_cap(): void
     {
         Notification::fake();
