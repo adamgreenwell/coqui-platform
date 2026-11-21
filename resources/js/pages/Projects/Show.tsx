@@ -77,6 +77,14 @@ interface ActivityItem {
   createdAt: string;
 }
 
+interface Ga4Property {
+  id: string;
+  name: string;
+  account: string;
+  website: string | null;
+  matches: boolean;
+}
+
 interface IntegrationItem {
   id: string;
   provider: string;
@@ -205,8 +213,11 @@ export default function ProjectShow({
   const [runnrModalOpen, setRunnrModalOpen] = useState(false);
   const [runnrSiteId, setRunnrSiteId] = useState(project.runnr_site_id || '');
   const [ga4ModalOpen, setGa4ModalOpen] = useState(false);
-  const [ga4PropertyId, setGa4PropertyId] = useState('');
-  const [ga4Error, setGa4Error] = useState<string | null>(null);
+  const [ga4Properties, setGa4Properties] = useState<Ga4Property[] | null>(null);
+  const [ga4Selected, setGa4Selected] = useState('');
+  const [ga4Search, setGa4Search] = useState('');
+  const [ga4Error, setGa4Error] = useState<{ message: string; reconnect: boolean } | null>(null);
+  const [ga4Saving, setGa4Saving] = useState(false);
   const [plausibleModalOpen, setPlausibleModalOpen] = useState(false);
   const [plausibleSiteId, setPlausibleSiteId] = useState(project.domain || '');
   const [plausibleApiKey, setPlausibleApiKey] = useState('');
@@ -221,6 +232,53 @@ export default function ProjectShow({
   const bingIntegration = integrations.find((i) => i.provider === 'bing');
   const runnrIntegration = integrations.find((i) => i.provider === 'runnr');
   const ga4Integration = integrations.find((i) => i.provider === 'ga4');
+  const ga4Base = `/workspaces/${workspace.id}/projects/${project.id}/integrations/ga4`;
+
+  const connectGa4 = () => router.post(`${ga4Base}/connect`);
+
+  const openGa4Picker = async () => {
+    setGa4ModalOpen(true);
+    setGa4Properties(null);
+    setGa4Error(null);
+    setGa4Search('');
+    try {
+      const response = await fetch(`${ga4Base}/properties`, {
+        headers: { Accept: 'application/json' },
+        credentials: 'same-origin',
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        setGa4Error({
+          message: body.message ?? 'Could not load your GA4 properties.',
+          reconnect: Boolean(body.reconnect),
+        });
+        return;
+      }
+      const properties: Ga4Property[] = body.properties ?? [];
+      setGa4Properties(properties);
+      setGa4Selected(body.current ?? properties.find((p) => p.matches)?.id ?? properties[0]?.id ?? '');
+    } catch {
+      setGa4Error({ message: 'Could not load your GA4 properties.', reconnect: false });
+    }
+  };
+
+  // Google sign-in sends the user back with ?ga4_picker=1 when it couldn't
+  // tell which property belongs to this project.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('ga4_picker') !== '1') return;
+    params.delete('ga4_picker');
+    const query = params.toString();
+    window.history.replaceState(window.history.state, '', window.location.pathname + (query ? `?${query}` : ''));
+    void openGa4Picker();
+  }, []);
+
+  const ga4Query = ga4Search.trim().toLowerCase();
+  const ga4Visible = (ga4Properties ?? []).filter(
+    (p) =>
+      ga4Query === '' ||
+      [p.name, p.account, p.website ?? '', p.id].some((value) => value.toLowerCase().includes(ga4Query))
+  );
   const plausibleIntegration = integrations.find((i) => i.provider === 'plausible');
   const umamiIntegration = integrations.find((i) => i.provider === 'umami');
 
@@ -977,6 +1035,10 @@ export default function ProjectShow({
                   <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30">
                     Reconnect Needed
                   </span>
+                ) : ga4Integration?.status === 'needs_property' ? (
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                    Choose a Property
+                  </span>
                 ) : (
                   <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-800 text-slate-400 border border-slate-700">
                     Not Connected
@@ -984,7 +1046,7 @@ export default function ProjectShow({
                 )}
               </div>
 
-              {ga4Integration?.site_url && (
+              {ga4Integration?.site_url && ga4Integration.status !== 'needs_property' && (
                 <div className="text-xs text-slate-400 flex items-center gap-1 font-mono">
                   <span className="text-slate-500">Property:</span>
                   <span className="text-slate-200">{ga4Integration.site_url}</span>
@@ -1000,8 +1062,8 @@ export default function ProjectShow({
               <div className="flex items-center gap-2 pt-2 border-t border-slate-800/80">
                 {canEdit && !hasTrafficAttribution && lockedIntegrationActions(ga4Integration)}
                 {canEdit && hasTrafficAttribution && (
-                  ga4Integration?.status === 'connected' ? (
-                    <>
+                  <>
+                    {ga4Integration?.status === 'connected' && (
                       <button
                         type="button"
                         onClick={() => router.post(`/workspaces/${workspace.id}/projects/${project.id}/integrations/${ga4Integration.id}/sync`)}
@@ -1010,6 +1072,32 @@ export default function ProjectShow({
                         <RefreshCw className="h-3 w-3" />
                         <span>Sync Now</span>
                       </button>
+                    )}
+                    {(ga4Integration?.status === 'connected' || ga4Integration?.status === 'needs_property') && (
+                      <button
+                        type="button"
+                        onClick={() => void openGa4Picker()}
+                        className={
+                          ga4Integration.status === 'needs_property'
+                            ? 'inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-medium text-xs transition cursor-pointer shadow-md shadow-amber-500/10'
+                            : 'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 transition cursor-pointer'
+                        }
+                      >
+                        <LineChart className="h-3 w-3" />
+                        <span>{ga4Integration.status === 'needs_property' ? 'Choose Property' : 'Change Property'}</span>
+                      </button>
+                    )}
+                    {(!ga4Integration || ga4Integration.status === 'needs_reconnect') && (
+                      <button
+                        type="button"
+                        onClick={connectGa4}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-medium text-xs transition cursor-pointer shadow-md shadow-amber-500/10"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        <span>{ga4Integration ? 'Reconnect GA4' : 'Connect GA4 with Google'}</span>
+                      </button>
+                    )}
+                    {ga4Integration && (
                       <button
                         type="button"
                         onClick={() => router.delete(`/workspaces/${workspace.id}/projects/${project.id}/integrations/${ga4Integration.id}`)}
@@ -1018,20 +1106,8 @@ export default function ProjectShow({
                         <Trash2 className="h-3 w-3" />
                         <span>Disconnect</span>
                       </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setGa4PropertyId(ga4Integration?.site_url ?? '');
-                        setGa4ModalOpen(true);
-                      }}
-                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-medium text-xs transition cursor-pointer shadow-md shadow-amber-500/10"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      <span>{ga4Integration ? 'Reconnect GA4' : 'Connect GA4 Property'}</span>
-                    </button>
-                  )
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -1563,7 +1639,7 @@ export default function ProjectShow({
           </div>
         )}
 
-        {/* GA4 Setup Modal */}
+        {/* GA4 Property Picker */}
         {ga4ModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
             <div className="relative w-full max-w-lg rounded-xl border border-slate-800 bg-slate-900 p-6 shadow-2xl space-y-4">
@@ -1573,8 +1649,8 @@ export default function ProjectShow({
                     <LineChart className="h-5 w-5" />
                   </div>
                   <div>
-                    <h3 className="text-base font-semibold text-white">Connect Google Analytics 4</h3>
-                    <p className="text-xs text-slate-400">Sync landing-page organic &amp; AI assistant traffic</p>
+                    <h3 className="text-base font-semibold text-white">Choose a GA4 property</h3>
+                    <p className="text-xs text-slate-400">Properties your Google account can view</p>
                   </div>
                 </div>
                 <button
@@ -1586,61 +1662,122 @@ export default function ProjectShow({
                 </button>
               </div>
 
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  router.post(
-                    `/workspaces/${workspace.id}/projects/${project.id}/integrations/ga4/connect`,
-                    { property_id: ga4PropertyId },
-                    {
-                      onStart: () => setGa4Error(null),
-                      onSuccess: () => setGa4ModalOpen(false),
-                      onError: (errs) => setGa4Error(errs.property_id ?? null),
-                    }
-                  );
-                }}
-                className="space-y-4 text-xs"
-              >
-                <div>
-                  <label htmlFor="ga4-property-id" className="block text-xs font-medium text-slate-300">
-                    GA4 Property ID <span className="text-rose-400">*</span>
-                  </label>
-                  <input
-                    id="ga4-property-id"
-                    type="text"
-                    required
-                    value={ga4PropertyId}
-                    onChange={(e) => setGa4PropertyId(e.target.value)}
-                    className="mt-1 block w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
-                    placeholder="e.g. 123456789 or properties/123456789"
-                  />
-                  {ga4Error && <p className="mt-1 text-[11px] text-red-400">{ga4Error}</p>}
-                  <p className="mt-1 text-[11px] text-slate-500">
-                    Found in Google Analytics Admin &gt; Property Settings &gt; Property details.
-                  </p>
-                </div>
-
-                <p className="text-[11px] text-slate-400">
-                  Next, you&apos;ll sign in with Google and allow read-only access to Analytics. Use a Google account
-                  that can view this property.
-                </p>
-
-                <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-800">
+              {ga4Error ? (
+                <div className="space-y-3 text-xs">
+                  <p className="text-red-400">{ga4Error.message}</p>
                   <button
                     type="button"
-                    onClick={() => setGa4ModalOpen(false)}
-                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white"
+                    onClick={ga4Error.reconnect ? connectGa4 : () => void openGa4Picker()}
+                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium border border-slate-700 cursor-pointer"
                   >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold text-xs transition cursor-pointer shadow-md shadow-amber-500/20"
-                  >
-                    Continue with Google
+                    {ga4Error.reconnect ? 'Reconnect GA4' : 'Try again'}
                   </button>
                 </div>
-              </form>
+              ) : ga4Properties === null ? (
+                <p className="text-xs text-slate-400 flex items-center gap-2">
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin" /> Loading your GA4 properties…
+                </p>
+              ) : ga4Properties.length === 0 ? (
+                <div className="space-y-3 text-xs">
+                  <p className="text-slate-300">
+                    This Google account can&apos;t see any GA4 properties. Reconnect with an account that has access to
+                    the property.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={connectGa4}
+                    className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium border border-slate-700 cursor-pointer"
+                  >
+                    Reconnect GA4
+                  </button>
+                </div>
+              ) : (
+                <form
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    if (!ga4Selected) return;
+                    router.post(
+                      `${ga4Base}/property`,
+                      { property_id: ga4Selected },
+                      {
+                        onStart: () => setGa4Saving(true),
+                        onFinish: () => setGa4Saving(false),
+                        onSuccess: () => setGa4ModalOpen(false),
+                        onError: (errs) =>
+                          setGa4Error({ message: errs.property_id ?? 'Could not use that property.', reconnect: false }),
+                      }
+                    );
+                  }}
+                  className="space-y-3 text-xs"
+                >
+                  {ga4Properties.length > 6 && (
+                    <div className="relative">
+                      <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-500" />
+                      <input
+                        type="search"
+                        value={ga4Search}
+                        onChange={(e) => setGa4Search(e.target.value)}
+                        placeholder="Search by name, website or account"
+                        aria-label="Search GA4 properties"
+                        className="block w-full pl-8 pr-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-amber-500/50"
+                      />
+                    </div>
+                  )}
+
+                  <div role="radiogroup" aria-label="GA4 properties" className="max-h-72 overflow-y-auto space-y-1.5 pr-1">
+                    {ga4Visible.map((property) => (
+                      <label
+                        key={property.id}
+                        className={`flex items-start gap-3 rounded-lg border px-3 py-2 cursor-pointer transition ${
+                          ga4Selected === property.id
+                            ? 'border-amber-500/60 bg-amber-500/10'
+                            : 'border-slate-800 hover:border-slate-700 bg-slate-950/40'
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="ga4-property"
+                          value={property.id}
+                          checked={ga4Selected === property.id}
+                          onChange={() => setGa4Selected(property.id)}
+                          className="mt-0.5 accent-amber-500"
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-2">
+                            <span className="font-medium text-slate-100 truncate">{property.name}</span>
+                            {property.matches && (
+                              <span className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                                Matches {project.domain}
+                              </span>
+                            )}
+                          </span>
+                          <span className="block text-[11px] text-slate-500 truncate">
+                            {[property.website, property.account].filter(Boolean).join(' · ')}
+                          </span>
+                        </span>
+                      </label>
+                    ))}
+                    {ga4Visible.length === 0 && <p className="text-slate-500 px-1">No properties match your search.</p>}
+                  </div>
+
+                  <div className="pt-3 flex items-center justify-end gap-2 border-t border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setGa4ModalOpen(false)}
+                      className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={!ga4Selected || ga4Saving}
+                      className="px-4 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white font-semibold text-xs transition cursor-pointer shadow-md shadow-amber-500/20"
+                    >
+                      Use This Property
+                    </button>
+                  </div>
+                </form>
+              )}
             </div>
           </div>
         )}

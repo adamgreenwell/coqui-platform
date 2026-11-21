@@ -112,6 +112,10 @@ Route::middleware(['auth'])->group(function (): void {
         ->middleware('feature:traffic-attribution');
     Route::post('/workspaces/{workspace}/projects/{project}/integrations/ga4/connect', [ProjectIntegrationController::class, 'connectGa4'])->name('workspaces.projects.integrations.ga4.connect')
         ->middleware('feature:traffic-attribution');
+    Route::get('/workspaces/{workspace}/projects/{project}/integrations/ga4/properties', [ProjectIntegrationController::class, 'ga4Properties'])->name('workspaces.projects.integrations.ga4.properties')
+        ->middleware('feature:traffic-attribution');
+    Route::post('/workspaces/{workspace}/projects/{project}/integrations/ga4/property', [ProjectIntegrationController::class, 'selectGa4Property'])->name('workspaces.projects.integrations.ga4.property')
+        ->middleware('feature:traffic-attribution');
     Route::post('/workspaces/{workspace}/projects/{project}/integrations/plausible/connect', [ProjectIntegrationController::class, 'connectPlausible'])->name('workspaces.projects.integrations.plausible.connect')
         ->middleware('feature:traffic-attribution');
     Route::post('/workspaces/{workspace}/projects/{project}/integrations/umami/connect', [ProjectIntegrationController::class, 'connectUmami'])->name('workspaces.projects.integrations.umami.connect')

@@ -10,6 +10,8 @@ return [
         'redirect_uri' => env('GOOGLE_REDIRECT_URI'),
         'search_console_base_url' => env('SEARCH_CONSOLE_API_BASE_URL', 'https://searchconsole.googleapis.com'),
         'ga4_base_url' => env('GA4_DATA_API_BASE_URL', 'https://analyticsdata.googleapis.com'),
+        // Lists the GA4 properties a Google account can see, for the property picker.
+        'ga4_admin_base_url' => env('GA4_ADMIN_API_BASE_URL', 'https://analyticsadmin.googleapis.com'),
     ],
 
     'bing' => [
