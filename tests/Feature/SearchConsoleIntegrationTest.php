@@ -13,7 +13,9 @@ use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
 use App\Domains\Serp\Models\TrackedKeyword;
 use App\Models\User;
+use App\Support\PageUrl;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Http;
@@ -230,8 +232,10 @@ class SearchConsoleIntegrationTest extends TestCase
         ];
 
         Http::fake([
-            'https://searchconsole.googleapis.com/webmasters/v3/sites/*/searchAnalytics/query*' => Http::response([
-                'rows' => $mockGscRows,
+            'https://searchconsole.googleapis.com/webmasters/v3/sites/*/searchAnalytics/query*' => fn (Request $request) => Http::response([
+                'rows' => $request['dimensions'] === ['page', 'date']
+                    ? [['keys' => ['https://acmesaas.com/pricing/', '2026-11-14'], 'clicks' => 30, 'impressions' => 400, 'ctr' => 0.075, 'position' => 2.5]]
+                    : $mockGscRows,
             ], 200),
         ]);
 
@@ -241,6 +245,16 @@ class SearchConsoleIntegrationTest extends TestCase
 
         $this->assertTrue($result['success']);
         $this->assertSame(2, $result['records_synced']);
+        $this->assertSame(1, $result['pages_synced'] ?? null);
+
+        // Page rows are keyed by normalized path, so "/pricing/" joins "/pricing".
+        $this->assertDatabaseHas('search_performance_pages', [
+            'project_id' => $this->project->id,
+            'provider' => 'gsc',
+            'url_hash' => PageUrl::hash('/pricing'),
+            'date' => '2026-11-14',
+            'clicks' => 30,
+        ]);
 
         $this->assertDatabaseHas('search_performance_queries', [
             'project_id' => $this->project->id,

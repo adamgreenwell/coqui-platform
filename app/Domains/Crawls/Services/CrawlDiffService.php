@@ -8,6 +8,7 @@ use App\Domains\Crawls\Models\CrawlDiffReport;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Projects\Models\Project;
 use App\Models\User;
+use App\Support\PageUrl;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -129,24 +130,36 @@ class CrawlDiffService
             ])
             ->get();
 
-        // Collect URL hashes for GSC traffic impact overlay
-        $transitionHashes = $rawTransitions->pluck('url_hash')->all();
+        // GSC traffic overlay. Search performance rows are keyed by the
+        // page's normalized path, not the crawl's full-URL hash, so map each
+        // crawled URL to its path hash first.
+        $pathHashes = [];
+        foreach ($rawTransitions as $transition) {
+            $pathHashes[(string) $transition->url_hash] = PageUrl::hash((string) $transition->url);
+        }
         $trafficStats = [];
 
-        if ($transitionHashes !== []) {
+        if ($pathHashes !== []) {
             $trafficRows = DB::table('search_performance_pages')
                 ->where('project_id', $projectId)
                 ->whereIn('provider', ['gsc', 'google'])
-                ->whereIn('url_hash', array_slice($transitionHashes, 0, 5000))
+                ->whereIn('url_hash', array_slice(array_values(array_unique($pathHashes)), 0, 5000))
                 ->selectRaw('url_hash, sum(clicks) as total_clicks, sum(impressions) as total_impressions')
                 ->groupBy('url_hash')
                 ->get();
 
+            $byPath = [];
             foreach ($trafficRows as $tRow) {
-                $trafficStats[(string) $tRow->url_hash] = [
+                $byPath[(string) $tRow->url_hash] = [
                     'clicks' => (int) $tRow->total_clicks,
                     'impressions' => (int) $tRow->total_impressions,
                 ];
+            }
+
+            foreach ($pathHashes as $crawlHash => $pathHash) {
+                if (isset($byPath[$pathHash])) {
+                    $trafficStats[$crawlHash] = $byPath[$pathHash];
+                }
             }
         }
 

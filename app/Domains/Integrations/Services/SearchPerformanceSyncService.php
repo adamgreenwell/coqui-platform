@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace App\Domains\Integrations\Services;
 
 use App\Domains\Integrations\Models\ProjectIntegration;
+use App\Domains\Integrations\Models\SearchPerformancePage;
 use App\Domains\Integrations\Models\SearchPerformanceQuery;
 use App\Domains\Projects\Models\ProjectActivity;
+use App\Support\PageUrl;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 
@@ -21,7 +24,7 @@ class SearchPerformanceSyncService
      * Synchronize query search performance from Google Search Console.
      * Respects Google's 4-day finalization lag.
      *
-     * @return array{success: bool, records_synced: int, error?: string}
+     * @return array{success: bool, records_synced: int, pages_synced?: int, error?: string}
      */
     public function syncGoogleSearchConsole(ProjectIntegration $integration): array
     {
@@ -114,6 +117,10 @@ class SearchPerformanceSyncService
 
             $count = count($recordsToUpsert);
 
+            // Page-level clicks and impressions feed traffic attribution and
+            // the crawl comparison's traffic overlay.
+            $pageCount = $this->syncGooglePages($integration, $startDate, $endDate, $now);
+
             $integration->update([
                 'status' => 'connected',
                 'last_synced_at' => $now,
@@ -123,16 +130,17 @@ class SearchPerformanceSyncService
                 project: $project,
                 eventType: 'integration.synced',
                 title: 'Google Search Console Synced',
-                description: "Synchronized {$count} query performance records from Google Search Console.",
+                description: "Synchronized {$count} query and {$pageCount} page performance records from Google Search Console.",
                 properties: [
                     'provider' => 'gsc',
                     'count' => $count,
+                    'pages' => $pageCount,
                     'start_date' => $startDate->format('Y-m-d'),
                     'end_date' => $endDate->format('Y-m-d'),
                 ],
             );
 
-            return ['success' => true, 'records_synced' => $count];
+            return ['success' => true, 'records_synced' => $count, 'pages_synced' => $pageCount];
         } catch (SearchConsoleAuthException $e) {
             $integration->markNeedsReconnect($e->getMessage());
 
@@ -163,6 +171,86 @@ class SearchPerformanceSyncService
 
             return ['success' => false, 'records_synced' => 0, 'error' => $e->getMessage()];
         }
+    }
+
+    /**
+     * Fetch page-level performance (page, date) and store it in
+     * search_performance_pages, keyed by the normalized path so URL variants
+     * of one page are combined and rows join to crawls and traffic data.
+     * Returns how many rows were stored.
+     */
+    private function syncGooglePages(ProjectIntegration $integration, CarbonInterface $startDate, CarbonInterface $endDate, CarbonInterface $now): int
+    {
+        $rows = [];
+        $startRow = 0;
+        $pageSize = 5000;
+        $maxRows = 25000;
+
+        do {
+            $pageRows = $this->gscClient->querySearchAnalytics(
+                integration: $integration,
+                startDate: $startDate,
+                endDate: $endDate,
+                dimensions: ['page', 'date'],
+                startRow: $startRow,
+                rowLimit: $pageSize,
+            );
+
+            $rows = array_merge($rows, $pageRows);
+            $startRow += $pageSize;
+        } while (count($pageRows) === $pageSize && count($rows) < $maxRows);
+
+        /** @var array<string, array<string, mixed>> $deduped */
+        $deduped = [];
+        foreach ($rows as $row) {
+            $url = isset($row['keys'][0]) ? trim((string) $row['keys'][0]) : '';
+            $dateStr = isset($row['keys'][1]) ? trim((string) $row['keys'][1]) : '';
+            if ($url === '' || $dateStr === '') {
+                continue;
+            }
+
+            $hash = PageUrl::hash($url);
+            $key = $hash.'|'.$dateStr;
+            $clicks = (int) $row['clicks'];
+            $impressions = (int) $row['impressions'];
+
+            if (isset($deduped[$key])) {
+                // http/https, www and trailing-slash variants of one page.
+                $totalImpressions = (int) $deduped[$key]['impressions'] + $impressions;
+                $weightedPosition = ((float) $deduped[$key]['position'] * (int) $deduped[$key]['impressions']) + ((float) $row['position'] * $impressions);
+
+                $deduped[$key]['clicks'] = (int) $deduped[$key]['clicks'] + $clicks;
+                $deduped[$key]['impressions'] = $totalImpressions;
+                $deduped[$key]['ctr'] = $totalImpressions > 0 ? round($deduped[$key]['clicks'] / $totalImpressions, 4) : 0.0;
+                $deduped[$key]['position'] = $totalImpressions > 0 ? round($weightedPosition / $totalImpressions, 2) : (float) $row['position'];
+
+                continue;
+            }
+
+            $deduped[$key] = [
+                'project_id' => $integration->project_id,
+                'provider' => 'gsc',
+                'url' => $url,
+                'url_hash' => $hash,
+                'date' => $dateStr,
+                'clicks' => $clicks,
+                'impressions' => $impressions,
+                'ctr' => round((float) $row['ctr'], 4),
+                'position' => round((float) $row['position'], 2),
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+
+        foreach (array_chunk(array_values($deduped), 500) as $chunk) {
+            SearchPerformancePage::query()->upsert(
+                $chunk,
+                ['project_id', 'provider', 'url_hash', 'date'],
+                ['url', 'clicks', 'impressions', 'ctr', 'position', 'updated_at'],
+            );
+        }
+
+        return count($deduped);
     }
 
     /**

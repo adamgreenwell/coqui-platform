@@ -8,12 +8,15 @@ use App\Domains\Crawls\Models\CrawlDiffReport;
 use App\Domains\Crawls\Models\CrawlIssue;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Crawls\Models\CrawlUrl;
-use App\Domains\Integrations\Models\SearchPerformancePage;
+use App\Domains\Integrations\Models\ProjectIntegration;
+use App\Domains\Integrations\Services\SearchPerformanceSyncService;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Sanctum\Sanctum;
@@ -227,30 +230,35 @@ class CrawlCompareTest extends TestCase
             'status' => 404,
         ]);
 
-        // Seed SearchPerformancePage records
-        SearchPerformancePage::query()->create([
+        // A real Search Console sync writes the page rows. GSC reports URL
+        // variants of one page (trailing slash, http) that crawls don't use.
+        $integration = ProjectIntegration::query()->create([
             'project_id' => $this->project->id,
             'provider' => 'gsc',
-            'url' => $highTrafficUrl,
-            'url_hash' => $highHash,
-            'date' => Carbon::now()->subDays(3)->toDateString(),
-            'clicks' => 850,
-            'impressions' => 12500,
-            'ctr' => 0.068,
-            'position' => 2.4,
+            'site_url' => 'https://acme.test/',
+            'external_identifier' => 'https://acme.test/',
+            'status' => 'connected',
+            'credentials_encrypted' => [
+                'access_token' => 'active-access-token',
+                'refresh_token' => 'active-refresh-token',
+                'expires_at' => Carbon::now()->addHour()->toIso8601String(),
+            ],
+        ]);
+        $day = Carbon::now()->subDays(5)->toDateString();
+
+        Http::fake([
+            'https://searchconsole.googleapis.com/*' => fn (Request $request) => Http::response([
+                'rows' => $request['dimensions'] === ['page', 'date'] ? [
+                    ['keys' => ['https://acme.test/shop/top-seller/', $day], 'clicks' => 600, 'impressions' => 9000, 'ctr' => 0.0667, 'position' => 2.0],
+                    ['keys' => ['http://acme.test/shop/top-seller', $day], 'clicks' => 250, 'impressions' => 3500, 'ctr' => 0.0714, 'position' => 3.0],
+                    ['keys' => ['https://acme.test/shop/rare-item', $day], 'clicks' => 45, 'impressions' => 600, 'ctr' => 0.075, 'position' => 4.1],
+                ] : [],
+            ]),
         ]);
 
-        SearchPerformancePage::query()->create([
-            'project_id' => $this->project->id,
-            'provider' => 'gsc',
-            'url' => $lowTrafficUrl,
-            'url_hash' => $lowHash,
-            'date' => Carbon::now()->subDays(3)->toDateString(),
-            'clicks' => 45,
-            'impressions' => 600,
-            'ctr' => 0.075,
-            'position' => 4.1,
-        ]);
+        $result = app(SearchPerformanceSyncService::class)->syncGoogleSearchConsole($integration);
+        $this->assertTrue($result['success']);
+        $this->assertSame(2, $result['pages_synced'] ?? null);
 
         $response = $this->actingAs($this->user)->get(
             "/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/crawls/compare?baseline={$this->baselineRun->external_crawl_id}&target={$this->targetRun->external_crawl_id}"
