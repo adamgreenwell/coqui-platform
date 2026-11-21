@@ -158,11 +158,12 @@ class BotTelemetryService
             $map[$key]['hit_count'] += $hits;
             $map[$key]['bytes_served'] += max(0, (int) ($entry['bytesServed'] ?? 0));
 
+            // topErrorPaths is the older field for the same data; a producer
+            // sending both repeats its error paths, so prefer topPaths.
             /** @var list<array<string, mixed>> $paths */
-            $paths = array_merge(
-                is_array($entry['topPaths'] ?? null) ? $entry['topPaths'] : [],
-                is_array($entry['topErrorPaths'] ?? null) ? $entry['topErrorPaths'] : [],
-            );
+            $paths = is_array($entry['topPaths'] ?? null) && $entry['topPaths'] !== []
+                ? $entry['topPaths']
+                : (is_array($entry['topErrorPaths'] ?? null) ? $entry['topErrorPaths'] : []);
 
             $parameterHits = 0;
             foreach ($paths as $p) {
@@ -178,19 +179,18 @@ class BotTelemetryService
                 }
 
                 $pathKey = $path.'|'.$status;
-                if (isset($map[$key]['paths'][$pathKey])) {
-                    $map[$key]['paths'][$pathKey]['hits'] += $pHits;
-                } else {
-                    $item = ['path' => $path, 'hits' => $pHits, 'status' => $status];
-                    $target = trim((string) ($p['redirectTarget'] ?? ''));
-                    if ($target !== '') {
-                        $item['redirectTarget'] = mb_substr($target, 0, 2048);
-                    }
-                    if (isset($p['hops']) && (int) $p['hops'] > 0) {
-                        $item['hops'] = (int) $p['hops'];
-                    }
-                    $map[$key]['paths'][$pathKey] = $item;
+                $item = $map[$key]['paths'][$pathKey] ?? ['path' => $path, 'hits' => 0, 'status' => $status];
+                $item['hits'] += $pHits;
+                // Keep redirect details from whichever entry reported them.
+                $target = trim((string) ($p['redirectTarget'] ?? ''));
+                if ($target !== '' && ! isset($item['redirectTarget'])) {
+                    $item['redirectTarget'] = mb_substr($target, 0, 2048);
                 }
+                $hops = (int) ($p['hops'] ?? 0);
+                if ($hops > ($item['hops'] ?? 0)) {
+                    $item['hops'] = $hops;
+                }
+                $map[$key]['paths'][$pathKey] = $item;
             }
 
             // Runnr's own count covers every parameterized hit, not just the

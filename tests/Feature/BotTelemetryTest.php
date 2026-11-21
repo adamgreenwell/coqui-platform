@@ -237,6 +237,30 @@ class BotTelemetryTest extends TestCase
         $this->assertLessThan($delete[0], $lock[0]);
     }
 
+    public function test_path_summaries_are_not_double_counted_and_keep_redirect_details(): void
+    {
+        $hour = '2026-11-19T08:00:00Z';
+        $this->sendBatch([
+            [
+                // Both fields, as a producer mid-migration would send them.
+                'botFamily' => 'googlebot',
+                'statusBucket' => 404,
+                'hitCount' => 10,
+                'bucketHour' => $hour,
+                'topPaths' => [['path' => '/gone', 'hits' => 10, 'status' => 404]],
+                'topErrorPaths' => [['path' => '/gone', 'hits' => 10, 'status' => 404]],
+            ],
+            // The same redirecting path in two entries; only the second
+            // reports the chain.
+            ['botFamily' => 'googlebot', 'statusBucket' => 301, 'hitCount' => 4, 'bucketHour' => $hour, 'topPaths' => [['path' => '/old', 'hits' => 4, 'status' => 301]]],
+            ['botFamily' => 'googlebot', 'statusBucket' => 301, 'hitCount' => 6, 'bucketHour' => $hour, 'topPaths' => [['path' => '/old', 'hits' => 6, 'status' => 301, 'redirectTarget' => 'https://example.com/new', 'hops' => 3]]],
+        ])->assertStatus(202);
+
+        $rows = BotCrawlLog::query()->where('project_id', $this->project->id)->get()->keyBy('status_bucket');
+        $this->assertEquals([['path' => '/gone', 'hits' => 10, 'status' => 404]], $rows[400]->top_paths);
+        $this->assertEquals([['path' => '/old', 'hits' => 10, 'status' => 301, 'redirectTarget' => 'https://example.com/new', 'hops' => 3]], $rows[300]->top_paths);
+    }
+
     public function test_different_batches_for_the_same_hour_add_up(): void
     {
         $this->sendBatch([$this->googlebot404s(10)], 'batch-0500-a')->assertStatus(202);
