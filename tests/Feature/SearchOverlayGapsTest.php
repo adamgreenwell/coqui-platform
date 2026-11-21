@@ -307,6 +307,35 @@ class SearchOverlayGapsTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page->where('keywords.0.gsc_performance.clicks', 7));
     }
 
+    public function test_older_rows_fill_the_dates_the_device_rows_do_not_cover(): void
+    {
+        $first = Carbon::now()->subDays(10)->toDateString();
+        $second = Carbon::now()->subDays(9)->toDateString();
+        $row = fn (string $device, string $date, int $clicks, int $impressions, float $position) => SearchPerformanceQuery::query()->create([
+            'project_id' => $this->project->id, 'provider' => 'gsc', 'query' => 'rank tracker', 'device' => $device,
+            'date' => $date, 'clicks' => $clicks, 'impressions' => $impressions, 'ctr' => 0.1, 'position' => $position,
+        ]);
+
+        // Older all-device rows on both dates; a capped device fetch only
+        // replaced the first.
+        $row('all', $first, 30, 300, 2.0);
+        $row('all', $second, 20, 200, 6.0);
+        $row('desktop', $first, 25, 250, 2.0);
+        $row('mobile', $first, 5, 50, 4.0);
+        $this->keyword('rank tracker', 'desktop');
+
+        $this->actingAs($this->user)
+            ->get(route('workspaces.projects.keywords.index', [$this->workspace, $this->project]))
+            ->assertInertia(function (Assert $page): void {
+                $gsc = $page->toArray()['props']['keywords'][0]['gsc_performance'];
+                // Desktop on the first date, the older row on the second.
+                $this->assertSame(45, $gsc['clicks']);
+                $this->assertSame(450, $gsc['impressions']);
+                // (2 * 250 + 6 * 200) / 450
+                $this->assertEqualsWithDelta(3.8, $gsc['position'], 0.001);
+            });
+    }
+
     public function test_a_capped_device_fetch_keeps_the_older_rows_as_a_fallback(): void
     {
         $integration = $this->gsc([

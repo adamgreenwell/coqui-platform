@@ -87,24 +87,40 @@ class TrackedKeywordController extends Controller
 
         // The GSC/Bing overlay belongs to the traffic attribution plan feature;
         // without it the columns stay empty and the page shows an upgrade prompt.
+        // Search Console rows are per device; rows synced before the split
+        // cover all devices ("all"), as do Bing's. An "all" row counts only
+        // on dates with no per-device rows for that query, so each day uses
+        // the per-device data where it was fetched and the older row where
+        // it wasn't.
         $performanceStats = $workspace->hasFeature(PlanFeature::TrafficAttribution)
-            ? DB::table('search_performance_queries')
-                ->where('project_id', $project->id)
-                ->where('date', '>=', $cutoffDate)
-                ->selectRaw('provider, device, LOWER(query) as query_lower, SUM(clicks) as total_clicks, SUM(impressions) as total_impressions, CASE WHEN SUM(impressions) > 0 THEN ROUND(SUM(position * impressions) / SUM(impressions), 1) ELSE ROUND(AVG(position), 1) END as avg_position')
-                ->groupBy('provider', 'device', 'query_lower')
+            ? DB::table('search_performance_queries as spq')
+                ->where('spq.project_id', $project->id)
+                ->where('spq.date', '>=', $cutoffDate)
+                ->where(function ($query): void {
+                    $query->where('spq.device', '!=', 'all')
+                        ->orWhereNotExists(function ($sub): void {
+                            $sub->selectRaw('1')
+                                ->from('search_performance_queries as per_device')
+                                ->whereColumn('per_device.project_id', 'spq.project_id')
+                                ->whereColumn('per_device.provider', 'spq.provider')
+                                ->whereColumn('per_device.query', 'spq.query')
+                                ->whereColumn('per_device.date', 'spq.date')
+                                ->where('per_device.device', '!=', 'all');
+                        });
+                })
+                ->selectRaw('spq.provider as provider, spq.device as device, LOWER(spq.query) as query_lower, SUM(spq.clicks) as total_clicks, SUM(spq.impressions) as total_impressions, SUM(spq.position * spq.impressions) as weighted_position, SUM(spq.position) as position_sum, COUNT(*) as row_count')
+                ->groupBy('spq.provider', 'spq.device', 'query_lower')
                 ->get()
             : collect();
 
-        // Search Console rows are per device ("all" for rows synced before
-        // the split); Bing has no device breakdown.
         $gscStatsByQuery = $performanceStats
             ->where('provider', 'gsc')
             ->keyBy(fn (object $row): string => $row->device.'|'.$row->query_lower);
 
         $bingStatsByQuery = $performanceStats
             ->where('provider', 'bing')
-            ->keyBy('query_lower');
+            ->keyBy('query_lower')
+            ->map(fn (object $row): object => $this->overlayTotals([$row]));
 
         $items = $trackedKeywords->map(function (TrackedKeyword $kw) use ($snapshotsByKeyword, $project, $competitors, $gscStatsByQuery, $bingStatsByQuery): array {
             $kwSnaps = $snapshotsByKeyword->get((int) $kw->id, collect());
@@ -149,8 +165,14 @@ class TrackedKeywordController extends Controller
 
             $kwKey = strtolower(trim($kw->keyword));
 
+            // This keyword's device, plus older all-device rows on dates the
+            // per-device data doesn't cover.
+            $gscRows = array_values(array_filter([
+                $gscStatsByQuery->get(strtolower($kw->device).'|'.$kwKey),
+                $gscStatsByQuery->get('all|'.$kwKey),
+            ]));
             /** @var object{total_clicks?: mixed, total_impressions?: mixed, avg_position?: mixed}|null $gsc */
-            $gsc = $gscStatsByQuery->get(strtolower($kw->device).'|'.$kwKey) ?? $gscStatsByQuery->get('all|'.$kwKey);
+            $gsc = $gscRows !== [] ? $this->overlayTotals($gscRows) : null;
             $gscClicks = ($gsc !== null && isset($gsc->total_clicks)) ? (int) $gsc->total_clicks : null;
             $gscImpressions = ($gsc !== null && isset($gsc->total_impressions)) ? (int) $gsc->total_impressions : null;
             $gscCtr = ($gscClicks !== null && $gscImpressions !== null && $gscImpressions > 0)
@@ -463,5 +485,35 @@ class TrackedKeywordController extends Controller
             ],
             'snapshots' => $snapshots,
         ]);
+    }
+
+    /**
+     * Totals across aggregated overlay rows, with impression-weighted
+     * position (a plain average when there were no impressions).
+     *
+     * @param  list<object>  $rows
+     */
+    private function overlayTotals(array $rows): object
+    {
+        $clicks = 0;
+        $impressions = 0;
+        $weighted = 0.0;
+        $positionSum = 0.0;
+        $count = 0;
+        foreach ($rows as $row) {
+            $clicks += (int) $row->total_clicks;
+            $impressions += (int) $row->total_impressions;
+            $weighted += (float) $row->weighted_position;
+            $positionSum += (float) $row->position_sum;
+            $count += (int) $row->row_count;
+        }
+
+        return (object) [
+            'total_clicks' => $clicks,
+            'total_impressions' => $impressions,
+            'avg_position' => $impressions > 0
+                ? round($weighted / $impressions, 1)
+                : ($count > 0 ? round($positionSum / $count, 1) : null),
+        ];
     }
 }
