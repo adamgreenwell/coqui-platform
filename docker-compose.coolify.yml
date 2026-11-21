@@ -8,7 +8,10 @@
 #     Coolify domain goes on `app`; Coolify's proxy terminates TLS. PHP-FPM
 #     runs as `php`. nginx publishes no host port.
 #   - nginx's config is baked into a small image instead of bind-mounted.
-#   - coqui-worker is left out until its image exists (#58).
+#   - coqui-worker isn't in this file yet. Its image is published to GHCR
+#     (see docker/coqui-worker/README.md); until it's added here, cloud
+#     crawls say they aren't set up and backlink checks fetch pages from
+#     Laravel directly.
 #
 # See docs/wiki/Coolify-Deployment-And-Operations.md for the full checklist.
 

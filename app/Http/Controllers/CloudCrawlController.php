@@ -6,6 +6,7 @@ namespace App\Http\Controllers;
 
 use App\Domains\Crawls\Jobs\DispatchCloudCrawlJob;
 use App\Domains\Crawls\Models\CrawlRun;
+use App\Domains\Crawls\Services\CoquiWorkerClient;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\Workspace;
@@ -17,9 +18,18 @@ use Illuminate\Support\Str;
 
 class CloudCrawlController extends Controller
 {
-    public function dispatch(Request $request, Workspace $workspace, Project $project): JsonResponse|RedirectResponse
+    public function dispatch(Request $request, Workspace $workspace, Project $project, CoquiWorkerClient $worker): JsonResponse|RedirectResponse
     {
         Gate::authorize('update', $project);
+
+        // Say so now rather than queueing a crawl that can only fail.
+        if (! $worker->isConfigured()) {
+            if ($request->wantsJson()) {
+                return response()->json(['message' => CoquiWorkerClient::NOT_CONFIGURED_MESSAGE], 503);
+            }
+
+            return back()->with('error', CoquiWorkerClient::NOT_CONFIGURED_MESSAGE);
+        }
 
         $hasActiveRun = $project->crawlRuns()
             ->whereIn('status', ['pending', 'running'])

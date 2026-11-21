@@ -13,9 +13,21 @@ use Illuminate\Support\Facades\Http;
  */
 class CoquiWorkerClient
 {
+    public const string NOT_CONFIGURED_MESSAGE = 'Cloud crawling isn\'t set up on this server yet. An administrator needs to start the crawl worker.';
+
     public function __construct(
         private readonly SsrfProtectionGuard $ssrf = new SsrfProtectionGuard,
     ) {}
+
+    /**
+     * Whether a worker URL and token are set. Without a token the worker
+     * refuses to start and Laravel rejects its callbacks, so nothing can run.
+     */
+    public function isConfigured(): bool
+    {
+        return trim((string) config('coqui.worker.url')) !== ''
+            && trim((string) config('coqui.worker.token')) !== '';
+    }
 
     /**
      * Dispatch a bounded cloud crawl for a project (scheduled audit or post-deploy smoke test).
@@ -62,9 +74,10 @@ class CoquiWorkerClient
      * Inspect specific external URLs (backlink verification or SERP top-10 scraping).
      *
      * @param  list<string>  $urls
+     * @param  array<string, string>  $targetUrls  Source URL => monitored target URL
      * @return array<string, mixed>
      */
-    public function inspectUrls(array $urls, ?string $targetDomain = null): array
+    public function inspectUrls(array $urls, ?string $targetDomain = null, array $targetUrls = []): array
     {
         foreach ($urls as $url) {
             $this->ssrf->assertAllowed((string) $url);
@@ -73,6 +86,8 @@ class CoquiWorkerClient
         $response = $this->http()->post($this->url('/jobs/inspect'), [
             'urls' => $urls,
             'targetDomain' => $targetDomain,
+            // Source URL => the exact page the monitored link should point at.
+            'targetUrls' => (object) $targetUrls,
         ]);
 
         $response->throw();
@@ -86,8 +101,11 @@ class CoquiWorkerClient
     private function http(): PendingRequest
     {
         $token = (string) config('coqui.worker.token');
+        // A worker that's down should fail the request in seconds, not hold
+        // a queue job for the full timeout.
         $request = Http::acceptJson()
             ->asJson()
+            ->connectTimeout((int) config('coqui.worker.connect_timeout', 5))
             ->timeout((int) config('coqui.worker.timeout', 30));
 
         if ($token !== '') {

@@ -149,6 +149,10 @@ return [
         'url' => env('COQUI_WORKER_URL', 'http://coqui-worker:8085'),
         'token' => env('COQUI_WORKER_TOKEN'),
         'timeout' => (int) env('COQUI_WORKER_TIMEOUT', 30),
+        'connect_timeout' => (int) env('COQUI_WORKER_CONNECT_TIMEOUT', 5),
+        // A cloud crawl the worker hasn't reported on for this long is marked
+        // failed. The worker posts a heartbeat at least once a minute.
+        'stall_minutes' => (int) env('COQUI_WORKER_STALL_MINUTES', 30),
         'default_max_urls' => (int) env('COQUI_WORKER_DEFAULT_MAX_URLS', 1000),
         'smoke_max_urls' => (int) env('COQUI_WORKER_SMOKE_MAX_URLS', 100),
     ],

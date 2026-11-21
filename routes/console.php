@@ -54,3 +54,9 @@ Schedule::command('traffic:sync')
 Schedule::command('coqui:run-scheduled-crawls')
     ->dailyAt('02:00')
     ->withoutOverlapping();
+
+// Cloud crawls the worker stopped reporting on (it restarted, crashed or was
+// never reached) are marked failed so they don't block the next crawl.
+Schedule::command('coqui:fail-stalled-crawls')
+    ->everyFiveMinutes()
+    ->withoutOverlapping();
