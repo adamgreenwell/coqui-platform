@@ -374,6 +374,7 @@ class PlanFeatureGatesTest extends TestCase
     public function test_priority_queue_routes_crawls_by_plan(): void
     {
         Queue::fake();
+        config()->set('coqui.worker.token', 'worker-token');
         $dispatch = function (): void {
             CrawlRun::query()->update(['status' => 'completed']);
             $this->actingAs($this->owner)->post($this->projectUrl('/crawls/dispatch'))->assertRedirect();

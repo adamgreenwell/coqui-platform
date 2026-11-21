@@ -19,7 +19,12 @@ return [
         'base_url' => env('DATAFORSEO_API_BASE_URL', 'https://sandbox.dataforseo.com'),
         'timeout' => (int) env('DATAFORSEO_HTTP_TIMEOUT', 60),
         'free_read_retries' => (int) env('DATAFORSEO_FREE_READ_RETRIES', 1),
-        'webhook_secret' => env('DATAFORSEO_WEBHOOK_SECRET'),
+        // Pending standard-queue tasks older than this are failed, so their
+        // keywords are tracked again. Postbacks are authenticated by each
+        // task's own token, so there is no shared webhook secret.
+        'task_max_age_hours' => (int) env('DATAFORSEO_TASK_MAX_AGE_HOURS', 12),
+        // A received result not recorded after this long is queued again.
+        'postback_requeue_minutes' => (int) env('DATAFORSEO_POSTBACK_REQUEUE_MINUTES', 15),
 
         'default_location_code' => (int) env('DATAFORSEO_LOCATION_CODE', 2840),
         'default_language_code' => env('DATAFORSEO_LANGUAGE_CODE', 'en'),
@@ -31,6 +36,20 @@ return [
         'load_async_ai_overview' => (bool) env('DATAFORSEO_LOAD_ASYNC_AI_OVERVIEW', true),
         'daily_cap_usd' => (float) env('DATAFORSEO_DAILY_CAP_USD', 5.00),
         'monthly_cap_usd' => (float) env('DATAFORSEO_MONTHLY_CAP_USD', 100.00),
+        // How long a paid call waits for the spend lock (cap check + ledger
+        // reservation) before it's refused.
+        'spend_lock_wait_seconds' => (int) env('DATAFORSEO_SPEND_LOCK_WAIT_SECONDS', 10),
+
+        // Raw request/response archive for paid calls.
+        'archive_responses' => (bool) env('DATAFORSEO_ARCHIVE_RESPONSES', true),
+        'archive_retention_days' => (int) env('DATAFORSEO_ARCHIVE_RETENTION_DAYS', 30),
+
+        // Hourly reconciliation alerts (emailed to platform operators).
+        'alerts' => [
+            'drift_usd' => (float) env('DATAFORSEO_DRIFT_ALERT_USD', 1.00),
+            'low_balance_usd' => (float) env('DATAFORSEO_LOW_BALANCE_ALERT_USD', 10.00),
+            'cap_ratio' => (float) env('DATAFORSEO_CAP_ALERT_RATIO', 0.8),
+        ],
 
         'cache_ttl_hours' => [
             'keyword_overview' => 24 * 30,
@@ -134,6 +153,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Backlink link-rot watchlist
+    |--------------------------------------------------------------------------
+    */
+    'backlinks' => [
+        // Most links one project can monitor.
+        'max_monitored_links' => (int) env('COQUI_MAX_MONITORED_BACKLINKS', 500),
+        // Minimum gap between direct checks of pages on the same host.
+        'verify_host_delay_ms' => (int) env('COQUI_BACKLINK_HOST_DELAY_MS', 1000),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Headless Rust Cloud Worker (coqui-worker)
     |--------------------------------------------------------------------------
     */
@@ -141,6 +172,10 @@ return [
         'url' => env('COQUI_WORKER_URL', 'http://coqui-worker:8085'),
         'token' => env('COQUI_WORKER_TOKEN'),
         'timeout' => (int) env('COQUI_WORKER_TIMEOUT', 30),
+        'connect_timeout' => (int) env('COQUI_WORKER_CONNECT_TIMEOUT', 5),
+        // A cloud crawl the worker hasn't reported on for this long is marked
+        // failed. The worker posts a heartbeat at least once a minute.
+        'stall_minutes' => (int) env('COQUI_WORKER_STALL_MINUTES', 30),
         'default_max_urls' => (int) env('COQUI_WORKER_DEFAULT_MAX_URLS', 1000),
         'smoke_max_urls' => (int) env('COQUI_WORKER_SMOKE_MAX_URLS', 100),
     ],
@@ -154,5 +189,14 @@ return [
         'max_urls_per_chunk' => 1000,
         'max_links_per_chunk' => 2500,
         'max_issues_per_chunk' => 2500,
+    ],
+
+    /*
+    | Login created by `php artisan db:seed` (DemoDataSeeder) on local stacks.
+    | The seeder refuses to run when APP_ENV=production.
+    */
+    'demo' => [
+        'email' => env('DEMO_USER_EMAIL', 'demo@coqui.test'),
+        'password' => env('DEMO_USER_PASSWORD', 'password'),
     ],
 ];

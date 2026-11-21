@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Domains\Projects\Models\Project;
+use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Serp\DataForSeo\DataForSeoClient;
 use App\Domains\Serp\Models\RankFallbackCheck;
 use App\Domains\Serp\Models\TrackedKeyword;
@@ -122,6 +124,12 @@ class RunRankBatchesCommand extends Command
                 continue;
             }
 
+            // Per-project tallies for the activity feed.
+            $projectSubmitted = 0;
+            $projectRejected = 0;
+            $projectRefused = 0;
+            $projectFailures = [];
+
             /** @var list<list<TrackedKeyword>> $chunks */
             $chunks = array_chunk($kwList, 100);
 
@@ -157,11 +165,15 @@ class RunRankBatchesCommand extends Command
                 } catch (SpendRefusedException $e) {
                     // A spend cap refused it: don't pay another provider instead.
                     $this->warn("Skipped SERP tasks for project {$project->id}: {$e->getMessage()}");
+                    $projectRefused += count($chunk);
+                    $projectFailures[] = $e->getMessage();
 
                     continue;
                 } catch (Throwable $e) {
                     $this->error("Failed submitting SERP tasks for project {$project->id}: {$e->getMessage()}");
                     $this->queueFallback($chunk, $project->workspace_id);
+                    $projectRejected += count($chunk);
+                    $projectFailures[] = $e->getMessage();
 
                     continue;
                 }
@@ -213,6 +225,7 @@ class RunRankBatchesCommand extends Command
                     ]);
 
                     $submittedCount++;
+                    $projectSubmitted++;
                 }
 
                 // Keywords with no accepted task (a rejected batch or task
@@ -221,13 +234,51 @@ class RunRankBatchesCommand extends Command
                 if ($rejected !== []) {
                     $this->error(count($rejected)." SERP task(s) for project {$project->id} weren't accepted (status ".($response['status_code'] ?? 'unknown').').');
                     $this->queueFallback($rejected, $project->workspace_id);
+                    $projectRejected += count($rejected);
                 }
             }
+
+            $this->logBatchActivity($project, $projectSubmitted, $projectRejected, $projectRefused, $projectFailures);
         }
 
         $this->info("Successfully submitted {$submittedCount} SERP rank tracking tasks to DataForSEO standard queue.");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * One activity entry per project per run: what was sent for ranking and
+     * what wasn't.
+     *
+     * @param  list<string>  $failures
+     */
+    private function logBatchActivity(Project $project, int $submitted, int $rejected, int $refused, array $failures): void
+    {
+        if ($submitted + $rejected + $refused === 0) {
+            return;
+        }
+
+        $failed = $rejected + $refused > 0;
+        $parts = [sprintf('%d keyword%s sent for rank checks', $submitted, $submitted === 1 ? '' : 's')];
+        if ($rejected > 0) {
+            $parts[] = sprintf('%d not accepted (backup checks queued)', $rejected);
+        }
+        if ($refused > 0) {
+            $parts[] = sprintf('%d skipped by a spend limit', $refused);
+        }
+
+        rescue(fn () => ProjectActivity::log(
+            project: $project,
+            eventType: $submitted === 0 && $failed ? 'serp.rank_batch_failed' : 'serp.rank_batch_submitted',
+            title: $submitted === 0 && $failed ? 'Rank check batch failed' : 'Rank check batch submitted',
+            description: ucfirst(implode('; ', $parts)).'.',
+            properties: [
+                'submitted' => $submitted,
+                'not_accepted' => $rejected,
+                'refused_by_spend_limit' => $refused,
+                'errors' => array_values(array_unique(array_slice($failures, 0, 3))),
+            ],
+        ), report: true);
     }
 
     /**

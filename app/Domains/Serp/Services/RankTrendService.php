@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domains\Serp\Services;
 
 use App\Domains\Serp\Models\KeywordRankSnapshot;
+use App\Domains\Serp\Support\VisibilityScore;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 
@@ -118,7 +119,7 @@ class RankTrendService
 
             foreach ($current as $snapshot) {
                 $rank = $snapshot->rank_group;
-                $points += $this->points($rank);
+                $points += VisibilityScore::points($rank);
                 if ($rank !== null && $rank > 0) {
                     $ranked++;
                     $rankSum += $rank;
@@ -171,22 +172,6 @@ class RankTrendService
         }
 
         return $moves !== [] ? round(array_sum($moves) / count($moves), 1) : null;
-    }
-
-    /** Same CTR weighting as the keywords page's visibility score. */
-    private function points(?int $rank): int
-    {
-        return match (true) {
-            $rank === null || $rank <= 0 => 0,
-            $rank === 1 => 100,
-            $rank === 2 => 70,
-            $rank === 3 => 50,
-            $rank <= 5 => 35,
-            $rank <= 10 => 20,
-            $rank <= 20 => 10,
-            $rank <= 50 => 5,
-            default => 2,
-        };
     }
 
     private function rankOrUnranked(KeywordRankSnapshot $snapshot): int

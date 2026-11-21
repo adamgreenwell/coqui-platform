@@ -10,6 +10,8 @@ use App\Domains\Serp\DataForSeo\DataForSeoCacheRepository;
 use App\Domains\Serp\DataForSeo\DataForSeoClient;
 use App\Domains\Serp\Models\ContentBrief;
 use App\Domains\Serp\ProviderNotConfiguredException;
+use App\Domains\Serp\SpendRefusedException;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -33,6 +35,7 @@ class ContentBriefService
         ?int $locationCode = null,
         ?string $languageCode = null,
         ?array $serpOverride = null,
+        bool $bypassCache = false,
     ): ContentBrief {
         $normalizedKeyword = strtolower(trim($keyword));
         $location = $locationCode ?? (int) ($project->location_code ?? 2840);
@@ -44,104 +47,113 @@ class ContentBriefService
         $cpc = isset($metrics['cpc']) ? (float) $metrics['cpc'] : 0.00;
 
         // 2. Fetch SERP organic items and People Also Ask questions
-        $serpData = $serpOverride ?? $this->fetchSerpData($project, $normalizedKeyword, $location, $language);
+        $serpData = $serpOverride ?? $this->fetchSerpData($project, $normalizedKeyword, $location, $language, $bypassCache);
         $extractedSerp = $this->extractSerpOrganicAndQuestions($serpData);
 
         $organicItems = $extractedSerp['organic'];
         $paaQuestions = $extractedSerp['questions'];
 
-        // 3. Inspect top 10 competitor URLs (with SSRF protection & graceful failure degradation)
+        // 3. Inspect the top-10 competitor URLs, all at once (SSRF-checked per hop,
+        //    each failure recorded against its row).
         $competitorMatrix = [];
         $successfulWordCounts = [];
         $allSchemaTypes = [];
         $allH2s = [];
 
-        foreach ($organicItems as $item) {
+        $results = $this->http->getMany(
+            array_map(static fn (array $item): string => (string) $item['url'], $organicItems),
+            timeoutSeconds: 6,
+        );
+
+        foreach ($organicItems as $index => $item) {
             $url = (string) $item['url'];
             $rank = (int) $item['rank'];
             $title = (string) ($item['title'] ?? '');
             $domain = (string) ($item['domain'] ?? parse_url($url, PHP_URL_HOST) ?? '');
+            $result = $results[$index] ?? null;
+
+            $failed = [
+                'rank' => $rank,
+                'url' => $url,
+                'domain' => $domain,
+                'title' => $title,
+                'description' => null,
+                'wordCount' => 0,
+                'headings' => ['h1' => [], 'h2' => [], 'h3' => []],
+                'schemaTypes' => [],
+                'internalLinks' => 0,
+                'externalLinks' => 0,
+                'status' => null,
+                'error' => null,
+            ];
+
+            if (! $result instanceof Response) {
+                // Network timeout, connection refused, or SSRF block.
+                $message = $result instanceof Throwable ? $result->getMessage() : 'No response.';
+                $competitorMatrix[] = ['error' => Str::limit($message, 120, '...')] + $failed;
+
+                continue;
+            }
+
+            $statusCode = $result->status();
+            if (! $result->successful()) {
+                $competitorMatrix[] = ['status' => $statusCode, 'error' => "HTTP {$statusCode}"] + $failed;
+
+                continue;
+            }
 
             try {
-                // Validates every redirect hop and pins DNS (see SafeHttpClient).
-                $response = $this->http->get($url, timeoutSeconds: 6);
-
-                $statusCode = $response->status();
-
-                if ($response->successful()) {
-                    $outline = $this->extractor->extract($response->body(), $url);
-
-                    $wordCount = $outline['word_count'];
-                    $successfulWordCounts[] = $wordCount;
-
-                    foreach ($outline['schema_types'] as $st) {
-                        $allSchemaTypes[] = $st;
-                    }
-
-                    foreach ($outline['headings']['h2'] as $h2) {
-                        $allH2s[] = $h2;
-                    }
-
-                    $competitorMatrix[] = [
-                        'rank' => $rank,
-                        'url' => $url,
-                        'domain' => $domain,
-                        'title' => $outline['title'] ?? $title,
-                        'description' => $outline['description'],
-                        'wordCount' => $wordCount,
-                        'headings' => $outline['headings'],
-                        'schemaTypes' => $outline['schema_types'],
-                        'internalLinks' => $outline['internal_links_count'],
-                        'externalLinks' => $outline['external_links_count'],
-                        'status' => $statusCode,
-                        'error' => null,
-                    ];
-                } else {
-                    // Graceful degradation for 403, 404, 500
-                    $competitorMatrix[] = [
-                        'rank' => $rank,
-                        'url' => $url,
-                        'domain' => $domain,
-                        'title' => $title,
-                        'description' => null,
-                        'wordCount' => 0,
-                        'headings' => ['h1' => [], 'h2' => [], 'h3' => []],
-                        'schemaTypes' => [],
-                        'internalLinks' => 0,
-                        'externalLinks' => 0,
-                        'status' => $statusCode,
-                        'error' => "HTTP {$statusCode}",
-                    ];
-                }
+                $outline = $this->extractor->extract($result->body(), $url);
             } catch (Throwable $e) {
-                // Graceful degradation for network timeout, connection refused, or SSRF block
-                $competitorMatrix[] = [
-                    'rank' => $rank,
-                    'url' => $url,
-                    'domain' => $domain,
-                    'title' => $title,
-                    'description' => null,
-                    'wordCount' => 0,
-                    'headings' => ['h1' => [], 'h2' => [], 'h3' => []],
-                    'schemaTypes' => [],
-                    'internalLinks' => 0,
-                    'externalLinks' => 0,
-                    'status' => null,
-                    'error' => Str::limit($e->getMessage(), 120, '...'),
-                ];
+                $competitorMatrix[] = ['status' => $statusCode, 'error' => Str::limit($e->getMessage(), 120, '...')] + $failed;
+
+                continue;
             }
+
+            $wordCount = $outline['word_count'];
+            $successfulWordCounts[] = $wordCount;
+
+            foreach ($outline['schema_types'] as $st) {
+                $allSchemaTypes[] = $st;
+            }
+
+            foreach ($outline['headings']['h2'] as $h2) {
+                $allH2s[] = $h2;
+            }
+
+            $competitorMatrix[] = [
+                'rank' => $rank,
+                'url' => $url,
+                'domain' => $domain,
+                'title' => $outline['title'] ?? $title,
+                'description' => $outline['description'],
+                'wordCount' => $wordCount,
+                'headings' => $outline['headings'],
+                'schemaTypes' => $outline['schema_types'],
+                'internalLinks' => $outline['internal_links_count'],
+                'externalLinks' => $outline['external_links_count'],
+                'status' => $statusCode,
+                'error' => null,
+            ];
         }
 
-        // 4. Compute Word Count Targets & Recommendations
+        // 4. Compute word-count targets & recommendations. With no fetched
+        //    competitor pages there is nothing to base a target on, so the
+        //    brief says so instead of inventing one.
         $successCount = count($successfulWordCounts);
-        $avgWordCount = $successCount > 0 ? (int) round(array_sum($successfulWordCounts) / $successCount) : 1850;
+        $incomplete = $successCount === 0;
 
-        // Top 3 average
-        $top3Counts = array_slice($successfulWordCounts, 0, 3);
-        $avgTop3 = count($top3Counts) > 0 ? (int) round(array_sum($top3Counts) / count($top3Counts)) : $avgWordCount;
-
-        $minWords = max((int) round($avgWordCount * 0.9), 1200);
-        $maxWords = (int) round($avgWordCount * 1.25);
+        $avgWordCount = null;
+        $avgTop3 = null;
+        $minWords = null;
+        $maxWords = null;
+        if (! $incomplete) {
+            $avgWordCount = (int) round(array_sum($successfulWordCounts) / $successCount);
+            $top3Counts = array_slice($successfulWordCounts, 0, 3);
+            $avgTop3 = (int) round(array_sum($top3Counts) / count($top3Counts));
+            $minWords = max((int) round($avgWordCount * 0.9), 1200);
+            $maxWords = max((int) round($avgWordCount * 1.25), $minWords);
+        }
 
         // Schema frequency
         $schemaFrequency = array_count_values($allSchemaTypes);
@@ -155,6 +167,12 @@ class ContentBriefService
             'keyword' => $normalizedKeyword,
             'searchVolume' => $searchVolume,
             'cpc' => $cpc,
+            'incomplete' => $incomplete,
+            'incompleteReason' => $incomplete
+                ? ($organicItems === []
+                    ? 'No search results were available for this keyword, so there are no competitor pages to compare.'
+                    : 'None of the top-ranking pages could be fetched, so there is no word-count target.')
+                : null,
             'metrics' => [
                 'avgWordCountTop10' => $avgWordCount,
                 'avgWordCountTop3' => $avgTop3,
@@ -164,7 +182,7 @@ class ContentBriefService
                 'totalCompetitorsTargeted' => count($competitorMatrix),
             ],
             'recommendations' => [
-                'suggestedWordCount' => "{$minWords} – {$maxWords} words",
+                'suggestedWordCount' => $incomplete ? null : "{$minWords} – {$maxWords} words",
                 'recommendedSchemas' => $popularSchemas !== [] ? $popularSchemas : ['Article', 'FAQPage'],
                 'keyH2Themes' => array_slice($uniqueH2s, 0, 12),
                 'questionsToAnswer' => array_slice($paaQuestions, 0, 8),
@@ -190,6 +208,8 @@ class ContentBriefService
                 'recommended_words_max' => $maxWords,
                 'data' => $data,
                 'markdown' => $markdown,
+                'status' => ContentBrief::STATUS_COMPLETED,
+                'error' => null,
             ]
         );
 
@@ -199,12 +219,14 @@ class ContentBriefService
     /**
      * @return array<string, mixed>
      */
-    private function fetchSerpData(Project $project, string $keyword, int $locationCode, string $languageCode): array
+    private function fetchSerpData(Project $project, string $keyword, int $locationCode, string $languageCode, bool $bypassCache = false): array
     {
         try {
-            return $this->dataForSeo->serpLive($keyword, $project, $locationCode, $languageCode);
-        } catch (ProviderNotConfiguredException $e) {
-            // Not a lookup failure: a brief without SERP data would be empty.
+            return $this->dataForSeo->serpLive($keyword, $project, $locationCode, $languageCode, $bypassCache);
+        } catch (ProviderNotConfiguredException|SpendRefusedException $e) {
+            // Not a lookup failure: missing credentials or a spend cap. The
+            // brief fails with that message rather than reading as a keyword
+            // with no results.
             throw $e;
         } catch (Throwable) {
             return [];
@@ -286,7 +308,9 @@ class ContentBriefService
         $md[] = "- **Target Keyword:** `{$keyword}`";
         $md[] = '- **Monthly Search Volume:** '.number_format((int) $data['searchVolume']).' searches/mo';
         $md[] = '- **Target CPC:** $'.number_format((float) $data['cpc'], 2);
-        $md[] = "- **Recommended Word Count:** {$recs['suggestedWordCount']} (Top-3 Competitor Avg: {$metrics['avgWordCountTop3']} words)";
+        $md[] = $recs['suggestedWordCount'] !== null
+            ? "- **Recommended Word Count:** {$recs['suggestedWordCount']} (Top-3 Competitor Avg: {$metrics['avgWordCountTop3']} words)"
+            : '- **Recommended Word Count:** Not available. '.$data['incompleteReason'];
         $md[] = "- **Recommended Schema Markup:** `{$schemas}`";
         $md[] = '';
         $md[] = '---';

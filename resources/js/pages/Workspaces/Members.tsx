@@ -19,14 +19,25 @@ interface MemberItem {
   isOwner: boolean;
 }
 
+interface MembershipEvent {
+  id: number;
+  eventType: string;
+  title: string;
+  description?: string | null;
+  userName?: string | null;
+  createdAt: string;
+}
+
 interface WorkspaceMembersProps {
   workspace: WorkspaceSummary;
   members: MemberItem[];
+  history?: MembershipEvent[];
 }
 
 export default function WorkspaceMembers({
   workspace,
   members,
+  history = [],
 }: WorkspaceMembersProps) {
   const { props } = usePage<{ auth?: { user?: { id: string } | null } }>();
   const currentUserId = props.auth?.user?.id;
@@ -218,6 +229,28 @@ export default function WorkspaceMembers({
               </p>
             </div>
           </div>
+        </div>
+
+        {/* Membership history (audit trail) */}
+        <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-5 space-y-3">
+          <h3 className="text-sm font-semibold text-white">Membership history</h3>
+          {history.length === 0 ? (
+            <p className="text-xs text-slate-500">No membership changes recorded yet.</p>
+          ) : (
+            <ul className="divide-y divide-slate-800 text-xs">
+              {history.map((event) => (
+                <li key={event.id} className="py-2 flex items-start justify-between gap-4">
+                  <div>
+                    <div className="font-medium text-slate-200">{event.title}</div>
+                    {event.description && <div className="text-slate-400">{event.description}</div>}
+                  </div>
+                  <time className="shrink-0 text-slate-500" dateTime={event.createdAt}>
+                    {new Date(event.createdAt).toLocaleString()}
+                  </time>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
 
         {/* Invite Member Modal */}
