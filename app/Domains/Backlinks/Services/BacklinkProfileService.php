@@ -9,6 +9,8 @@ use App\Domains\Crawls\Models\CrawlUrl;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Serp\DataForSeo\DataForSeoCacheRepository;
 use App\Domains\Serp\DataForSeo\DataForSeoClient;
+use App\Domains\Serp\ProviderNotConfiguredException;
+use App\Domains\Serp\SpendRefusedException;
 use Illuminate\Support\Facades\Cache;
 use Throwable;
 
@@ -105,8 +107,8 @@ class BacklinkProfileService
             $this->cache->put(self::SUMMARY_ENDPOINT, $signature, $parsed, $ttlHours);
 
             return $parsed;
-        } catch (Throwable) {
-            $this->rememberFailure(self::SUMMARY_ENDPOINT, $signature);
+        } catch (Throwable $e) {
+            $this->rememberFailure(self::SUMMARY_ENDPOINT, $signature, $e);
 
             return $this->unavailableSummary();
         }
@@ -151,10 +153,19 @@ class BacklinkProfileService
     }
 
     /**
+     * Remember a provider failure for this request. A refusal by the
+     * requesting workspace's own spend limits or a missing provider
+     * configuration isn't remembered: the key is shared by every workspace
+     * looking at the same target, and those aren't failures of the target.
+     *
      * @param  array<string, mixed>  $signature
      */
-    private function rememberFailure(string $endpoint, array $signature): void
+    private function rememberFailure(string $endpoint, array $signature, Throwable $e): void
     {
+        if ($e instanceof SpendRefusedException || $e instanceof ProviderNotConfiguredException) {
+            return;
+        }
+
         Cache::put($this->failureKey($endpoint, $signature), true, now()->addMinutes(self::FAILURE_TTL_MINUTES));
     }
 
@@ -208,8 +219,8 @@ class BacklinkProfileService
             $this->cache->put(self::DOMAINS_ENDPOINT, $signature, ['items' => $items], $ttlHours);
 
             return $items;
-        } catch (Throwable) {
-            $this->rememberFailure(self::DOMAINS_ENDPOINT, $signature);
+        } catch (Throwable $e) {
+            $this->rememberFailure(self::DOMAINS_ENDPOINT, $signature, $e);
 
             return [];
         }
@@ -243,8 +254,8 @@ class BacklinkProfileService
             $this->cache->put(self::ANCHORS_ENDPOINT, $signature, ['items' => $items], $ttlHours);
 
             return $items;
-        } catch (Throwable) {
-            $this->rememberFailure(self::ANCHORS_ENDPOINT, $signature);
+        } catch (Throwable $e) {
+            $this->rememberFailure(self::ANCHORS_ENDPOINT, $signature, $e);
 
             return [];
         }
@@ -278,8 +289,8 @@ class BacklinkProfileService
             $this->cache->put(self::PAGES_ENDPOINT, $signature, ['items' => $items], $ttlHours);
 
             return $items;
-        } catch (Throwable) {
-            $this->rememberFailure(self::PAGES_ENDPOINT, $signature);
+        } catch (Throwable $e) {
+            $this->rememberFailure(self::PAGES_ENDPOINT, $signature, $e);
 
             return [];
         }

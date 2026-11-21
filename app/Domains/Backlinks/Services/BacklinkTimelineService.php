@@ -8,6 +8,8 @@ use App\Domains\Backlinks\Events\BacklinkAlertTriggered;
 use App\Domains\Backlinks\Models\BacklinkHistorySnapshot;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Serp\DataForSeo\DataForSeoClient;
+use App\Domains\Serp\ProviderNotConfiguredException;
+use App\Domains\Serp\SpendRefusedException;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Throwable;
@@ -144,8 +146,11 @@ class BacklinkTimelineService
             }
 
             return $count;
-        } catch (Throwable) {
-            Cache::put($failureKey, true, now()->addMinutes(self::FAILURE_TTL_MINUTES));
+        } catch (Throwable $e) {
+            // Spend refusals and missing configuration aren't provider failures.
+            if (! $e instanceof SpendRefusedException && ! $e instanceof ProviderNotConfiguredException) {
+                Cache::put($failureKey, true, now()->addMinutes(self::FAILURE_TTL_MINUTES));
+            }
 
             return 0;
         }

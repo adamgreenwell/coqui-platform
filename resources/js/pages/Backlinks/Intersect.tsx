@@ -54,6 +54,8 @@ interface BrokenReclaimItem {
   referring_domains: number;
   dofollow: number;
   dofollow_ratio: number | null;
+  // Counts come from the top-ranked broken backlinks only: they're minimums.
+  sampled?: boolean;
   pitch_idea: string;
 }
 
@@ -684,12 +686,12 @@ export default function BacklinkIntersect({
 
                           {/* Backlinks */}
                           <td className="py-3 px-3 text-right font-mono font-bold text-purple-400">
-                            {item.backlinks.toLocaleString()}
+                            {item.backlinks.toLocaleString()}{item.sampled ? '+' : ''}
                           </td>
 
                           {/* Referring Domains */}
                           <td className="py-3 px-3 text-right font-mono text-white">
-                            {item.referring_domains.toLocaleString()}
+                            {item.referring_domains.toLocaleString()}{item.sampled ? '+' : ''}
                           </td>
 
                           {/* Dofollow % */}

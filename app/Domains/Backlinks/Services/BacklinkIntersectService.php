@@ -192,6 +192,11 @@ class BacklinkIntersectService
                 continue;
             }
 
+            // Only the top-ranked broken backlinks are fetched. When the
+            // provider has more, the per-page counts are lower bounds.
+            $totalCount = (int) ($response['tasks'][0]['result'][0]['total_count'] ?? count($items));
+            $sampled = $totalCount > count($items);
+
             // Each item is one backlink to a broken page; group them by page.
             /** @var array<string, array{status: int|null, backlinks: int, dofollow: int, domains: array<string, true>}> $pages */
             $pages = [];
@@ -233,10 +238,13 @@ class BacklinkIntersectService
                     'referring_domains' => count($page['domains']),
                     'dofollow' => $page['dofollow'],
                     'dofollow_ratio' => $backlinks > 0 ? (int) round(($page['dofollow'] / $backlinks) * 100) : null,
+                    // True when the counts come from a sample and are minimums.
+                    'sampled' => $sampled,
                     'pitch_idea' => sprintf(
-                        'Outreach hook: %s has a dead page (%s) with %d broken backlinks. Pitch a relevant %s page as the replacement.',
+                        'Outreach hook: %s has a dead page (%s) with %s%d broken backlinks. Pitch a relevant %s page as the replacement.',
                         $cleanDomain,
                         $statusCode !== null ? 'HTTP '.$statusCode : 'broken',
+                        $sampled ? 'at least ' : '',
                         $backlinks,
                         $project->domain
                     ),

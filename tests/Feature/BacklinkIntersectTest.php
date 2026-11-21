@@ -350,4 +350,26 @@ class BacklinkIntersectTest extends TestCase
         Http::assertSentCount(1);
         Http::assertSent(fn (Request $request): bool => ($request->data()[0]['targets'] ?? null) === ['1' => 'alpha.com', '2' => 'beta.com']);
     }
+
+    public function test_broken_reclaim_counts_from_a_sample_are_marked_as_minimums(): void
+    {
+        Http::fake([
+            'https://sandbox.dataforseo.com/v3/backlinks/domain_intersection/live' => Http::response(['status_code' => 20000, 'tasks' => [['result' => [['items' => []]]]]], 200),
+            'https://sandbox.dataforseo.com/v3/backlinks/backlinks/live' => Http::response([
+                'status_code' => 20000,
+                'tasks' => [['result' => [[
+                    'total_count' => 4200,
+                    'items' => [
+                        ['url_to' => 'https://competitor-a.com/old', 'url_to_status_code' => 404, 'domain_from' => 'one.com', 'dofollow' => true],
+                    ],
+                ]]]],
+            ], 200),
+        ]);
+
+        $this->actingAs($this->user)
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks/intersect")
+            ->assertInertia(fn ($page) => $page
+                ->where('brokenReclaim.0.sampled', true)
+                ->where('brokenReclaim.0.pitch_idea', fn (string $pitch): bool => str_contains($pitch, 'at least 1 broken backlinks')));
+    }
 }

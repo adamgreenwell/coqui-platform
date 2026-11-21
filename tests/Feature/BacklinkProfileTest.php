@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace Tests\Feature;
 
+use App\Domains\Backlinks\Services\BacklinkProfileService;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Crawls\Models\CrawlUrl;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
+use App\Domains\Serp\DataForSeo\DataForSeoCacheRepository;
+use App\Domains\Serp\DataForSeo\DataForSeoClient;
+use App\Domains\Serp\SpendRefusedException;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Http;
@@ -510,5 +514,40 @@ class BacklinkProfileTest extends TestCase
             'project_id' => $this->project->id,
             'event_type' => 'backlinks.refreshed',
         ]);
+    }
+
+    public function test_a_spend_refusal_is_not_remembered_as_a_failure_for_other_workspaces(): void
+    {
+        $refusing = \Mockery::mock(DataForSeoClient::class)->shouldIgnoreMissing();
+        $refusing->shouldReceive('backlinksSummary')->andThrow(new SpendRefusedException('Monthly allowance used up.'));
+        $service = new BacklinkProfileService($refusing, app(DataForSeoCacheRepository::class));
+        $this->assertTrue($service->getBacklinkProfile($this->project)['summary']['unavailable']);
+
+        // Another workspace looking at the same domain still fetches it.
+        Http::fake([
+            'https://sandbox.dataforseo.com/v3/backlinks/summary/live' => Http::response([
+                'status_code' => 20000,
+                'tasks' => [['result' => [['rank' => 300, 'backlinks' => 50, 'referring_domains' => 9]]]],
+            ], 200),
+            'https://sandbox.dataforseo.com/v3/backlinks/*' => Http::response($this->emptyItems(), 200),
+        ]);
+        $otherWorkspace = Workspace::query()->create([
+            'plan_tier' => 'pro',
+            'name' => 'Other Agency',
+            'slug' => 'other-agency',
+            'owner_id' => $this->user->id,
+            'monthly_dfs_budget_usd' => 100.00,
+        ]);
+        $otherProject = Project::query()->create([
+            'workspace_id' => $otherWorkspace->id,
+            'name' => 'Same Site',
+            'domain' => 'coquiseo.com',
+            'canonical_url' => 'https://coquiseo.com/',
+            'location_code' => 2840,
+            'language_code' => 'en',
+        ]);
+
+        $profile = app(BacklinkProfileService::class)->getBacklinkProfile($otherProject);
+        $this->assertSame(50, $profile['summary']['backlinks']);
     }
 }
