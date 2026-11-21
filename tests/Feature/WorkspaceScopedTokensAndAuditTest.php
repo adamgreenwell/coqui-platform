@@ -192,6 +192,27 @@ class WorkspaceScopedTokensAndAuditTest extends TestCase
             ->assertInertia(fn ($page) => $page->where('activities', fn ($rows): bool => collect($rows)->pluck('eventType')->contains('workspace.member_role_changed')));
     }
 
+    public function test_repeated_or_no_op_membership_changes_are_not_recorded(): void
+    {
+        $grace = User::factory()->create(['name' => 'Grace']);
+        $outsider = User::factory()->create(['name' => 'Outsider']);
+        $base = "/workspaces/{$this->workspaceA->uuid}/members";
+
+        $this->actingAs($this->user)->post($base, ['email' => $grace->email, 'role' => 'viewer'])->assertRedirect();
+        // Same role again: nothing changes.
+        $this->actingAs($this->user)->put("{$base}/{$grace->uuid}", ['role' => 'viewer'])->assertSessionHasNoErrors();
+        $this->actingAs($this->user)->delete("{$base}/{$grace->uuid}")->assertSessionHasNoErrors();
+        // A repeat removal, and changes to someone outside the workspace.
+        $this->actingAs($this->user)->delete("{$base}/{$grace->uuid}")->assertSessionHasErrors('member');
+        $this->actingAs($this->user)->put("{$base}/{$outsider->uuid}", ['role' => 'editor'])->assertSessionHasErrors('member');
+        $this->actingAs($this->user)->delete("{$base}/{$outsider->uuid}")->assertSessionHasErrors('member');
+
+        $this->assertSame(
+            ['workspace.member_added', 'workspace.member_removed'],
+            WorkspaceActivity::query()->where('workspace_id', $this->workspaceA->id)->orderBy('id')->pluck('event_type')->all(),
+        );
+    }
+
     public function test_failed_rank_checks_and_collectors_appear_in_the_project_feed(): void
     {
         $keyword = TrackedKeyword::query()->create([

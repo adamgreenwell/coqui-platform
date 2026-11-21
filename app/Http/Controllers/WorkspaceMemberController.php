@@ -115,7 +115,16 @@ class WorkspaceMemberController extends Controller
             'role' => ['required', 'in:admin,editor,viewer'],
         ]);
 
-        $previousRole = $workspace->members()->where('users.id', $member->id)->first()?->pivot?->getAttribute('role');
+        $membership = $workspace->members()->where('users.id', $member->id)->first();
+        if ($membership === null) {
+            return back()->withErrors(['member' => "{$member->name} isn't a member of this workspace."]);
+        }
+
+        $previousRole = $membership->pivot->getAttribute('role');
+        if ($previousRole === (string) $validated['role']) {
+            // Nothing changed, so nothing to record.
+            return back()->with('success', "{$member->name} is already a {$previousRole}.");
+        }
 
         $workspace->members()->updateExistingPivot($member->id, [
             'role' => (string) $validated['role'],
@@ -156,7 +165,11 @@ class WorkspaceMemberController extends Controller
 
         $previousRole = $workspace->members()->where('users.id', $member->id)->first()?->pivot?->getAttribute('role');
 
-        $workspace->members()->detach($member->id);
+        // Only record a removal that actually happened (not a repeat, and
+        // not someone from another workspace).
+        if ($workspace->members()->detach($member->id) === 0) {
+            return back()->withErrors(['member' => "{$member->name} isn't a member of this workspace."]);
+        }
 
         /** @var User $actor */
         $actor = $request->user();
