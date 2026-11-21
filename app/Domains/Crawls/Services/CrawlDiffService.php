@@ -166,6 +166,9 @@ class CrawlDiffService
         $newlyBroken = [];
         $otherTransitions = [];
         $totalLostClicks = 0;
+        // Paths already counted, so URL variants of one page (e.g. with and
+        // without a trailing slash) don't add its clicks twice.
+        $countedPaths = [];
 
         foreach ($rawTransitions as $row) {
             $bStatus = isset($row->baseline_status) ? (int) $row->baseline_status : null;
@@ -194,8 +197,10 @@ class CrawlDiffService
 
             if ($isBroken) {
                 $newlyBroken[] = $item;
-                if ($clicks !== null && $clicks > 0) {
+                $pathHash = $pathHashes[$hash] ?? $hash;
+                if ($clicks !== null && $clicks > 0 && ! isset($countedPaths[$pathHash])) {
                     $totalLostClicks += $clicks;
+                    $countedPaths[$pathHash] = true;
                 }
             } else {
                 $otherTransitions[] = $item;

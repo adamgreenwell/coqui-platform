@@ -13,9 +13,11 @@ use App\Domains\Integrations\Services\SearchPerformanceSyncService;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
 use App\Models\User;
+use App\Support\PageUrl;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -275,6 +277,44 @@ class CrawlCompareTest extends TestCase
             ->where('diff.newlyBroken.0.gscClicks', 850)
             ->where('diff.newlyBroken.1.url', $lowTrafficUrl)
             ->where('diff.newlyBroken.1.gscClicks', 45)
+        );
+    }
+
+    public function test_url_variants_of_one_page_count_its_clicks_once_in_the_lost_total(): void
+    {
+        foreach (['https://acme.test/shop/item', 'https://acme.test/shop/item/'] as $url) {
+            foreach ([[$this->baselineRun, 200], [$this->targetRun, 404]] as [$run, $status]) {
+                CrawlUrl::query()->create([
+                    'crawl_run_id' => $run->id,
+                    'url' => $url,
+                    'url_hash' => hash('sha256', $url),
+                    'status' => $status,
+                ]);
+            }
+        }
+
+        DB::table('search_performance_pages')->insert([
+            'project_id' => $this->project->id,
+            'provider' => 'gsc',
+            'url' => 'https://acme.test/shop/item',
+            'url_hash' => PageUrl::hash('/shop/item'),
+            'date' => Carbon::now()->subDays(5)->toDateString(),
+            'clicks' => 100,
+            'impressions' => 1000,
+            'ctr' => 0.1,
+            'position' => 3.0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($this->user)->get(
+            "/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/crawls/compare?baseline={$this->baselineRun->external_crawl_id}&target={$this->targetRun->external_crawl_id}"
+        )->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('diff.summary.delta.newlyBrokenCount', 2)
+            // Each variant shows the page's traffic, but the total counts it once.
+            ->where('diff.newlyBroken.0.gscClicks', 100)
+            ->where('diff.newlyBroken.1.gscClicks', 100)
+            ->where('diff.summary.delta.totalLostClicks', 100)
         );
     }
 
