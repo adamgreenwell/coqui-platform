@@ -55,9 +55,32 @@ return new class extends Migration
                 ->orderBy('id')
                 ->get();
             $keep = $rows->first();
+            // Merge every batch's path summaries so none are lost.
+            $paths = [];
+            foreach ($rows as $row) {
+                $decoded = is_string($row->top_paths) ? json_decode($row->top_paths, true) : null;
+                foreach (is_array($decoded) ? $decoded : [] as $p) {
+                    if (! is_array($p) || ! isset($p['path'])) {
+                        continue;
+                    }
+                    $key = $p['path'].'|'.($p['status'] ?? '');
+                    $merged = $paths[$key] ?? [...$p, 'hits' => 0];
+                    $merged['hits'] += (int) ($p['hits'] ?? 0);
+                    if (! isset($merged['redirectTarget']) && isset($p['redirectTarget'])) {
+                        $merged['redirectTarget'] = $p['redirectTarget'];
+                    }
+                    if ((int) ($p['hops'] ?? 0) > (int) ($merged['hops'] ?? 0)) {
+                        $merged['hops'] = (int) $p['hops'];
+                    }
+                    $paths[$key] = $merged;
+                }
+            }
+            usort($paths, fn (array $x, array $y): int => $y['hits'] <=> $x['hits']);
+
             DB::table('bot_crawl_logs')->where('id', $keep->id)->update([
                 'hit_count' => $rows->sum('hit_count'),
                 'bytes_served' => $rows->sum('bytes_served'),
+                'top_paths' => $paths === [] ? null : json_encode(array_slice($paths, 0, 100), JSON_THROW_ON_ERROR),
             ]);
             DB::table('bot_crawl_logs')->whereIn('id', $rows->pluck('id')->slice(1)->all())->delete();
         }
