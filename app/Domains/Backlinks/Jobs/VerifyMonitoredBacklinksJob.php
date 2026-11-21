@@ -27,12 +27,13 @@ class VerifyMonitoredBacklinksJob implements ShouldQueue
 
     /**
      * Seconds from the start of a run (worker request included) after which
-     * no new direct check starts. Pacing never waits past it, and a check
-     * started just before it takes at most
-     * BacklinkVerificationService::DIRECT_INSPECTION_MAX_SECONDS, so a run
-     * ends inside $timeout and the queue's 90-second retry_after.
+     * no new link is started. Pacing never waits past it, and a link started
+     * just before it takes at most a direct inspection plus applying its
+     * observation (BacklinkVerificationService::DIRECT_INSPECTION_MAX_SECONDS
+     * + OBSERVATION_MAX_SECONDS), so a run ends inside $timeout and the
+     * queue's 90-second retry_after.
      */
-    public const BUDGET_SECONDS = 45;
+    public const BUDGET_SECONDS = 40;
 
     public int $tries = 1;
 

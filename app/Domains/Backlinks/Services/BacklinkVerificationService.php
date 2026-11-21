@@ -32,6 +32,18 @@ class BacklinkVerificationService
      */
     public const DIRECT_INSPECTION_MAX_SECONDS = self::DIRECT_REQUEST_TIMEOUT_SECONDS * (SafeHttpClient::DEFAULT_MAX_REDIRECTS + 1);
 
+    /**
+     * Longest one broadcast can wait on Reverb: the connect and request
+     * timeouts in config/broadcasting.php.
+     */
+    public const BROADCAST_MAX_SECONDS = 3;
+
+    /**
+     * Longest applying one observation can take: a state change broadcasts
+     * the alert and the activity entry.
+     */
+    public const OBSERVATION_MAX_SECONDS = 2 * self::BROADCAST_MAX_SECONDS;
+
     public function __construct(
         private readonly CoquiWorkerClient $worker,
         private readonly DataForSeoClient $dataForSeo,
@@ -67,8 +79,8 @@ class BacklinkVerificationService
     /**
      * Verify a batch of links: the worker first, then a direct check, paced
      * per host, of any link the worker couldn't settle. With a deadline (unix
-     * time) direct checks stop there, after at least one, and the links not
-     * reached are returned for a later run.
+     * time) no new link is started after it (once at least one is done), and
+     * the links not reached are returned for a later run.
      *
      * @param  Collection<int, MonitoredBacklink>  $links
      * @return Collection<int, MonitoredBacklink> links not verified before the deadline
@@ -76,6 +88,12 @@ class BacklinkVerificationService
     public function verifyLinks(Project $project, Collection $links, ?float $deadline = null): Collection
     {
         $observations = $this->observeWithWorker($project, $links);
+
+        /** @var Collection<int, MonitoredBacklink> $unverified */
+        $unverified = new Collection;
+        // Links settled so far; the deadline applies once there's at least
+        // one, so every run makes progress.
+        $done = 0;
 
         $pending = [];
         foreach ($links as $link) {
@@ -86,14 +104,20 @@ class BacklinkVerificationService
                 continue;
             }
 
+            // Applying an observation can broadcast; it counts toward the
+            // run's time like a direct check does.
+            if ($deadline !== null && $done > 0 && microtime(true) >= $deadline) {
+                $unverified->push($link);
+
+                continue;
+            }
+
             $this->applyObservation($project, $link, $obs);
+            $done++;
         }
 
-        /** @var Collection<int, MonitoredBacklink> $unverified */
-        $unverified = new Collection;
-        $checked = 0;
         foreach (self::interleaveByHost($pending) as $link) {
-            if ($deadline !== null && $checked > 0 && microtime(true) >= $deadline) {
+            if ($deadline !== null && $done > 0 && microtime(true) >= $deadline) {
                 $unverified->push($link);
 
                 continue;
@@ -108,7 +132,7 @@ class BacklinkVerificationService
             }
 
             $this->applyObservation($project, $link, $this->inspectDirectly($link->source_url, $link->target_url));
-            $checked++;
+            $done++;
         }
 
         return $unverified;

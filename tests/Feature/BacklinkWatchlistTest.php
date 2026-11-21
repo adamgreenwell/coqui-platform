@@ -611,8 +611,38 @@ CSV;
 
         $this->assertLessThan(
             $job->timeout,
-            VerifyMonitoredBacklinksJob::BUDGET_SECONDS + BacklinkVerificationService::DIRECT_INSPECTION_MAX_SECONDS,
+            VerifyMonitoredBacklinksJob::BUDGET_SECONDS
+                + BacklinkVerificationService::DIRECT_INSPECTION_MAX_SECONDS
+                + BacklinkVerificationService::OBSERVATION_MAX_SECONDS,
         );
+
+        // Broadcasts can't wait longer than the service allows for.
+        $client = config('broadcasting.connections.reverb.client_options');
+        $this->assertLessThanOrEqual(
+            BacklinkVerificationService::BROADCAST_MAX_SECONDS,
+            $client['timeout'] + $client['connect_timeout'],
+        );
+    }
+
+    public function test_worker_observations_past_the_deadline_are_left_for_the_next_run(): void
+    {
+        $links = collect(['https://a.example/1', 'https://b.example/2', 'https://c.example/3'])
+            ->map(fn (string $url) => $this->monitor($url));
+
+        config()->set('coqui.worker.url', 'http://coqui-worker:8085');
+        config()->set('coqui.worker.token', 'worker-secret');
+        Http::fake([
+            'http://coqui-worker:8085/jobs/inspect' => Http::response(['results' => $links->map(fn (MonitoredBacklink $l): array => [
+                'url' => $l->source_url, 'status' => 200, 'hasTargetLink' => true, 'observedRel' => 'dofollow', 'noindex' => false,
+            ])->all()], 200),
+        ]);
+
+        // The deadline has already passed: one link is settled for progress,
+        // the rest wait.
+        $left = app(BacklinkVerificationService::class)->verifyLinks($this->project, collect($links->all()), microtime(true) - 1);
+
+        $this->assertCount(2, $left);
+        $this->assertSame(1, MonitoredBacklink::query()->whereNotNull('last_verified_at')->count());
     }
 
     public function test_the_scheduled_command_queues_by_default_and_can_run_inline(): void
