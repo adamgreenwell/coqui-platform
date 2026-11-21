@@ -16,7 +16,7 @@
 |---|---|---|---|---|
 | Ahrefs / Semrush / Moz | — | ✓ | ✓ | — |
 | Screaming Frog | ✓ ($279/yr per seat) | — (local SQLite file) | — | — |
-| **Coqui** | **✓ free with every plan** | **✓** | **✓** | **✓ (Runnr)** |
+| **Coqui** | **✓ free core, unlimited** | **✓** | **✓** | **✓ (Runnr)** |
 
 Screaming Frog owns the deep-crawl job and stops at a local database. The SaaS platforms own the ongoing-monitoring job and meter every page they crawl. Nobody sells both halves, because a SaaS company has no reason to give away a desktop app and a desktop company has no cloud.
 
@@ -49,11 +49,13 @@ The import is the single most valuable switching feature we have. A prospect can
 
 ### 1.4 The packaging rule
 
-**Never meter the desktop crawler.** It costs approximately nothing, and charging for it would destroy the only structural advantage we have. Meter the cloud instead: stored crawls, workers, rank checks, API calls.
+**Keep the desktop crawler free and never meter local crawl URLs.** Gate select advanced or cloud-connected desktop features by subscription tier instead, and meter the cloud side: stored crawls, workers, rank checks, and API calls.
+
+Why this is a win-win we can say out loud: Ahrefs and Semrush crawl your site from their own server fleets and pass that infrastructure bill straight to subscribers. Running **Coqui Desktop** locally offloads heavy crawl compute to the user's own hardware—which cuts our infrastructure costs and lets us pass those savings directly back to the customer.
 
 | | Free | Solo $29 | Pro $79 | Agency $199 |
 |---|---|---|---|---|
-| Desktop crawler | **Unlimited** | **Unlimited** | **Unlimited** | **Unlimited** |
+| Desktop crawler | **Free (core unlimited)** | **Unlimited + tier features** | **Unlimited + tier features** | **Unlimited + tier features** |
 | Stored crawls / history | 1 (latest) | 10, 90 days | 50, 1 year | Unlimited, forever |
 | Crawl comparison | — | ✓ | ✓ | ✓ |
 | Cloud crawls (worker) | 1,000 URLs/mo | 5,000/mo | 25,000/mo | 250,000/mo |
@@ -61,7 +63,13 @@ The import is the single most valuable switching feature we have. A prospect can
 
 A free tier with an unlimited local crawler and one stored crawl is a genuine acquisition engine: useful enough to adopt, and it makes the moment of value — history, diff, share — a paid one.
 
-### 1.5 Three kinds of feature, three cost behaviours
+### 1.5 Target demographic: "new to SEO" and "no time to SEO"
+
+- **Who we are built for:** Founders, small business owners, lean teams, and editors who are either new to SEO or simply don't have the hours to live inside an SEO suite.
+- **Why the Big Three lose them:** Ahrefs, Semrush, and Moz are built for specialists—you practically need a dedicated SEO person, data analyst, or technical SEO engineer just to wade through their dashboards and turn raw numbers into action.
+- **Product & UX rule:** Default every workflow to **plain-English, prioritized actions** ("do these 3 things this week": striking-distance wins, content decay alerts, broken high-value links, post-deploy smoke checks, and MCP/AI-agent helpers) rather than 40-column data dumps—while keeping full Screaming Frog-grade depth in **Coqui Desktop** whenever they (or a contractor) want to go deep.
+
+### 1.6 Three kinds of feature, three cost behaviours
 
 | Class | Source | Marginal cost | Examples |
 |---|---|---|---|
@@ -76,12 +84,12 @@ Two rules follow, and they govern every feature in this document:
 
 Rule 2 is currently violated. That is section 2.
 
-### 1.6 Risks, named
+### 1.7 Risks, named
 
 | Risk | Why it is real | Mitigation |
 |---|---|---|
 | **Free-rider** | Screaming Frog buyers are often subscription-averse; they may take the crawler and never pay | Make cloud history, diff and sharing the paid value, not the crawler; keep the free stored-crawl limit tight |
-| **"Not as good as SF"** | That audience knows the product deeply and will find the missing tabs and reports | Do not invite the comparison until 1.0; publish the parity harness as evidence when we do |
+| **"Not as good as SF"** | That audience knows the product deeply and will find the missing tabs and reports | Do not invite the comparison until 1.0; publish the parity harness as evidence when we do. Revisit putting JS rendering behind Solo: Screaming Frog's free tier renders, so a free Coqui that does not will read as broken to the people we most want |
 | **Support surface** | Three operating systems, proxies, TLS, enterprise networks, auto-update | doctor, bench, reproducible builds and checksummed updates already exist; budget a support rotation before launch |
 | **Trademark and comparative claims** | "Better than Screaming Frog" in a headline invites trouble | Keep the clean-room disclaimer, avoid comparative advertising, let customers draw the conclusion |
 | **Forkability** | The crawler is described as open source but has no licence file yet | Decide the licence deliberately: a permissive crawler is fine if the moat is the platform, hosting data and accumulated history |
@@ -89,20 +97,20 @@ Rule 2 is currently violated. That is section 2.
 
 ## 2. Unit economics — the part that decides whether the wedge works
 
-### 2.1 The billing-unit trap, and a 10× bug in the spend guard
+### 2.1 The billing-unit trap that hid a 10× cost error
 
 DataForSEO bills SERP data **per 10 results**, not per request. `config/coqui.php` records `serp_standard_task = 0.0006`, which is the price of one 10-result page. But rank tasks are submitted with `'depth' => 100` (`RunRankBatchesCommand.php:151`) — ten pages — so one check actually costs **$0.0060**.
 
 `submitStandardSerpTasks()` (`DataForSeoClient.php:725`) reserves `unitCost + aiOverviewSurcharge` once per task and ignores depth. Every rank check is therefore written to the ledger at one tenth of its real cost, and the daily cap, monthly cap, per-workspace budget and drift alert all operate on a number that is 10× too small.
 
-| Tier | Checks/month at plan limits | Ledger reserves | Real cost at depth 100 | Undercount |
+| Tier | Checks/month at the shipped keyword limits | Ledger reserves | Real cost at depth 100 | Undercount |
 |---|---|---|---|---|
-| Free | 429 | $0.26 | $2.57 | 10× |
-| Personal | 9,000 | $5.40 | $54.00 | 10× |
+| Free | 87 (20 keywords weekly) | $0.05 | $0.52 | 10× |
+| Solo | 9,000 | $5.40 | $54.00 | 10× |
 | Pro | 30,000 | $18.00 | $180.00 | 10× |
-| Agency | 300,000 | $180.00 | $1,800.00 | 10× |
+| Agency | 150,000 | $90.00 | $900.00 | 10× |
 
-The caps do not bind. A Free workspace can spend roughly $26/month against an assumed $0.50 and still look compliant, and four of them exhaust the platform's $100 monthly cap while the ledger reads $10. This is the most important number in the business and it is presently wrong in the permissive direction. Fix before any pricing work: estimate `ceil(depth / 10) × base`, and apply the same multiplier to the AI Overview and PAA surcharges if the vendor applies them per page.
+**Fixed in #164.** `submitStandardSerpTasks()` now reserves `ceil(depth / 10)` pages per task, defaulting to 10 results per page and depth 10 when a task does not set one, and the platform caps moved to $75/day and $1,500/month. The table above records what the bug meant while it existed: a Free workspace could spend roughly $26/month against an assumed $0.50 and still look compliant, and four of them could exhaust the platform's $100 monthly cap while the ledger read $10.
 
 ### 2.2 Cost per operation, corrected
 
@@ -130,14 +138,14 @@ Two lines matter more than the rest. Our own crawler is **3× cheaper than the c
 
 Daily tracking plus one backlink refresh and a month of keyword research:
 
-| Tier | Price | Tracked keywords | Rank COGS at depth 10 | at depth 20 | at depth 100 | Margin at depth 100 |
+| Plan | Price | Tracked keywords | Rank COGS at depth 10 | at depth 20 | at depth 100 | Margin at depth 100 |
 |---|---|---|---|---|---|---|
-| Free | $0 | 100 (weekly) | $0.26 | $0.51 | $2.57 | −$2.57 |
-| Personal | $19 | 300 (daily) | $5.40 | $10.80 | $54.00 | **−$35.00** |
-| Pro | $49 | 1,000 (daily) | $18.00 | $36.00 | $180.00 | **−$131.00** |
-| Agency | $199 | 10,000 (daily) | $180.00 | $360.00 | $1,800.00 | **−$1,601.00** |
+| Free | $0 | 20 (weekly) | $0.05 | $0.10 | $0.52 | −$0.52 |
+| Solo | $29 | 300 (daily) | $5.40 | $10.80 | $54.00 | **−$25.00** |
+| Pro | $79 | 1,000 (daily) | $18.00 | $36.00 | $180.00 | **−$101.00** |
+| Agency | $199 | 5,000 (daily) | $90.00 | $180.00 | $900.00 | **−$701.00** |
 
-Every paid tier loses money at its advertised limits if depth stays at 100. Depth is therefore not a technical detail; it is the pricing lever, worth a 10× swing on the largest cost line.
+Read this as the *uncapped* hypothetical: it shows why depth, not keyword count, is the lever. In the shipped product the credit pool binds first — Free 100 credits caps rank spend at $0.06/month, Solo 3,000 at $1.80, Pro 10,000 at $6.00, Agency 45,000 at $27.00 — and every one fits inside its plan allowance.
 
 ### 2.4 Anchoring the price against what people already pay
 
@@ -175,7 +183,16 @@ Proposal: **one credit = one SERP page of 10 results**. A depth-100 check costs 
 | Agency | $199 | 45,000 | 1,500 | 150 | $27.00 | **86%** |
 | Top-up | $10 | +3,000 | +100 | +10 | $1.80 | **82%** |
 
-Depth is now a product decision rather than an accident: default depth 10–20 on lower tiers (where 90% of action is), and charge 10 credits for a deep check on Pro and Agency. A customer who wants Ahrefs-style depth-100 tracking on 1,000 keywords costs us $180/month, which is exactly what the Agency credit pool is sized for.
+Depth is a price, not a permission: anyone may request depth 100, it simply costs ten credits. That keeps the cost lever without the awkward "why can't I see position 47" conversation, and it means a customer who wants Ahrefs-style depth-100 tracking on 1,000 keywords pays for it in credits ($180 of vendor cost) rather than being silently subsidised.
+
+What the pools actually buy, which is what a pricing page should show:
+
+| Plan | Weekly @ depth 10 | Daily @ depth 10 | Weekly @ depth 100 | Daily @ depth 100 |
+|---|---|---|---|---|
+| Free | 23 | 3 | 2 | 0 |
+| Solo | 693 | 100 | 69 | 10 |
+| Pro | 2,309 | 333 | 231 | 33 |
+| Agency | 10,392 | 1,500 | 1,039 | 150 |
 
 Compared per check with the market:
 
@@ -189,11 +206,58 @@ Compared per check with the market:
 
 At depth 100 we are competitive with Ahrefs and Semrush per check but not with SE Ranking. At depth 10 we are far cheaper than everyone. That is the honest positioning: **depth where it matters, unlimited elsewhere**.
 
-### 2.6 Two more defects to fix before selling
+### 2.6 Defects found and fixed before launch
 
-**The Free tier is upside down, and it can take down paying customers.** `planLimits()` gives Free a **$25/month** DataForSEO allowance and Personal **$8**. Free is three times more generous than the $19 plan. Combined with the 10× undercount, a Free workspace can spend roughly $260 of real data against a $25 assumption before the guard notices — and the platform-wide cap defaults to $5/day and $100/month.
+Recorded so the reasoning survives; both shipped in #164 and #167.
 
-**Allowances are marketed as value but enforced as cost.** "$150/mo Live SEO Data Allowance" on a $49 plan reads as a feature; in code it is permission to spend $150. Rename it or size it to the price.
+**The Free tier was upside down.** Free carried a **$25/month** DataForSEO allowance against the $19 plan's **$8**, and self-serve registration mints a Free workspace per signup. Free is now **$0.50**, about a quarter of Solo's $8, and the platform caps are $75/day and $1,500/month — runaway guards rather than a budget four free accounts can exhaust.
+
+**Allowances were marketed as value but enforced as cost.** "$150/mo Live SEO Data Allowance" on a $49 plan read as a feature while the code treated it as permission to spend $150. The pricing copy is now generated from the number the guard enforces (`PlanCatalog`), so the two cannot disagree again.
+
+### 2.7 Tier gating & throttling matrix (Desktop + Cloud)
+
+Every capability in Coqui falls into one of three packaging buckets:
+
+1. **Ungated (Free Forever — Acquisition & "Aha!" Engine):** Zero-COGS local crawling, Screaming Frog DB import, first-party data connections, and plain-English "top 3 issues" action cards. Never punish someone for learning SEO or trying the crawler.
+2. **Feature-Gated (Unlocked by Tier — History, Automation, Power & Agency Leverage):** Cloud crawl history/diffs, scheduled crawls, advanced desktop power tools (JS rendering, Web Vitals, axe, custom extraction, CLI/MCP), backlink intelligence, content briefs, AI/GEO tracking, white-label reports, multi-seat workspaces, and Runnr deploy smoke tests.
+3. **Throttled / Metered (Credits & Quotas — Linear Vendor COGS):** Anything that hits DataForSEO, SE Ranking, SERPHouse, or cloud worker compute—sized so worst-case COGS stays under ~30% of tier revenue (matching `### 2.5`'s SERP credit pool: Free 100, Solo 3,000, Pro 10,000, Agency 45,000).
+
+#### A. Coqui Desktop: Ungated Free Core vs. Tier-Gated Power Features
+
+| Desktop Capability | Free ($0) | Solo ($29) | Pro ($79) | Agency ($199) | Cost Class / Rationale |
+|---|---|---|---|---|---|
+| Unlimited local URL crawling (no 500-URL cliff) | **Ungated** | **Ungated** | **Ungated** | **Ungated** | Owned (user CPU); primary acquisition hook |
+| Core static SEO audit rules (status, titles, metas, canonicals, redirects, H1–H6, broken links, robots/sitemaps, social meta) | **Ungated** | **Ungated** | **Ungated** | **Ungated** | Owned (user CPU); gives beginners a real audit |
+| Screaming Frog DB import (`.seospider` / SQLite) | **Ungated** | **Ungated** | **Ungated** | **Ungated** | Switching wedge; brings historical data into Coqui |
+| Standard CSV/Excel export + basic HTML summary + local SQLite save/open | **Ungated** | **Ungated** | **Ungated** | **Ungated** | Owned (user CPU); zero server cost |
+| 1-click cloud sync | **1 latest crawl** | **10 crawls (90d)** | **50 crawls (1yr)** | **Unlimited forever** | Cloud storage + diff retention drives upgrades |
+| Headless Chromium JS rendering, screenshots, Web Vitals & axe accessibility | — | **✓** | **✓** | **✓** | High-value power feature; clear Solo upgrade trigger |
+| Scheduled local crawls | — | **✓** | **✓** | **✓** | Automation convenience for recurring site checks |
+| Custom extraction (CSS/XPath/Regex) & custom JS snippets | — | — | **✓** | **✓** | Power-user / technical SEO workflow |
+| Desktop CLI, local HTTP API & Desktop MCP automation | — | — | **✓** | **✓** | Agent/CI & power-user automation |
+| White-label desktop PDF/HTML reports & shared team config templates | — | — | — | **✓** | Agency client-delivery feature |
+
+#### B. Coqui Cloud Platform: Ungated vs. Gated vs. Throttled by Tier
+
+| Cloud Capability | Free ($0) | Solo ($29) | Pro ($79) | Agency ($199) | Control Type |
+|---|---|---|---|---|---|
+| Projects / Workspace seats | 1 / 1 | 3 / 1 | 10 / 5 | 50 fair-use / 15 | Throttled |
+| First-party integrations (GSC, Bing, GA4, Plausible, Umami) | **Ungated** | **Ungated** | **Ungated** | **Ungated** | Ungated ($0 COGS) |
+| Plain-English "Do This Week" action cards (top issues, striking-distance pos 4–20, content decay, cannibalization) | Basic top 3 | **Full** | **Full** | **Full** | Ungated / Gated ($0 COGS) |
+| Cloud crawl history & cross-crawl diffing | 1 latest, no diff | 10 crawls, 90d + diff | 50 crawls, 1yr + diff | Unlimited forever + diff | Gated + Throttled |
+| Cloud worker crawls (`coqui-worker`) | 1,000 URLs/mo (manual) | 5,000/mo (weekly) | 25,000/mo (daily) | 250,000/mo + Priority Queue | Throttled (Owned) |
+| SERP Rank Tracking (`1 credit = 1 page of 10`) | 100 credits/mo | 3,000 credits/mo | 10,000 credits/mo | 45,000 credits/mo | Throttled (Purchased); depth is a multiplier, not a tier gate |
+| Keyword Research & Ideas (cached-first) | 50 lookups/mo | 1,000/mo | 5,000/mo + Keyword Gap | 25,000/mo + Keyword Gap | Throttled (Purchased) |
+| Backlink Intelligence & Watchlist (`coqui-worker` link-rot) | Cached summary only | 1,000 rows/refresh + 25 watchlist | 5,000 rows/refresh + Link Intersect + 100 watchlist | 25,000 rows/refresh + Link Intersect + 500 watchlist | Gated + Throttled |
+| Live Top-10 SERP Content Briefs | — | 10/mo | 50/mo | 200/mo | Gated + Throttled (declared, not yet enforced) |
+| AI Visibility / Multi-LLM GEO Prompts (Wave B) | Google AIO in SERPs only | Google AIO in SERPs only | 25 prompts/mo | 100 prompts/mo | Gated + Throttled |
+| Public MCP Server & REST API | — | — | **✓** (rate-limited) | **✓** (high-limit) | Gated + Throttled |
+| Bot Telemetry (`Googlebot`, `GPTBot`, `ClaudeBot`, `PerplexityBot`) | Runnr add-on | Runnr add-on | **✓** | **✓** | Gated (matches `AppServiceProvider`) |
+| Runnr Post-Deploy SEO Smoke Tests | Runnr add-on | Runnr add-on | Runnr add-on | **✓ Included** | Gated (matches `AppServiceProvider`) |
+| Shareable client links & White-Label PDF/HTML Reports | — | — | Coqui-branded share links | **White-label PDF + custom domain links** | Gated (matches `PlanFeature::WhiteLabelReports`) |
+| Hard monthly vendor-spend safety cap (internal `SpendGuard`) | $0.50/mo | $8.00/mo | $22.00/mo | $58.00/mo | Hard Guardrail (~30% COGS ceiling) |
+
+**What is actually enforced today.** Shipped in #167: the SERP credit pools (100 / 3,000 / 10,000 / 45,000) with the batch check that refuses a chunk it cannot fund, the data allowances above, and the Runnr and bot-telemetry gates. Declared in `PlanCatalog` but **not yet enforced**: project and seat counts, keyword-research lookups, backlink rows and watchlist caps, cloud crawl history depth, content briefs and AI prompts — the numbers exist, the counters do not (retention is tracked in #154). Desktop rows in table A are **policy, not enforcement**: they would need a licence check in the Coqui app, which does not exist yet. Until it does, the desktop crawler is simply free.
 
 ## 3. What is already built
 
@@ -265,6 +329,9 @@ Grounded in `routes/web.php`, `routes/api.php`, `routes/ai.php` and the domain s
 |---|---|---|
 | Workspaces, roles, invites, audit trail, scoped API tokens | Built | `WorkspaceMemberController`, `workspace_activities` |
 | Stripe billing, Pennant plan gates, portal, invoices | Built | `StripeBillingService` |
+| Plan catalog: prices, allowances, SERP credits per plan | Built | `PlanCatalog` |
+| SERP credit enforcement on rank batches | Built | `RunRankBatchesCommand`, `dataforseo_spend_ledger.serp_pages` |
+| Stripe price verification against the catalog | Built | `billing:verify-prices` |
 | Public MCP server (3 tools) | Built | `CoquiSeoServer` |
 | Public REST API for customers | Missing | desktop API is internal-only |
 | Brand monitoring / mentions | Missing | — |
@@ -477,12 +544,12 @@ The two things we have that they structurally cannot copy:
 
 ## 8. Build order
 
-### Slice 0 — Fix the economics (before selling)
-1. Correct the 10× rank-check undercount in the spend guard and re-derive every cap (#162).
-2. Correct the Free/Personal allowance inversion and set a real free-tier cap (#154, #150-adjacent billing work).
-3. Raise the platform-wide cap or move it to a per-provider budget that scales with paying customers.
-4. Add cross-tenant rank snapshot caching (same keyword/location/device/day = one call).
-5. Introduce credit-based plans with depth as the multiplier; add top-up packs.
+### Slice 0 — Fix the economics (before selling) — **shipped** (#164, #167)
+1. ✅ Corrected the 10× rank-check undercount and re-derived the caps (#162).
+2. ✅ Replaced the free/paid allowance inversion: Free $0.50, Solo $8, Pro $22, Agency $58.
+3. ✅ Raised the platform caps to $75/day and $1,500/month and documented them as runaway guards.
+4. ⬜ Cross-tenant rank snapshot caching — still the biggest remaining cost lever.
+5. ⬜ Credit-based plans: **done** (Solo/Pro/Agency with depth priced per page); top-up packs are not built.
 
 ### Slice 1 — Table stakes parity (4–6 weeks)
 Rank-drop alerts · competitor grid in the rank table · share-of-voice metric · competitor top pages and traffic estimate · content gap/decay · site-audit health score · CrUX/CWV · PDF reports · public REST API.
@@ -521,7 +588,7 @@ Observed 2026-11-21. Competitor pricing pages render prices with JavaScript, so 
 - Open PageRank — https://keywordseverywhere.com/openpagerank/pricing
 - DataForSEO AI Optimization API — https://dataforseo.com/ai-optimization-api
 - DataForSEO unit costs — `config/coqui.php` price table (the numbers the spend guard reserves); re-check against https://dataforseo.com/pricing
-- Plan allowances — `Workspace::planLimits()` and `StripeBillingService::plans()`
+- Plan allowances and credits — `PlanCatalog::all()`, read by `Workspace::applyPlanTier()` and `StripeBillingService::getPlans()`
 - Feature status — `routes/web.php`, `routes/api.php`, `app/Domains`
 
 **Open questions before this becomes a pricing page**
