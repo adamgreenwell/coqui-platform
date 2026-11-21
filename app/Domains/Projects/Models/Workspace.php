@@ -7,6 +7,7 @@ namespace App\Domains\Projects\Models;
 use App\Domains\Billing\Exceptions\FeatureNotAvailableException;
 use App\Domains\Billing\Models\BillingInvoice;
 use App\Domains\Billing\Models\WorkspaceSubscription;
+use App\Domains\Billing\PlanCatalog;
 use App\Domains\Billing\PlanFeature;
 use App\Domains\Serp\RankFallback\RankFallbackSpendGuard;
 use App\Models\Concerns\HasPublicUuid;
@@ -261,39 +262,20 @@ class Workspace extends Model
 
     /**
      * Update workspace plan tier and calibrate usage limits.
+     *
+     * The numbers come from PlanCatalog so a price change cannot leave the
+     * billing page, the workspace limits and the spend guard disagreeing.
      */
     public function applyPlanTier(string $tier, bool $hasRunnrAddon = false): void
     {
         $tier = strtolower(trim($tier));
-
-        $limits = match ($tier) {
-            'agency' => [
-                'tracked_keyword_limit' => 10000,
-                'cloud_crawl_url_limit' => 250000,
-                'monthly_dfs_budget_usd' => '750.0000',
-            ],
-            'pro' => [
-                'tracked_keyword_limit' => 1000,
-                'cloud_crawl_url_limit' => 25000,
-                'monthly_dfs_budget_usd' => '150.0000',
-            ],
-            'personal' => [
-                'tracked_keyword_limit' => 300,
-                'cloud_crawl_url_limit' => 5000,
-                'monthly_dfs_budget_usd' => '8.0000',
-            ],
-            default => [
-                'tracked_keyword_limit' => 100,
-                'cloud_crawl_url_limit' => 1000,
-                'monthly_dfs_budget_usd' => '25.0000',
-            ],
-        };
+        $plan = PlanCatalog::get(in_array($tier, PlanCatalog::TIERS, true) ? $tier : PlanCatalog::FREE);
 
         $this->update([
             'plan_tier' => in_array($tier, self::PAID_PLAN_TIERS, true) ? $tier : 'free',
-            'tracked_keyword_limit' => $limits['tracked_keyword_limit'],
-            'cloud_crawl_url_limit' => $limits['cloud_crawl_url_limit'],
-            'monthly_dfs_budget_usd' => $limits['monthly_dfs_budget_usd'],
+            'tracked_keyword_limit' => $plan['tracked_keyword_limit'],
+            'cloud_crawl_url_limit' => $plan['cloud_crawl_url_limit'],
+            'monthly_dfs_budget_usd' => $plan['monthly_dfs_budget_usd'],
             'has_runnr_addon' => $hasRunnrAddon || $this->has_runnr_addon,
         ]);
     }

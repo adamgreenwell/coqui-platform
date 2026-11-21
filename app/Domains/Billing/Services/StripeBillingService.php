@@ -7,6 +7,7 @@ namespace App\Domains\Billing\Services;
 use App\Domains\Billing\Exceptions\BillingUnavailableException;
 use App\Domains\Billing\Models\BillingInvoice;
 use App\Domains\Billing\Models\WorkspaceSubscription;
+use App\Domains\Billing\PlanCatalog;
 use App\Domains\Projects\Models\Workspace;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Carbon;
@@ -29,86 +30,7 @@ class StripeBillingService
      */
     public function getPlans(): array
     {
-        return [
-            'free' => [
-                'name' => 'Free / Desktop Sync',
-                'price_usd' => 0,
-                'tracked_keyword_limit' => 100,
-                'cloud_crawl_url_limit' => 1000,
-                'monthly_dfs_budget_usd' => 25.00,
-                'features' => [
-                    'Desktop Crawl Snapshot Sync (Rust engine)',
-                    '100 Tracked Keywords & Visibility Scoring',
-                    '1,000 Cloud Crawl URLs per audit',
-                    '$25/mo Live SEO Data Allowance',
-                    'Basic Technical Issue Inspection',
-                    'Google Search Console & Bing Performance Overlay',
-                    'GA4, Umami & Plausible Organic & AI Traffic Attribution',
-                ],
-            ],
-            'personal' => [
-                'name' => 'Personal',
-                'price_usd' => 19,
-                'tracked_keyword_limit' => 300,
-                'cloud_crawl_url_limit' => 5000,
-                'monthly_dfs_budget_usd' => 8.00,
-                'features' => [
-                    'Everything in Free',
-                    '300 Tracked Keywords with Daily Updates',
-                    '5,000 Cloud Crawl URLs per audit',
-                    '$8/mo Live SEO Data Allowance',
-                    'Live SERP Top-10 Content Brief Generator',
-                    'Backlink Profile Explorer & 404 Recovery',
-                    'Bot & AI Crawler Telemetry',
-                ],
-            ],
-            'pro' => [
-                'name' => 'Pro Cloud',
-                'price_usd' => 49,
-                'tracked_keyword_limit' => 1000,
-                'cloud_crawl_url_limit' => 25000,
-                'monthly_dfs_budget_usd' => 150.00,
-                'features' => [
-                    'Everything in Free',
-                    '1,000 Tracked Keywords with Daily Updates',
-                    '25,000 Cloud Crawl URLs per audit',
-                    '$150/mo Live SEO Data Allowance',
-                    'Live SERP Top-10 Content Brief Generator',
-                    'Keyword Gap & Dual-Competitor Matrix',
-                    'Backlink Profile Explorer & 404 Recovery',
-                ],
-            ],
-            'agency' => [
-                'name' => 'Agency & Enterprise',
-                'price_usd' => 199,
-                'tracked_keyword_limit' => 10000,
-                'cloud_crawl_url_limit' => 250000,
-                'monthly_dfs_budget_usd' => 750.00,
-                'features' => [
-                    'Everything in Pro',
-                    '10,000 Tracked Keywords with Hourly Alerts',
-                    '250,000 Cloud Crawl URLs per audit',
-                    '$750/mo Live SEO Data Allowance',
-                    'Unlimited Workspace Team Members',
-                    'White-Label Client Crawl Diff Reports',
-                    'Priority Cloud Queue & Worker Allocation',
-                    'Native Runnr Deploy Smoke Tests & Bot Telemetry Included',
-                ],
-            ],
-            'runnr_addon' => [
-                'name' => 'Runnr Hosting Add-on',
-                'price_usd' => 29,
-                'tracked_keyword_limit' => 0,
-                'cloud_crawl_url_limit' => 0,
-                'monthly_dfs_budget_usd' => 0.00,
-                'features' => [
-                    'Automated Post-Deploy SEO Smoke Testing',
-                    'Bot & AI Crawler Telemetry Ingestion (Googlebot, GPTBot, ClaudeBot, PerplexityBot)',
-                    'Automated 301 Redirect Remediation for Dead Bot Hits',
-                    'Embeddable Live Smoke Badge for GitHub CI/CD',
-                ],
-            ],
-        ];
+        return PlanCatalog::all();
     }
 
     public const MODE_STRIPE = 'stripe';

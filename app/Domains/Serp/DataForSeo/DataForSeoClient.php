@@ -713,6 +713,13 @@ class DataForSeoClient
     /**
      * Submit Standard-queue SERP tasks with a signed postback URL.
      *
+     * DataForSEO bills SERP data per page of 10 results, not per request. A
+     * task with `depth` 100 is ten billable pages, so the reservation is
+     * `ceil(depth / 10)` pages at the per-page price. Reserving one unit per
+     * task under-counted every rank check by 10x, which meant the daily and
+     * monthly caps, the per-workspace allowance and the reconciliation alert
+     * all ran on a number far below the real spend.
+     *
      * @param  list<array<string, mixed>>  $tasks
      * @return array<string, mixed>
      */
@@ -722,13 +729,23 @@ class DataForSeoClient
         bool $isScheduled = false,
     ): array {
         $endpoint = '/v3/serp/google/organic/task_post';
-        $unitCost = (float) config('coqui.dataforseo.prices.serp_standard_task', 0.0006);
+        $pageCost = (float) config('coqui.dataforseo.prices.serp_standard_task', 0.0006);
         $aiOverviewSurcharge = (float) config('coqui.dataforseo.prices.serp_ai_overview_surcharge', 0.0006);
+        $resultsPerPage = max(1, (int) config('coqui.dataforseo.results_per_page', 10));
+        $defaultDepth = max(1, (int) config('coqui.dataforseo.default_serp_depth', 10));
+
         $estimatedCost = 0.0;
         foreach ($tasks as $task) {
+            $depth = max(1, (int) ($task['depth'] ?? $defaultDepth));
+            $pages = (int) ceil($depth / $resultsPerPage);
+
+            $estimatedCost += $pages * $pageCost;
+
             // Waiting for an AI Overview that loads after the page is billed
-            // on top of the task.
-            $estimatedCost += $unitCost + (! empty($task['load_async_ai_overview']) ? $aiOverviewSurcharge : 0.0);
+            // as one extra base page on top of the task.
+            if (! empty($task['load_async_ai_overview'])) {
+                $estimatedCost += $aiOverviewSurcharge;
+            }
         }
 
         return $this->postPaid(

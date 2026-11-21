@@ -32,10 +32,20 @@ return [
         'scheduled_spend' => (bool) env('DATAFORSEO_SCHEDULED_SPEND', false),
 
         // Rank checks wait for AI Overviews that load after the page (billed
-        // as prices.serp_ai_overview_surcharge per check).
+        // as one extra base page on top of the task).
         'load_async_ai_overview' => (bool) env('DATAFORSEO_LOAD_ASYNC_AI_OVERVIEW', true),
-        'daily_cap_usd' => (float) env('DATAFORSEO_DAILY_CAP_USD', 5.00),
-        'monthly_cap_usd' => (float) env('DATAFORSEO_MONTHLY_CAP_USD', 100.00),
+        // DataForSEO bills SERP data per page of 10 results. The spend guard
+        // reserves ceil(depth / results_per_page) pages per task, so a
+        // depth-100 check costs ten pages rather than one.
+        'results_per_page' => (int) env('DATAFORSEO_RESULTS_PER_PAGE', 10),
+        'default_serp_depth' => (int) env('DATAFORSEO_DEFAULT_SERP_DEPTH', 10),
+        // Platform-wide runaway guards, not business limits: a workspace's
+        // own allowance (see App\Domains\Billing\PlanCatalog) is meant to
+        // bind first. Keep these above the sum of allowances you expect to
+        // serve; four free workspaces must not be able to exhaust the budget
+        // that paying customers depend on.
+        'daily_cap_usd' => (float) env('DATAFORSEO_DAILY_CAP_USD', 75.00),
+        'monthly_cap_usd' => (float) env('DATAFORSEO_MONTHLY_CAP_USD', 1500.00),
         // How long a paid call waits for the spend lock (cap check + ledger
         // reservation) before it's refused.
         'spend_lock_wait_seconds' => (int) env('DATAFORSEO_SPEND_LOCK_WAIT_SECONDS', 10),
