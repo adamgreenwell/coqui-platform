@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Domains\Crawls\Models\CrawlDiffReport;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Crawls\Services\CrawlDiffService;
 use App\Domains\Projects\Models\Project;
@@ -18,6 +19,8 @@ use Inertia\Response;
 
 class CrawlCompareController extends Controller
 {
+    public const SHARE_LINKS_PER_PAGE = 50;
+
     public function __construct(
         private readonly CrawlDiffService $diffService,
     ) {}
@@ -69,6 +72,9 @@ class CrawlCompareController extends Controller
             $diff = $this->diffService->compare($baselineRun, $targetRun);
         }
 
+        // Creating and revoking share links is for editors.
+        $canManage = $request->user()?->can('update', $project) ?? false;
+
         return Inertia::render('Crawls/Compare', [
             'workspace' => [
                 'id' => $workspace->uuid,
@@ -85,12 +91,136 @@ class CrawlCompareController extends Controller
             'selectedTargetId' => $targetRun?->external_crawl_id,
             'diff' => $diff,
             'isReadOnly' => false,
+            'canManageShares' => $canManage,
+            ...$this->shareLinksProps($canManage ? $this->shareLinks($project) : ['links' => [], 'nextCursor' => null]),
         ]);
+    }
+
+    /**
+     * Older share links, after the given one, for the management list.
+     */
+    public function shareLinksPage(Request $request, Workspace $workspace, Project $project): JsonResponse
+    {
+        Gate::authorize('update', $project);
+
+        $validated = $request->validate(['after' => ['required', 'string', 'max:64']]);
+        $after = CrawlDiffReport::query()
+            ->where('project_id', $project->id)
+            ->where('uuid', (string) $validated['after'])
+            ->first() ?? abort(404);
+
+        return response()->json($this->shareLinksProps($this->shareLinks($project, $after->id)));
+    }
+
+    /**
+     * @param  array{links: list<array<string, mixed>>, nextCursor: string|null}  $page
+     * @return array{shareLinks: list<array<string, mixed>>, shareLinksNextCursor: string|null}
+     */
+    private function shareLinksProps(array $page): array
+    {
+        return ['shareLinks' => $page['links'], 'shareLinksNextCursor' => $page['nextCursor']];
+    }
+
+    /**
+     * One page of a rule's new or resolved issues between two crawls.
+     */
+    public function issues(Request $request, Workspace $workspace, Project $project): JsonResponse
+    {
+        Gate::authorize('view', $project);
+
+        $validated = $this->validateDrillDown($request);
+        $baselineRun = $this->findRun($project, $request->input('baseline')) ?? abort(404);
+        $targetRun = $this->findRun($project, $request->input('target')) ?? abort(404);
+
+        return response()->json($this->diffService->issueDrillDown(
+            $baselineRun,
+            $targetRun,
+            $validated['type'],
+            $validated['rule'],
+            $validated['severity'],
+            $validated['page'],
+        ));
+    }
+
+    public function revokeShare(Request $request, Workspace $workspace, Project $project, CrawlDiffReport $report): JsonResponse
+    {
+        Gate::authorize('update', $project);
+        abort_if($report->project_id !== $project->id, 404);
+
+        if ($report->revoked_at === null) {
+            $report->update([
+                'revoked_at' => now(),
+                'revoked_by_user_id' => $request->user()?->id,
+            ]);
+        }
+
+        return response()->json(['revoked' => true]);
+    }
+
+    /**
+     * @return array{type: string, rule: string, severity: string|null, page: int}
+     */
+    public static function validateDrillDown(Request $request): array
+    {
+        /** @var array<string, mixed> $validated */
+        $validated = $request->validate([
+            'type' => ['required', 'in:new,resolved'],
+            'rule' => ['required', 'string', 'max:96'],
+            'severity' => ['nullable', 'in:error,warning,opportunity'],
+            'page' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        return [
+            'type' => (string) $validated['type'],
+            'rule' => (string) $validated['rule'],
+            'severity' => isset($validated['severity']) ? (string) $validated['severity'] : null,
+            'page' => (int) ($validated['page'] ?? 1),
+        ];
+    }
+
+    /**
+     * One page of the project's share links that still work, newest first,
+     * starting after the report with id $beforeId. A cursor (rather than an
+     * offset) keeps revoking one from shifting later pages.
+     *
+     * @return array{links: list<array<string, mixed>>, nextCursor: string|null}
+     */
+    private function shareLinks(Project $project, ?int $beforeId = null): array
+    {
+        $perPage = self::SHARE_LINKS_PER_PAGE;
+        $rows = CrawlDiffReport::query()
+            ->where('project_id', $project->id)
+            ->whereNull('revoked_at')
+            ->where(fn ($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now()))
+            ->when($beforeId !== null, fn ($q) => $q->where('id', '<', $beforeId))
+            ->orderByDesc('id')
+            ->limit($perPage + 1)
+            ->get();
+
+        $hasMore = $rows->count() > $perPage;
+        $rows = $rows->take($perPage);
+
+        $links = $rows
+            ->map(fn (CrawlDiffReport $r): array => [
+                'id' => $r->uuid,
+                'title' => $r->title,
+                'shareUrl' => route('reports.crawls.diff', $r->share_token),
+                'viewCount' => $r->view_count,
+                'createdAt' => $r->created_at?->toIso8601String(),
+                'expiresAt' => $r->expires_at?->toIso8601String(),
+            ])
+            ->values()
+            ->all();
+
+        /** @var CrawlDiffReport|null $last */
+        $last = $rows->last();
+
+        return ['links' => $links, 'nextCursor' => $hasMore && $last !== null ? $last->uuid : null];
     }
 
     public function share(Request $request, Workspace $workspace, Project $project): JsonResponse
     {
-        Gate::authorize('view', $project);
+        Gate::authorize('update', $project);
 
         /** @var array<string, mixed> $validated */
         $validated = $request->validate([
@@ -121,6 +251,7 @@ class CrawlCompareController extends Controller
         $shareUrl = route('reports.crawls.diff', $report->share_token);
 
         return response()->json([
+            'id' => $report->uuid,
             'shareToken' => $report->share_token,
             'shareUrl' => $shareUrl,
             'expiresAt' => $report->expires_at?->toIso8601String(),

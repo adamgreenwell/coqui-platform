@@ -10,6 +10,7 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        //
+        // Local demo data; refuses to run in production.
+        $this->call(DemoDataSeeder::class);
     }
 }

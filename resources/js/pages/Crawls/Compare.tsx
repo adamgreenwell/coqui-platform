@@ -20,11 +20,12 @@ import {
   Search,
   Share2,
   Sliders,
+  Trash2,
   TrendingDown,
   TrendingUp,
   X,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { UpgradePill, usePlan } from '../../components/PlanGate';
 import AppLayout, { type WorkspaceSummary } from '../../layouts/AppLayout';
 
@@ -92,12 +93,84 @@ interface RuleSummaryItem {
   netChange: number;
 }
 
+interface PageFields {
+  status: number | null;
+  title: string | null;
+  metaDescription: string | null;
+  h1: string | null;
+  canonical: string | null;
+  metaRobots: string | null;
+  redirectTarget: string | null;
+  wordCount: number | null;
+}
+
 interface IssueSampleItem {
   url: string;
   rule: string;
   severity: string;
   detail?: string | null;
   gscClicks?: number | null;
+  before?: PageFields | null;
+  after?: PageFields | null;
+  changedFields?: (keyof PageFields)[];
+}
+
+interface DrillDownPage {
+  data: IssueSampleItem[];
+  total: number;
+  page: number;
+  perPage: number;
+  lastPage: number;
+}
+
+interface ShareLink {
+  id: string;
+  title: string | null;
+  shareUrl: string;
+  viewCount: number;
+  createdAt: string | null;
+  expiresAt: string | null;
+}
+
+const FIELD_LABELS: Record<keyof PageFields, string> = {
+  status: 'Status',
+  title: 'Title',
+  metaDescription: 'Meta description',
+  h1: 'H1',
+  canonical: 'Canonical',
+  metaRobots: 'Robots',
+  redirectTarget: 'Redirect',
+  wordCount: 'Words',
+};
+
+const showValue = (v: string | number | null | undefined) =>
+  v === null || v === undefined || v === '' ? '(none)' : String(v);
+
+/** What changed on the issue's page between the two crawls. */
+function PageChanges({ issue }: { issue: IssueSampleItem }) {
+  if (issue.before === undefined && issue.after === undefined) return null;
+  if (!issue.before && issue.after) {
+    return <div className="mt-1 text-[10px] text-sky-300">New page in this crawl</div>;
+  }
+  if (issue.before && !issue.after) {
+    return <div className="mt-1 text-[10px] text-slate-500">Page not in this crawl</div>;
+  }
+  const fields = issue.changedFields ?? [];
+  if (fields.length === 0) {
+    return <div className="mt-1 text-[10px] text-slate-500">Page fields unchanged</div>;
+  }
+  return (
+    <ul className="mt-1 space-y-0.5 text-[10px]">
+      {fields.map((f) => (
+        <li key={f} className="flex flex-wrap items-center gap-1">
+          <span className="text-slate-500">{FIELD_LABELS[f]}:</span>
+          <span className="text-rose-300/80 line-through break-all">{showValue(issue.before?.[f])}</span>
+          <ArrowRight className="h-2.5 w-2.5 text-slate-500" />
+          <span className="text-emerald-300 break-all">{showValue(issue.after?.[f])}</span>
+        </li>
+      ))}
+    </ul>
+  );
 }
 
 interface UrlSampleItem {
@@ -144,6 +217,10 @@ interface CompareProps {
   isReadOnly?: boolean;
   reportTitle?: string | null;
   expiresAt?: string | null;
+  shareToken?: string | null;
+  canManageShares?: boolean;
+  shareLinks?: ShareLink[];
+  shareLinksNextCursor?: string | null;
 }
 
 export default function Compare({
@@ -156,6 +233,10 @@ export default function Compare({
   isReadOnly = false,
   reportTitle,
   expiresAt,
+  shareToken,
+  canManageShares = false,
+  shareLinks = [],
+  shareLinksNextCursor = null,
 }: CompareProps) {
   const [baselineId, setBaselineId] = useState<string>(selectedBaselineId || '');
   const [targetId, setTargetId] = useState<string>(selectedTargetId || '');
@@ -172,6 +253,97 @@ export default function Compare({
   const [shareLoading, setShareLoading] = useState(false);
   const [generatedShareUrl, setGeneratedShareUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [links, setLinks] = useState<ShareLink[]>(shareLinks);
+  const [linksCursor, setLinksCursor] = useState<string | null>(shareLinksNextCursor);
+  const [linksLoading, setLinksLoading] = useState(false);
+  // Only the latest drill-down request may update the modal.
+  const drillRequest = useRef<AbortController | null>(null);
+  const [drillRule, setDrillRule] = useState<{ rule: string; severity: string; type: 'new' | 'resolved' } | null>(null);
+  const [drillPage, setDrillPage] = useState<DrillDownPage | null>(null);
+  const [drillLoading, setDrillLoading] = useState(false);
+
+  const csrf = () => (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || '';
+
+  const closeDrillDown = () => {
+    drillRequest.current?.abort();
+    drillRequest.current = null;
+    setDrillRule(null);
+    setDrillPage(null);
+    setDrillLoading(false);
+  };
+
+  const loadDrillDown = async (rule: string, severity: string, type: 'new' | 'resolved', page = 1) => {
+    drillRequest.current?.abort();
+    const controller = new AbortController();
+    drillRequest.current = controller;
+    setDrillRule({ rule, severity, type });
+    setDrillLoading(true);
+    const params = new URLSearchParams({ type, rule, severity, page: String(page) });
+    let url: string;
+    if (isReadOnly && shareToken) {
+      url = `/reports/crawls/diff/${shareToken}/issues?${params}`;
+    } else {
+      params.set('baseline', selectedBaselineId || '');
+      params.set('target', selectedTargetId || '');
+      url = `/workspaces/${workspace.id}/projects/${project.id}/crawls/compare/issues?${params}`;
+    }
+    try {
+      const response = await fetch(url, {
+        headers: { Accept: 'application/json' },
+        credentials: 'same-origin',
+        signal: controller.signal,
+      });
+      const data = response.ok ? await response.json() : null;
+      if (drillRequest.current === controller) {
+        setDrillPage(data);
+      }
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        throw error;
+      }
+    } finally {
+      if (drillRequest.current === controller) {
+        drillRequest.current = null;
+        setDrillLoading(false);
+      }
+    }
+  };
+
+  const loadOlderLinks = async () => {
+    if (!linksCursor) return;
+    setLinksLoading(true);
+    try {
+      const response = await fetch(
+        `/workspaces/${workspace.id}/projects/${project.id}/crawls/compare/shares?after=${encodeURIComponent(linksCursor)}`,
+        { headers: { Accept: 'application/json' }, credentials: 'same-origin' }
+      );
+      if (response.ok) {
+        const data: { shareLinks: ShareLink[]; shareLinksNextCursor: string | null } = await response.json();
+        setLinks((current) => [...current, ...data.shareLinks.filter((l) => !current.some((c) => c.id === l.id))]);
+        setLinksCursor(data.shareLinksNextCursor);
+      }
+    } finally {
+      setLinksLoading(false);
+    }
+  };
+
+  // Revoking every loaded link must not strand older ones: fetch the
+  // next page as soon as the loaded list is empty.
+  useEffect(() => {
+    if (shareModalOpen && links.length === 0 && linksCursor && !linksLoading) {
+      void loadOlderLinks();
+    }
+  }, [shareModalOpen, links.length, linksCursor]);
+
+  const handleRevoke = async (link: ShareLink) => {
+    const response = await fetch(
+      `/workspaces/${workspace.id}/projects/${project.id}/crawls/compare/shares/${link.id}`,
+      { method: 'DELETE', headers: { 'X-CSRF-TOKEN': csrf(), Accept: 'application/json' }, credentials: 'same-origin' }
+    );
+    if (response.ok) {
+      setLinks((current) => current.filter((l) => l.id !== link.id));
+    }
+  };
 
   const handleRunComparison = () => {
     if (!baselineId || !targetId || baselineId === targetId) return;
@@ -206,6 +378,17 @@ export default function Compare({
       if (response.ok) {
         const data = await response.json();
         setGeneratedShareUrl(data.shareUrl);
+        setLinks((current) => [
+          {
+            id: data.id,
+            title: shareTitle || null,
+            shareUrl: data.shareUrl,
+            viewCount: 0,
+            createdAt: new Date().toISOString(),
+            expiresAt: data.expiresAt,
+          },
+          ...current,
+        ]);
       }
     } finally {
       setShareLoading(false);
@@ -289,7 +472,7 @@ export default function Compare({
           )}
         </div>
 
-        {!isReadOnly && !canShare && (
+        {!isReadOnly && canManageShares && !canShare && (
           <div className="flex items-center gap-2">
             {/* Client share links are a white-label reports feature. */}
             <Link
@@ -301,10 +484,21 @@ export default function Compare({
               <span>Share Report</span>
               <UpgradePill />
             </Link>
+            {/* Existing links stay revocable after a downgrade. */}
+            {(links.length > 0 || linksCursor) && (
+              <button
+                type="button"
+                onClick={() => setShareModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium transition cursor-pointer"
+              >
+                <Share2 className="h-3.5 w-3.5" />
+                <span>Manage links ({links.length}{linksCursor ? '+' : ''})</span>
+              </button>
+            )}
           </div>
         )}
 
-        {!isReadOnly && canShare && (
+        {!isReadOnly && canManageShares && canShare && (
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -667,8 +861,29 @@ export default function Compare({
                           {rule.rule}
                         </span>
                       </div>
-                      <div className="mt-1 text-[11px] text-slate-400">
-                        +{rule.newCount} new, -{rule.resolvedCount} resolved
+                      <div className="mt-1 text-[11px] text-slate-400 flex items-center gap-2">
+                        {rule.newCount > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => loadDrillDown(rule.rule, rule.severity, 'new')}
+                            className="text-rose-300 hover:text-rose-200 underline-offset-2 hover:underline cursor-pointer"
+                          >
+                            +{rule.newCount} new
+                          </button>
+                        ) : (
+                          <span>+0 new</span>
+                        )}
+                        {rule.resolvedCount > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => loadDrillDown(rule.rule, rule.severity, 'resolved')}
+                            className="text-emerald-300 hover:text-emerald-200 underline-offset-2 hover:underline cursor-pointer"
+                          >
+                            -{rule.resolvedCount} resolved
+                          </button>
+                        ) : (
+                          <span>-0 resolved</span>
+                        )}
                       </div>
                     </div>
                     <div
@@ -758,8 +973,9 @@ export default function Compare({
                                 <span className="font-mono text-slate-200">{iss.rule}</span>
                               </div>
                             </td>
-                            <td className="py-3 px-4 font-mono text-white max-w-xs truncate" title={iss.url}>
-                              {iss.url}
+                            <td className="py-3 px-4 font-mono text-white max-w-xs" title={iss.url}>
+                              <div className="truncate">{iss.url}</div>
+                              <PageChanges issue={iss} />
                             </td>
                             <td className="py-3 px-4 text-slate-400 max-w-sm truncate" title={iss.detail || ''}>
                               {iss.detail || '—'}
@@ -895,6 +1111,88 @@ export default function Compare({
         </div>
       )}
 
+      {/* Per-rule drill-down */}
+      {drillRule && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
+          <div className="w-full max-w-4xl rounded-2xl border border-slate-800 bg-slate-900 p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-base font-semibold text-white flex items-center gap-2">
+                {formatSeverity(drillRule.severity)}
+                <span className="font-mono">{drillRule.rule}</span>
+                <span className={drillRule.type === 'new' ? 'text-rose-300 text-xs' : 'text-emerald-300 text-xs'}>
+                  {drillRule.type === 'new' ? 'New' : 'Resolved'}
+                  {drillPage ? ` (${drillPage.total.toLocaleString()})` : ''}
+                </span>
+              </h3>
+              <button
+                type="button"
+                onClick={closeDrillDown}
+                className="text-slate-400 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {drillLoading && !drillPage ? (
+              <div className="py-10 text-center text-xs text-slate-400">
+                <RefreshCw className="h-5 w-5 animate-spin mx-auto mb-2 text-slate-500" />
+                Loading affected URLs...
+              </div>
+            ) : !drillPage || drillPage.data.length === 0 ? (
+              <div className="py-10 text-center text-xs text-slate-500">No affected URLs.</div>
+            ) : (
+              <div className={`max-h-[60vh] overflow-y-auto ${drillLoading ? 'opacity-60' : ''}`}>
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-400">
+                      <th className="py-2 px-3 font-medium">Page URL and what changed</th>
+                      <th className="py-2 px-3 font-medium">Issue details</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {drillPage.data.map((iss) => (
+                      <tr key={`${iss.url}-${iss.rule}`} className="text-slate-300 align-top">
+                        <td className="py-2.5 px-3 font-mono text-white max-w-md">
+                          <div className="truncate" title={iss.url}>{iss.url}</div>
+                          <PageChanges issue={iss} />
+                        </td>
+                        <td className="py-2.5 px-3 text-slate-400 max-w-sm break-words">{iss.detail || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {drillPage && drillPage.lastPage > 1 && (
+              <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs text-slate-400">
+                <span>
+                  Page {drillPage.page} of {drillPage.lastPage}
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={drillLoading || drillPage.page <= 1}
+                    onClick={() => loadDrillDown(drillRule.rule, drillRule.severity, drillRule.type, drillPage.page - 1)}
+                    className="px-3 py-1 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 cursor-pointer"
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    disabled={drillLoading || drillPage.page >= drillPage.lastPage}
+                    onClick={() => loadDrillDown(drillRule.rule, drillRule.severity, drillRule.type, drillPage.page + 1)}
+                    className="px-3 py-1 rounded-lg border border-slate-700 bg-slate-800 hover:bg-slate-700 disabled:opacity-40 cursor-pointer"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Share Report Modal */}
       {shareModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
@@ -902,7 +1200,7 @@ export default function Compare({
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <h3 className="text-base font-semibold text-white flex items-center gap-2">
                 <Share2 className="h-4 w-4 text-emerald-400" />
-                <span>Create Shareable Diff Report</span>
+                <span>{canShare ? 'Create Shareable Diff Report' : 'Share Links'}</span>
               </h3>
               <button
                 type="button"
@@ -918,10 +1216,18 @@ export default function Compare({
 
             {!generatedShareUrl ? (
               <div className="space-y-4">
-                <p className="text-xs text-slate-400">
-                  Generate a secure, read-only public report link to share this technical crawl comparison with clients, stakeholders, or developers.
-                </p>
+                {canShare ? (
+                  <p className="text-xs text-slate-400">
+                    Generate a secure, read-only public report link to share this technical crawl comparison with clients, stakeholders, or developers.
+                  </p>
+                ) : (
+                  <p className="text-xs text-slate-400">
+                    Your plan no longer includes new client share links. You can still revoke the links below.
+                  </p>
+                )}
 
+                {canShare && (
+                <>
                 <div>
                   <label className="block text-xs font-medium text-slate-300 mb-1">
                     Custom Report Title (Optional)
@@ -949,6 +1255,48 @@ export default function Compare({
                     <option value={90}>Expires in 90 days</option>
                   </select>
                 </div>
+                </>
+                )}
+
+                {(links.length > 0 || linksCursor) && (
+                  <div className="pt-2 border-t border-slate-800">
+                    <span className="block text-xs font-medium text-slate-300 mb-1.5">Active share links</span>
+                    {links.length === 0 && linksLoading && (
+                      <p className="text-[11px] text-slate-500">Loading older links…</p>
+                    )}
+                    <ul className="space-y-1.5 max-h-40 overflow-y-auto">
+                      {links.map((link) => (
+                        <li key={link.id} className="flex items-center justify-between gap-2 text-[11px]">
+                          <div className="min-w-0">
+                            <div className="truncate text-slate-200">{link.title || 'Untitled report'}</div>
+                            <div className="text-slate-500">
+                              {link.viewCount} views
+                              {link.expiresAt && ` • expires ${new Date(link.expiresAt).toLocaleDateString()}`}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleRevoke(link)}
+                            className="inline-flex items-center gap-1 px-2 py-1 rounded border border-rose-500/30 text-rose-300 hover:bg-rose-500/10 cursor-pointer shrink-0"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            <span>Revoke</span>
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    {linksCursor && (
+                      <button
+                        type="button"
+                        onClick={loadOlderLinks}
+                        disabled={linksLoading}
+                        className="mt-2 text-[11px] text-slate-400 hover:text-white disabled:opacity-50"
+                      >
+                        {linksLoading ? 'Loading…' : 'Show older links'}
+                      </button>
+                    )}
+                  </div>
+                )}
 
                 <div className="pt-2 flex items-center justify-end gap-2">
                   <button
@@ -956,16 +1304,18 @@ export default function Compare({
                     onClick={() => setShareModalOpen(false)}
                     className="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-white"
                   >
-                    Cancel
+                    {canShare ? 'Cancel' : 'Close'}
                   </button>
-                  <button
-                    type="button"
-                    onClick={handleCreateShareLink}
-                    disabled={shareLoading}
-                    className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs transition cursor-pointer disabled:opacity-50"
-                  >
-                    {shareLoading ? 'Generating...' : 'Generate Link'}
-                  </button>
+                  {canShare && (
+                    <button
+                      type="button"
+                      onClick={handleCreateShareLink}
+                      disabled={shareLoading}
+                      className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs transition cursor-pointer disabled:opacity-50"
+                    >
+                      {shareLoading ? 'Generating...' : 'Generate Link'}
+                    </button>
+                  )}
                 </div>
               </div>
             ) : (

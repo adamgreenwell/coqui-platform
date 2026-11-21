@@ -13,6 +13,7 @@ use Laravel\Sanctum\PersonalAccessToken as SanctumPersonalAccessToken;
  * the `id|secret` plain-text format.
  *
  * @property string $uuid
+ * @property int|null $workspace_id The only workspace the token works in (null: legacy, unscoped)
  */
 class PersonalAccessToken extends SanctumPersonalAccessToken
 {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domains\Integrations\Services;
 
+use App\Domains\Integrations\Models\BingCrawlStat;
 use App\Domains\Integrations\Models\ProjectIntegration;
 use App\Domains\Integrations\Models\SearchPerformancePage;
 use App\Domains\Integrations\Models\SearchPerformanceQuery;
@@ -11,6 +12,7 @@ use App\Domains\Projects\Models\ProjectActivity;
 use App\Support\PageUrl;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class SearchPerformanceSyncService
@@ -48,7 +50,7 @@ class SearchPerformanceSyncService
                     integration: $integration,
                     startDate: $startDate,
                     endDate: $endDate,
-                    dimensions: ['query', 'date'],
+                    dimensions: ['query', 'date', 'device'],
                     startRow: $startRow,
                     rowLimit: $pageSize,
                 );
@@ -56,6 +58,10 @@ class SearchPerformanceSyncService
                 $rows = array_merge($rows, $pageRows);
                 $startRow += $pageSize;
             } while (count($pageRows) === $pageSize && count($rows) < $maxRows);
+
+            // A short last page means every row was fetched; at the row cap
+            // there may be more.
+            $complete = count($pageRows) < $pageSize;
 
             $recordsToUpsert = [];
             $now = Carbon::now();
@@ -65,14 +71,16 @@ class SearchPerformanceSyncService
                 $keys = $row['keys'];
                 $query = isset($keys[0]) ? trim($keys[0]) : '';
                 $dateStr = isset($keys[1]) ? trim($keys[1]) : '';
+                // DESKTOP, MOBILE or TABLET.
+                $device = isset($keys[2]) && trim($keys[2]) !== '' ? strtolower(trim($keys[2])) : 'all';
 
                 if ($query === '' || $dateStr === '') {
                     continue;
                 }
 
-                // Truncate query to 255 chars if needed and aggregate collisions on (query, date)
+                // Truncate query to 255 chars if needed and aggregate collisions on (query, device, date)
                 $safeQuery = mb_substr($query, 0, 255);
-                $key = $safeQuery.'|'.$dateStr;
+                $key = $safeQuery.'|'.$device.'|'.$dateStr;
 
                 if (isset($deduped[$key])) {
                     $existingClicks = (int) $deduped[$key]['clicks'] + (int) $row['clicks'];
@@ -93,6 +101,7 @@ class SearchPerformanceSyncService
                     'project_id' => $project->id,
                     'provider' => 'gsc',
                     'query' => $safeQuery,
+                    'device' => $device,
                     'date' => $dateStr,
                     'clicks' => $row['clicks'],
                     'impressions' => $row['impressions'],
@@ -105,15 +114,28 @@ class SearchPerformanceSyncService
 
             $recordsToUpsert = array_values($deduped);
 
-            if ($recordsToUpsert !== []) {
+            DB::transaction(function () use ($project, $startDate, $endDate, $recordsToUpsert, $complete): void {
+                // Rows synced before the device split cover all devices. Once
+                // the window has been fetched in full per device they're
+                // replaced, so drop them; after a capped fetch keep them as the
+                // fallback for queries that didn't come back.
+                if ($complete) {
+                    SearchPerformanceQuery::query()
+                        ->where('project_id', $project->id)
+                        ->where('provider', 'gsc')
+                        ->where('device', 'all')
+                        ->whereBetween('date', [$startDate->format('Y-m-d'), $endDate->format('Y-m-d')])
+                        ->delete();
+                }
+
                 foreach (array_chunk($recordsToUpsert, 500) as $chunk) {
                     SearchPerformanceQuery::query()->upsert(
                         $chunk,
-                        ['project_id', 'provider', 'query', 'date'],
+                        ['project_id', 'provider', 'query', 'device', 'date'],
                         ['clicks', 'impressions', 'ctr', 'position', 'updated_at'],
                     );
                 }
-            }
+            });
 
             $count = count($recordsToUpsert);
 
@@ -142,7 +164,7 @@ class SearchPerformanceSyncService
 
             return ['success' => true, 'records_synced' => $count, 'pages_synced' => $pageCount];
         } catch (SearchConsoleAuthException $e) {
-            $integration->markNeedsReconnect($e->getMessage());
+            $integration->markNeedsReconnectUnlessMarked($e->getMessage());
 
             Log::warning(sprintf(
                 'Google Search Console auth error for project %d: %s',
@@ -254,6 +276,40 @@ class SearchPerformanceSyncService
     }
 
     /**
+     * Store Bing's daily crawl stats. A failure here doesn't fail the sync.
+     */
+    private function syncBingCrawlStats(ProjectIntegration $integration, CarbonInterface $now): int
+    {
+        try {
+            $rows = $this->bingClient->getCrawlStats($integration);
+        } catch (\Throwable $e) {
+            Log::warning(sprintf('Bing crawl stats failed for project %d: %s', $integration->project_id, $e->getMessage()));
+
+            return 0;
+        }
+
+        /** @var array<string, array<string, mixed>> $byDate */
+        $byDate = [];
+        foreach ($rows as $row) {
+            $byDate[$row['date']] = $row + [
+                'project_id' => $integration->project_id,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+
+        foreach (array_chunk(array_values($byDate), 500) as $chunk) {
+            BingCrawlStat::query()->upsert(
+                $chunk,
+                ['project_id', 'date'],
+                ['crawled_pages', 'crawl_errors', 'in_index', 'in_links', 'code_2xx', 'code_301', 'code_302', 'code_4xx', 'code_5xx', 'blocked_by_robots', 'dns_failures', 'connection_timeouts', 'updated_at'],
+            );
+        }
+
+        return count($byDate);
+    }
+
+    /**
      * Synchronize query search performance from Bing Webmaster Tools.
      *
      * @return array{success: bool, records_synced: int, error?: string}
@@ -318,13 +374,14 @@ class SearchPerformanceSyncService
                 foreach (array_chunk($recordsToUpsert, 500) as $chunk) {
                     SearchPerformanceQuery::query()->upsert(
                         $chunk,
-                        ['project_id', 'provider', 'query', 'date'],
+                        ['project_id', 'provider', 'query', 'device', 'date'],
                         ['clicks', 'impressions', 'ctr', 'position', 'updated_at'],
                     );
                 }
             }
 
             $count = count($recordsToUpsert);
+            $crawlDays = $this->syncBingCrawlStats($integration, $now);
 
             $integration->update([
                 'status' => 'connected',
@@ -335,16 +392,17 @@ class SearchPerformanceSyncService
                 project: $project,
                 eventType: 'integration.synced',
                 title: 'Bing Webmaster Tools Synced',
-                description: "Synchronized {$count} query performance records from Bing Webmaster Tools.",
+                description: "Synchronized {$count} query performance records and {$crawlDays} days of crawl stats from Bing Webmaster Tools.",
                 properties: [
                     'provider' => 'bing',
                     'count' => $count,
+                    'crawl_days' => $crawlDays,
                 ],
             );
 
             return ['success' => true, 'records_synced' => $count];
         } catch (SearchConsoleAuthException $e) {
-            $integration->markNeedsReconnect($e->getMessage());
+            $integration->markNeedsReconnectUnlessMarked($e->getMessage());
 
             Log::warning(sprintf(
                 'Bing Webmaster auth error for project %d: %s',

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domains\Integrations\Jobs;
 
 use App\Domains\Billing\PlanFeature;
+use App\Domains\Integrations\Actions\LogIntegrationSyncFailure;
 use App\Domains\Integrations\Models\ProjectIntegration;
 use App\Domains\Integrations\Services\SearchPerformanceSyncService;
 use Illuminate\Bus\Queueable;
@@ -12,6 +13,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
+use Throwable;
 
 class SyncGoogleSearchConsoleJob implements ShouldQueue
 {
@@ -38,5 +40,13 @@ class SyncGoogleSearchConsoleJob implements ShouldQueue
         if (! $result['success'] && ($result['error'] ?? null) !== null && $this->integration->fresh()?->status !== 'needs_reconnect') {
             throw new \RuntimeException("Google Search Console sync failed: {$result['error']}");
         }
+    }
+
+    /**
+     * After the last retry: record the failure in the project's activity feed.
+     */
+    public function failed(?Throwable $exception): void
+    {
+        LogIntegrationSyncFailure::handle($this->integration, 'Google Search Console', $exception);
     }
 }

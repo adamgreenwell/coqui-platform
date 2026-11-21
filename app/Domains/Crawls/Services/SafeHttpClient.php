@@ -8,10 +8,12 @@ use App\Domains\Crawls\Exceptions\SsrfProtectionException;
 use GuzzleHttp\Psr7\Uri;
 use GuzzleHttp\Psr7\UriResolver;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\Pool;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Psr\Http\Message\ResponseInterface;
 use RuntimeException;
+use Throwable;
 
 /**
  * HTTP client for server-side requests to user-supplied URLs.
@@ -70,6 +72,95 @@ class SafeHttpClient
     }
 
     /**
+     * GET several user-supplied URLs at once, with the same checks as get()
+     * on every hop: each round of requests (and each round of redirects) is
+     * sent concurrently, so the slowest URL sets the total time.
+     *
+     * @param  array<array-key, string>  $urls
+     * @return array<array-key, Response|Throwable> keyed like `$urls`: the final response, or what stopped that URL
+     */
+    public function getMany(
+        array $urls,
+        int $timeoutSeconds = 6,
+        string $userAgent = self::DEFAULT_USER_AGENT,
+        int $maxRedirects = self::DEFAULT_MAX_REDIRECTS,
+        int $maxBytes = self::DEFAULT_MAX_BYTES,
+    ): array {
+        /** @var array<array-key, Response|Throwable> $results */
+        $results = [];
+        $pending = $urls;
+
+        for ($hop = 0; $pending !== []; $hop++) {
+            /** @var array<array-key, array{0: string, 1: array<string, mixed>}> $prepared */
+            $prepared = [];
+            foreach ($pending as $key => $url) {
+                try {
+                    $prepared[$key] = [$url, $this->requestOptions($url, $maxBytes)];
+                } catch (Throwable $e) {
+                    $results[$key] = $e;
+                }
+            }
+
+            $responses = $prepared === [] ? [] : Http::pool(function (Pool $pool) use ($prepared, $timeoutSeconds, $userAgent): void {
+                foreach ($prepared as $key => [$url, $options]) {
+                    $pool->as((string) $key)
+                        ->timeout($timeoutSeconds)
+                        ->withOptions($options)
+                        ->withUserAgent($userAgent)
+                        ->get($url);
+                }
+            });
+
+            $next = [];
+            foreach ($prepared as $key => [$url]) {
+                $response = $responses[$key] ?? null;
+                if (! $response instanceof Response) {
+                    $results[$key] = $response instanceof Throwable ? $response : new RuntimeException('No response.');
+
+                    continue;
+                }
+
+                try {
+                    $this->assertWithinSize($response, $url, $maxBytes);
+                } catch (Throwable $e) {
+                    $results[$key] = $e;
+
+                    continue;
+                }
+
+                $location = trim((string) $response->header('Location'));
+                if (! in_array($response->status(), self::REDIRECT_STATUSES, true) || $location === '') {
+                    $results[$key] = $response;
+
+                    continue;
+                }
+
+                if ($hop >= $maxRedirects) {
+                    $results[$key] = SsrfProtectionException::blocked($urls[$key], sprintf('Exceeded %d redirects.', $maxRedirects));
+
+                    continue;
+                }
+
+                // A malformed Location fails only this URL, not the batch.
+                try {
+                    $next[$key] = (string) UriResolver::resolve(new Uri($url), new Uri($location));
+                } catch (Throwable $e) {
+                    $results[$key] = $e;
+                }
+            }
+
+            $pending = $next;
+        }
+
+        $ordered = [];
+        foreach (array_keys($urls) as $key) {
+            $ordered[$key] = $results[$key];
+        }
+
+        return $ordered;
+    }
+
+    /**
      * POST JSON to a user-supplied URL (for example a webhook callback).
      * Redirects are never followed for POSTs.
      *
@@ -95,6 +186,19 @@ class SafeHttpClient
      */
     private function pinnedRequest(string $url, int $timeoutSeconds, int $maxBytes): PendingRequest
     {
+        return Http::timeout($timeoutSeconds)->withOptions($this->requestOptions($url, $maxBytes));
+    }
+
+    /**
+     * Guzzle options for one hop: no automatic redirects, a size cap, and the
+     * connection pinned to the addresses the guard approved.
+     *
+     * @return array<string, mixed>
+     *
+     * @throws SsrfProtectionException
+     */
+    private function requestOptions(string $url, int $maxBytes): array
+    {
         $ips = $this->guard->resolveSafeIps($url);
 
         $options = [
@@ -117,7 +221,7 @@ class SafeHttpClient
             $options['curl'] = [CURLOPT_RESOLVE => [$pin]];
         }
 
-        return Http::timeout($timeoutSeconds)->withOptions($options);
+        return $options;
     }
 
     /**

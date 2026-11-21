@@ -20,6 +20,16 @@ Schedule::command('dataforseo:run-rank-batches')
     ->dailyAt('05:10')
     ->withoutOverlapping();
 
+// Free: compare the DataForSEO ledger with the account balance; alert operators on drift or thresholds.
+Schedule::command('dataforseo:reconcile')
+    ->hourly()
+    ->withoutOverlapping();
+
+// Drop archived DataForSEO responses past DATAFORSEO_ARCHIVE_RETENTION_DAYS.
+Schedule::command('dataforseo:status --prune')
+    ->dailyAt('03:15')
+    ->withoutOverlapping();
+
 // Re-checks rank tasks that failed or stalled with the backup SERP provider.
 Schedule::command('rank:fallback')
     ->hourly()
@@ -48,4 +58,10 @@ Schedule::command('traffic:sync')
 // Daily run checking project crawl cadence and dispatching cloud site audits to coqui-worker.
 Schedule::command('coqui:run-scheduled-crawls')
     ->dailyAt('02:00')
+    ->withoutOverlapping();
+
+// Cloud crawls the worker stopped reporting on (it restarted, crashed or was
+// never reached) are marked failed so they don't block the next crawl.
+Schedule::command('coqui:fail-stalled-crawls')
+    ->everyFiveMinutes()
     ->withoutOverlapping();

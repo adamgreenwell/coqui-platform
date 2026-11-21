@@ -13,6 +13,9 @@ class SerpResultParser
      * @param  list<string>  $competitorDomains
      * @return array{
      *     detected_features: list<string>,
+     *     ai_overview: array{present: bool, position: int|null, citations: list<array{position: int, domain: string, url: string|null, title: string|null}>},
+     *     local_pack: list<array{rank: int|null, title: string, domain: string|null, url: string|null, rating: float|null}>,
+     *     people_also_ask: list<string>,
      *     domain_snapshots: array<string, array{
      *         domain: string,
      *         rank_group: int|null,
@@ -31,6 +34,9 @@ class SerpResultParser
         $detectedFeatures = $this->detectFeatures($items, $payload);
         $aiOverviewCitedDomains = $this->extractAiOverviewCitedDomains($items);
         $featuredSnippetOwners = $this->extractFeaturedSnippetOwners($items);
+        $aiOverview = $this->extractAiOverview($items);
+        $localPack = $this->extractLocalPack($items);
+        $peopleAlsoAsk = $this->extractPeopleAlsoAsk($items);
 
         $allDomains = array_unique(array_merge(
             [$this->normalizeDomain($projectDomain)],
@@ -58,6 +64,22 @@ class SerpResultParser
                 }
             }
 
+            $citationPosition = null;
+            foreach ($aiOverview['citations'] as $citation) {
+                if ($this->domainMatches($citation['domain'], $domain)) {
+                    $citationPosition = $citation['position'];
+                    break;
+                }
+            }
+
+            $localPackOwned = false;
+            foreach ($localPack as $listing) {
+                if ($listing['domain'] !== null && $this->domainMatches($listing['domain'], $domain)) {
+                    $localPackOwned = true;
+                    break;
+                }
+            }
+
             $snapshots[$domain] = [
                 'domain' => $domain,
                 'rank_group' => $matchingItem['rank_group'] ?? null,
@@ -70,6 +92,9 @@ class SerpResultParser
                     'page_features' => $detectedFeatures,
                     'ai_overview_cited' => $hasAiOverview,
                     'featured_snippet_owned' => $hasFeaturedSnippet,
+                    // 1-based position among the AI Overview's citations.
+                    'ai_overview_citation_position' => $citationPosition,
+                    'local_pack_owned' => $localPackOwned,
                     'item_type' => $matchingItem['type'] ?? null,
                 ],
             ];
@@ -77,8 +102,142 @@ class SerpResultParser
 
         return [
             'detected_features' => $detectedFeatures,
+            'ai_overview' => $aiOverview,
+            'local_pack' => $localPack,
+            'people_also_ask' => $peopleAlsoAsk,
             'domain_snapshots' => $snapshots,
         ];
+    }
+
+    /**
+     * The AI Overview's SERP position and its citations in order, one per
+     * URL (references on the overview and on its elements).
+     *
+     * @param  list<array<string, mixed>>  $items
+     * @return array{present: bool, position: int|null, citations: list<array{position: int, domain: string, url: string|null, title: string|null}>}
+     */
+    private function extractAiOverview(array $items): array
+    {
+        $present = false;
+        $position = null;
+        $citations = [];
+        $seen = [];
+
+        $add = function (mixed $ref) use (&$citations, &$seen): void {
+            if (! is_array($ref)) {
+                return;
+            }
+
+            $url = isset($ref['url']) && is_string($ref['url']) && $ref['url'] !== '' ? $ref['url'] : null;
+            $domain = (string) ($ref['domain'] ?? '');
+            if ($domain === '' && $url !== null) {
+                $domain = (string) parse_url($url, PHP_URL_HOST);
+            }
+            $domain = $this->normalizeDomain($domain);
+            if ($domain === '') {
+                return;
+            }
+
+            $key = $url ?? $domain;
+            if (isset($seen[$key])) {
+                return;
+            }
+            $seen[$key] = true;
+
+            $title = isset($ref['title']) && is_string($ref['title']) && trim($ref['title']) !== '' ? trim($ref['title']) : (isset($ref['source']) && is_string($ref['source']) ? $ref['source'] : null);
+            $citations[] = [
+                'position' => count($citations) + 1,
+                'domain' => $domain,
+                'url' => $url,
+                'title' => $title !== null ? mb_substr($title, 0, 500) : null,
+            ];
+        };
+
+        foreach ($items as $item) {
+            if (($item['type'] ?? null) !== 'ai_overview') {
+                continue;
+            }
+
+            $present = true;
+            $position ??= isset($item['rank_absolute']) ? (int) $item['rank_absolute'] : null;
+
+            foreach (is_array($item['references'] ?? null) ? $item['references'] : [] as $ref) {
+                $add($ref);
+            }
+            foreach (is_array($item['items'] ?? null) ? $item['items'] : [] as $element) {
+                if (! is_array($element)) {
+                    continue;
+                }
+                foreach (is_array($element['references'] ?? null) ? $element['references'] : [] as $ref) {
+                    $add($ref);
+                }
+            }
+        }
+
+        return ['present' => $present, 'position' => $position, 'citations' => $citations];
+    }
+
+    /**
+     * Local Pack listings: each is its own `local_pack` item.
+     *
+     * @param  list<array<string, mixed>>  $items
+     * @return list<array{rank: int|null, title: string, domain: string|null, url: string|null, rating: float|null}>
+     */
+    private function extractLocalPack(array $items): array
+    {
+        $listings = [];
+        foreach ($items as $item) {
+            if (($item['type'] ?? null) !== 'local_pack') {
+                continue;
+            }
+
+            $title = trim((string) ($item['title'] ?? ''));
+            if ($title === '') {
+                continue;
+            }
+
+            $url = isset($item['url']) && is_string($item['url']) && $item['url'] !== '' ? $item['url'] : null;
+            $domain = (string) ($item['domain'] ?? '');
+            if ($domain === '' && $url !== null) {
+                $domain = (string) parse_url($url, PHP_URL_HOST);
+            }
+            $rating = $item['rating']['value'] ?? null;
+
+            $listings[] = [
+                'rank' => isset($item['rank_group']) ? (int) $item['rank_group'] : null,
+                'title' => mb_substr($title, 0, 255),
+                'domain' => $domain !== '' ? $this->normalizeDomain($domain) : null,
+                'url' => $url,
+                'rating' => is_numeric($rating) ? (float) $rating : null,
+            ];
+        }
+
+        return $listings;
+    }
+
+    /**
+     * People Also Ask questions, in SERP order.
+     *
+     * @param  list<array<string, mixed>>  $items
+     * @return list<string>
+     */
+    private function extractPeopleAlsoAsk(array $items): array
+    {
+        $questions = [];
+        foreach ($items as $item) {
+            if (($item['type'] ?? null) !== 'people_also_ask') {
+                continue;
+            }
+
+            foreach (is_array($item['items'] ?? null) ? $item['items'] : [] as $element) {
+                $question = is_array($element) ? trim((string) ($element['title'] ?? '')) : '';
+                if ($question !== '') {
+                    $questions[] = mb_substr($question, 0, 255);
+                }
+            }
+        }
+
+        return array_values(array_unique($questions));
     }
 
     /**

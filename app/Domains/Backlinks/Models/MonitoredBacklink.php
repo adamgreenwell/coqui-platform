@@ -22,6 +22,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $state
  * @property int|null $last_http_status
  * @property string|null $last_observed_rel
+ * @property string|null $last_observed_anchor
  * @property bool $last_page_noindex
  * @property CarbonInterface|null $last_verified_at
  * @property CarbonInterface|null $created_at
@@ -43,6 +44,7 @@ class MonitoredBacklink extends Model
         'state',
         'last_http_status',
         'last_observed_rel',
+        'last_observed_anchor',
         'last_page_noindex',
         'last_verified_at',
     ];

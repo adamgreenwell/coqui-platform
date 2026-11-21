@@ -17,6 +17,8 @@ interface TokenItem {
   id: string;
   name: string;
   abilities: string[] | null;
+  // An older token not tied to a workspace: it works in all of yours.
+  allWorkspaces?: boolean;
   lastUsedAt?: string | null;
   createdAt?: string | null;
 }
@@ -24,12 +26,14 @@ interface TokenItem {
 interface WorkspaceTokensProps {
   workspace: WorkspaceSummary;
   tokens: TokenItem[];
+  canCreateTokens?: boolean;
   plainTextToken?: string | null;
 }
 
 export default function WorkspaceTokens({
   workspace,
   tokens,
+  canCreateTokens = true,
   plainTextToken,
 }: WorkspaceTokensProps) {
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -96,14 +100,16 @@ export default function WorkspaceTokens({
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setCreateModalOpen(true)}
-            className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs transition shadow-lg shadow-emerald-500/10 self-start sm:self-auto cursor-pointer"
-          >
-            <Plus className="h-4 w-4" />
-            <span>New Desktop Token</span>
-          </button>
+          {canCreateTokens && (
+            <button
+              type="button"
+              onClick={() => setCreateModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs transition shadow-lg shadow-emerald-500/10 self-start sm:self-auto cursor-pointer"
+            >
+              <Plus className="h-4 w-4" />
+              <span>New Desktop Token</span>
+            </button>
+          )}
         </div>
 
         {/* Revealed Token Alert */}
@@ -169,6 +175,14 @@ export default function WorkspaceTokens({
                         <div className="flex items-center gap-2">
                           <Laptop className="h-4 w-4 text-slate-400" />
                           <span>{token.name}</span>
+                          {token.allWorkspaces && (
+                            <span
+                              className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/30 text-[10px] font-medium"
+                              title="Created before tokens were tied to one workspace, so it works in all of your workspaces. Revoke it and create a new one to limit it to this workspace."
+                            >
+                              All workspaces
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="px-6 py-4">

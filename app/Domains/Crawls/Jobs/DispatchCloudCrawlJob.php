@@ -8,11 +8,13 @@ use App\Domains\Billing\PlanFeature;
 use App\Domains\Crawls\Events\CrawlProgressUpdated;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Crawls\Services\CoquiWorkerClient;
+use App\Domains\Integrations\Services\RunnrDeploySmokeService;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Throwable;
@@ -32,7 +34,11 @@ class DispatchCloudCrawlJob implements ShouldQueue
      */
     public const PRIORITY_QUEUE = 'crawls-priority';
 
-    public int $tries = 2;
+    /**
+     * One attempt: a failed dispatch marks the run failed, and a retry would
+     * start a crawl the user has already been told failed.
+     */
+    public int $tries = 1;
 
     public int $timeout = 120;
 
@@ -89,13 +95,17 @@ class DispatchCloudCrawlJob implements ShouldQueue
         try {
             $workerClient->dispatchCrawl($this->project, $this->crawlId, $this->overrides);
         } catch (Throwable $e) {
-            $run->update(['status' => 'failed']);
+            $run->update(['status' => 'failed', 'finalized_at' => now()]);
+
+            $reason = $e instanceof ConnectionException
+                ? 'The crawl worker could not be reached.'
+                : $e->getMessage();
 
             ProjectActivity::log(
                 project: $this->project,
                 eventType: 'crawl.failed',
                 title: 'Cloud crawl dispatch failed',
-                description: sprintf('Failed to dispatch cloud crawl [%s]: %s', $this->crawlId, $e->getMessage()),
+                description: sprintf('Failed to dispatch cloud crawl [%s]: %s', $this->crawlId, $reason),
                 properties: [
                     'crawl_id' => $this->crawlId,
                     'error' => $e->getMessage(),
@@ -112,6 +122,10 @@ class DispatchCloudCrawlJob implements ShouldQueue
                 opportunityCount: (int) $run->opportunity_count,
                 status: 'failed',
             )));
+
+            if ($run->source === 'deploy_smoke') {
+                app(RunnrDeploySmokeService::class)->reportFailure($run, $reason);
+            }
 
             throw $e;
         }
