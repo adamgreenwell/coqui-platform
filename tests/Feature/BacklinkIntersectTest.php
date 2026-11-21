@@ -372,4 +372,30 @@ class BacklinkIntersectTest extends TestCase
                 ->where('brokenReclaim.0.sampled', true)
                 ->where('brokenReclaim.0.pitch_idea', fn (string $pitch): bool => str_contains($pitch, 'at least 1 broken backlinks')));
     }
+
+    public function test_broken_reclaim_counts_repeated_links_on_one_referring_page(): void
+    {
+        Http::fake([
+            'https://sandbox.dataforseo.com/v3/backlinks/domain_intersection/live' => Http::response(['status_code' => 20000, 'tasks' => [['result' => [['items' => []]]]]], 200),
+            'https://sandbox.dataforseo.com/v3/backlinks/backlinks/live' => Http::response([
+                'status_code' => 20000,
+                'tasks' => [['result' => [[
+                    'total_count' => 2,
+                    'items' => [
+                        ['url_to' => 'https://competitor-a.com/old', 'url_to_status_code' => 404, 'domain_from' => 'one.com', 'dofollow' => true, 'links_count' => 12],
+                        ['url_to' => 'https://competitor-a.com/old', 'url_to_status_code' => 404, 'domain_from' => 'two.com', 'dofollow' => false, 'links_count' => 4],
+                    ],
+                ]]]],
+            ], 200),
+        ]);
+
+        $this->actingAs($this->user)
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks/intersect")
+            ->assertInertia(fn ($page) => $page
+                ->where('brokenReclaim.0.backlinks', 16)
+                ->where('brokenReclaim.0.dofollow', 12)
+                ->where('brokenReclaim.0.dofollow_ratio', 75)
+                ->where('brokenReclaim.0.referring_domains', 2)
+                ->where('brokenReclaim.0.sampled', false));
+    }
 }

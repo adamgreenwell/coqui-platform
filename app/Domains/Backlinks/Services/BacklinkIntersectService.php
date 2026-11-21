@@ -211,10 +211,13 @@ class BacklinkIntersectService
                 }
 
                 $status = isset($item['url_to_status_code']) ? (int) $item['url_to_status_code'] : null;
+                // One item can stand for several identical links on the
+                // same referring page.
+                $links = max(1, (int) ($item['links_count'] ?? 1));
                 $pages[$pageUrl] ??= ['status' => $status, 'backlinks' => 0, 'dofollow' => 0, 'domains' => []];
-                $pages[$pageUrl]['backlinks']++;
+                $pages[$pageUrl]['backlinks'] += $links;
                 if (($item['dofollow'] ?? false) === true) {
-                    $pages[$pageUrl]['dofollow']++;
+                    $pages[$pageUrl]['dofollow'] += $links;
                 }
                 $fromDomain = strtolower((string) ($item['domain_from'] ?? ''));
                 if ($fromDomain !== '') {
