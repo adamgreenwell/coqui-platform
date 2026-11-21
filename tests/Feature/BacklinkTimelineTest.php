@@ -333,6 +333,24 @@ class BacklinkTimelineTest extends TestCase
         Http::assertNothingSent();
     }
 
+    public function test_a_drop_on_an_earlier_newly_fetched_day_is_alerted(): void
+    {
+        Event::fake([BacklinkAlertTriggered::class]);
+        Http::fake();
+        $dropDay = now()->subDays(4)->toDateString();
+        $this->snapshot($dropDay, ['backlinks_count' => 100, 'lost_backlinks' => 30]);
+        $this->snapshot(now()->subDays(3)->toDateString());
+        $this->snapshot(now()->toDateString());
+        // Too old to be from the latest refresh.
+        $this->snapshot(now()->subDays(40)->toDateString(), ['backlinks_count' => 100, 'lost_backlinks' => 50]);
+
+        $this->artisan('backlinks:evaluate-alerts')->assertSuccessful();
+        $this->artisan('backlinks:evaluate-alerts')->assertSuccessful();
+
+        Event::assertDispatchedTimes(BacklinkAlertTriggered::class, 1);
+        $this->assertSame('drop:'.$dropDay, BacklinkAlert::query()->sole()->dedupe_key);
+    }
+
     public function test_the_scheduled_check_refreshes_stale_history_only_when_scheduled_spend_is_on(): void
     {
         $this->snapshot(now()->subDays(20)->toDateString());

@@ -43,11 +43,16 @@ class BacklinkDigestService
      *     link_changes_total: int,
      * }
      */
-    public function build(Project $project, CarbonInterface $since): array
+    public function build(Project $project, CarbonInterface $from, CarbonInterface $until): array
     {
+        // Half-open [from, until): adjacent digests never share a day.
+        $from = $from->copy()->startOfDay();
+        $until = $until->copy()->startOfDay();
+
         $alerts = BacklinkAlert::query()
             ->where('project_id', $project->id)
-            ->where('detected_at', '>=', $since)
+            ->where('detected_at', '>=', $from)
+            ->where('detected_at', '<', $until)
             ->latest('detected_at')
             ->limit(20)
             ->get()
@@ -56,13 +61,15 @@ class BacklinkDigestService
             ->all();
 
         $snapshots = $project->backlinkHistorySnapshots()
-            ->where('snapshot_date', '>=', $since->toDateString())
+            ->where('snapshot_date', '>=', $from->toDateString())
+            ->where('snapshot_date', '<', $until->toDateString())
             ->get();
 
         $changes = ProjectActivity::query()
             ->where('project_id', $project->id)
             ->where('event_type', 'backlink.state_changed')
-            ->where('created_at', '>=', $since);
+            ->where('created_at', '>=', $from)
+            ->where('created_at', '<', $until);
 
         $linkChanges = (clone $changes)
             ->latest()
@@ -78,8 +85,8 @@ class BacklinkDigestService
 
         return [
             'project' => ['name' => $project->name, 'domain' => $project->domain],
-            'period_start' => $since->toDateString(),
-            'period_end' => now()->toDateString(),
+            'period_start' => $from->toDateString(),
+            'period_end' => $until->copy()->subDay()->toDateString(),
             'alerts' => $alerts,
             'new_referring_domains' => (int) $snapshots->sum('new_referring_domains'),
             'lost_referring_domains' => (int) $snapshots->sum('lost_referring_domains'),
@@ -91,13 +98,15 @@ class BacklinkDigestService
     }
 
     /**
-     * Send the last week's digest and record that it was sent.
+     * Send the digest for the seven full days before today and record that
+     * it was sent.
      *
      * @return array{emailed: int, slack: bool}
      */
     public function send(Project $project): array
     {
-        $digest = $this->build($project, now()->subDays(7));
+        $today = now()->startOfDay();
+        $digest = $this->build($project, $today->copy()->subDays(7), $today);
 
         // Only members who can still see the project.
         $recipients = $project->backlinkDigestSubscribers()

@@ -170,7 +170,17 @@ class BacklinkDigestTest extends TestCase
             title: 'Backlink state changed',
             description: 'Link from partner.example is now missing.',
             properties: ['new_state' => 'missing'],
-        );
+        )->forceFill(['created_at' => now()->subDay()])->save();
+        // Today's events belong to next week's digest.
+        BacklinkAlert::query()->create([
+            'project_id' => $this->project->id,
+            'type' => 'backlink_drop',
+            'severity' => 'warning',
+            'dedupe_key' => 'drop:today',
+            'message' => 'Today',
+            'meta' => [],
+            'detected_at' => now(),
+        ]);
 
         $this->artisan('backlinks:send-digests')->assertSuccessful()->expectsOutputToContain('Sent 1 backlink digests');
 
@@ -207,12 +217,39 @@ class BacklinkDigestTest extends TestCase
 
     public function test_the_digest_email_renders(): void
     {
-        $digest = app(BacklinkDigestService::class)->build($this->project, now()->subDays(7));
+        $digest = app(BacklinkDigestService::class)->build($this->project, now()->subDays(7), now());
         $mail = (new BacklinkDigestNotification($this->project, $digest))->toMail($this->viewer);
 
         $this->assertSame('Weekly backlink digest for coquiseo.com', $mail->subject);
         $this->assertStringContainsString('/backlinks', (string) $mail->actionUrl);
         $this->assertContains('No alerts this week.', $mail->introLines);
+    }
+
+    public function test_consecutive_digests_never_count_the_same_day_twice(): void
+    {
+        $this->travelTo(now()->parse('2026-11-23 07:00:00')); // a Monday
+        foreach (range(0, 14) as $daysAgo) {
+            BacklinkHistorySnapshot::query()->create([
+                'project_id' => $this->project->id,
+                'snapshot_date' => now()->subDays($daysAgo)->toDateString(),
+                'backlinks_count' => 100,
+                'referring_domains_count' => 20,
+                'new_backlinks' => 1,
+                'lost_backlinks' => 0,
+                'new_referring_domains' => 1,
+                'lost_referring_domains' => 0,
+                'rank' => 200,
+            ]);
+        }
+        $service = app(BacklinkDigestService::class);
+
+        $thisWeek = $service->build($this->project, now()->subDays(7), now());
+        $lastWeek = $service->build($this->project, now()->subDays(14), now()->subDays(7));
+
+        $this->assertSame(7, $thisWeek['new_referring_domains']);
+        $this->assertSame(7, $lastWeek['new_referring_domains']);
+        $this->assertSame(['2026-11-16', '2026-11-22'], [$thisWeek['period_start'], $thisWeek['period_end']]);
+        $this->assertSame(['2026-11-09', '2026-11-15'], [$lastWeek['period_start'], $lastWeek['period_end']]);
     }
 
     public function test_a_slack_failure_does_not_stop_the_email(): void

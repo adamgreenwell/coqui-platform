@@ -235,13 +235,18 @@ class BacklinkTimelineService
     {
         $created = [];
 
-        /** @var BacklinkHistorySnapshot|null $latest */
-        $latest = $project->backlinkHistorySnapshots()->orderByDesc('snapshot_date')->first();
-        if ($latest !== null) {
-            $lost = $latest->lost_backlinks;
-            $total = $latest->backlinks_count;
+        // Every day a refresh may have brought in since the last one, not
+        // just the newest; the date in the key keeps each drop to one alert.
+        $recheckDays = max(1, (int) config('coqui.backlinks.history_recheck_days', 7));
+        $recent = $project->backlinkHistorySnapshots()
+            ->where('snapshot_date', '>=', now()->subDays($recheckDays + 1)->toDateString())
+            ->orderBy('snapshot_date')
+            ->get();
+        foreach ($recent as $snapshot) {
+            $lost = $snapshot->lost_backlinks;
+            $total = $snapshot->backlinks_count;
             if ($lost >= 25 && $total > 0 && ($lost / $total) >= 0.15) {
-                $date = $latest->snapshot_date->toDateString();
+                $date = $snapshot->snapshot_date->toDateString();
                 $created[] = $this->recordAlert(
                     $project,
                     'backlink_drop',
