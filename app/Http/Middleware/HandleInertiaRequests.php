@@ -7,6 +7,7 @@ namespace App\Http\Middleware;
 use App\Domains\Billing\PlanFeature;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
+use App\Domains\Serp\DataForSeo\DataForSeoClient;
 use App\Features\RunnrIntegration;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -61,6 +62,11 @@ class HandleInertiaRequests extends Middleware
                 'success' => fn () => $request->session()->get('success'),
                 'error' => fn () => $request->session()->get('error'),
                 'status' => fn () => $request->session()->get('status'),
+            ],
+            // Keyword, ranking and backlink pages show a notice when no SEO
+            // data provider is set up, instead of empty results.
+            'dataProviders' => [
+                'seoData' => fn (): bool => app(DataForSeoClient::class)->isConfigured(),
             ],
             'features' => [
                 'runnrIntegration' => fn (): bool => RunnrIntegration::enabled(),

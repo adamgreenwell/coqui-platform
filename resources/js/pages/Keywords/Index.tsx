@@ -34,6 +34,7 @@ import { type FormEvent, useEffect, useState } from 'react';
 import { getEcho } from '../../echo';
 import { FeatureLink, UpgradeNotice, usePlan } from '../../components/PlanGate';
 import AppLayout, { type WorkspaceSummary } from '../../layouts/AppLayout';
+import DataProviderNotice from '../../components/DataProviderNotice';
 
 interface ProjectDetails {
   id: string;
@@ -261,6 +262,7 @@ export default function KeywordsIndex({
       <Head title={`${project.name} - Rank Tracker & SERP Intelligence`} />
 
       <div className="space-y-6">
+        <DataProviderNotice />
         {/* Breadcrumb Navigation */}
         <div className="flex items-center gap-2 text-xs text-slate-400">
           <Link href={`/workspaces/${workspace.id}`} className="hover:text-white transition">

@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import AppLayout from '../../layouts/AppLayout';
+import DataProviderNotice from '../../components/DataProviderNotice';
 
 interface CompetitorItem {
   rank: number;
@@ -144,6 +145,7 @@ export default function ContentBriefPage({
       <Head title={brief ? `Brief: ${brief.keyword} — ${project.name}` : `Content Briefs — ${project.name}`} />
 
       <div className="space-y-6">
+        <DataProviderNotice />
         {/* Navigation Breadcrumb */}
         <div className="flex items-center gap-2 text-xs text-slate-400">
           <Link

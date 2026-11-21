@@ -22,6 +22,12 @@ class CollectDataForSeoTasksCommand extends Command
 
     public function handle(DataForSeoClient $client): int
     {
+        if (! $client->isConfigured()) {
+            $this->info('Skipped: DataForSEO credentials are not configured.');
+
+            return self::SUCCESS;
+        }
+
         $limit = max(1, (int) $this->option('limit'));
         $thresholdMinutes = max(0, (int) $this->option('threshold'));
         $force = (bool) $this->option('force');

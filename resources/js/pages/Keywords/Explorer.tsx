@@ -35,6 +35,7 @@ import {
 import { useMemo, useState } from 'react';
 import { FeatureLink } from '../../components/PlanGate';
 import AppLayout, { type WorkspaceSummary } from '../../layouts/AppLayout';
+import DataProviderNotice from '../../components/DataProviderNotice';
 
 interface ProjectDetails {
   id: string;
@@ -662,6 +663,7 @@ export default function KeywordExplorer({
       <Head title={`${project.name} - Keyword Explorer & Search Volume`} />
 
       <div className="space-y-6">
+        <DataProviderNotice />
         {/* Navigation Breadcrumb */}
         <div className="flex items-center gap-2 text-xs text-slate-400">
           <Link href={`/workspaces/${workspace.id}`} className="hover:text-white transition">

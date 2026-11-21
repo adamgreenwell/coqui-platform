@@ -33,6 +33,14 @@ class RunRankBatchesCommand extends Command
             return self::SUCCESS;
         }
 
+        // Every submission would fail; skip quietly instead of logging an
+        // error per keyword on each scheduled run.
+        if (! $client->isConfigured()) {
+            $this->info('Skipped: DataForSEO credentials are not configured.');
+
+            return self::SUCCESS;
+        }
+
         $projectId = $this->option('project') ? (int) $this->option('project') : null;
         $limit = $this->option('limit') !== null ? max(1, (int) $this->option('limit')) : null;
         $force = (bool) $this->option('force');
