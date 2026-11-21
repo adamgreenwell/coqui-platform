@@ -25,7 +25,7 @@ import {
   TrendingUp,
   X,
 } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { UpgradePill, usePlan } from '../../components/PlanGate';
 import AppLayout, { type WorkspaceSummary } from '../../layouts/AppLayout';
 
@@ -326,6 +326,14 @@ export default function Compare({
       setLinksLoading(false);
     }
   };
+
+  // Revoking every loaded link must not strand older ones: fetch the
+  // next page as soon as the loaded list is empty.
+  useEffect(() => {
+    if (shareModalOpen && links.length === 0 && linksCursor && !linksLoading) {
+      void loadOlderLinks();
+    }
+  }, [shareModalOpen, links.length, linksCursor]);
 
   const handleRevoke = async (link: ShareLink) => {
     const response = await fetch(
@@ -1250,9 +1258,12 @@ export default function Compare({
                 </>
                 )}
 
-                {links.length > 0 && (
+                {(links.length > 0 || linksCursor) && (
                   <div className="pt-2 border-t border-slate-800">
                     <span className="block text-xs font-medium text-slate-300 mb-1.5">Active share links</span>
+                    {links.length === 0 && linksLoading && (
+                      <p className="text-[11px] text-slate-500">Loading older links…</p>
+                    )}
                     <ul className="space-y-1.5 max-h-40 overflow-y-auto">
                       {links.map((link) => (
                         <li key={link.id} className="flex items-center justify-between gap-2 text-[11px]">
