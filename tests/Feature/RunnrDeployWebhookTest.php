@@ -879,6 +879,24 @@ Disallow: /
         $this->assertContains('sitemap_missing', array_column($result['regressions'], 'rule'));
     }
 
+    public function test_a_sitemap_too_large_to_fetch_is_not_reported_missing(): void
+    {
+        $this->siteFiles['/sitemap.xml'] = [$this->sitemap(20), 200];
+        $first = $this->smokeRun('43');
+        $this->addCrawledPage($first, 'https://my-runnr-site.com/');
+        app(RunnrDeploySmokeService::class)->evaluate($first);
+
+        // The sitemap grew past the 2 MiB fetch limit.
+        $this->siteFiles['/sitemap.xml'] = [$this->sitemap(20).str_repeat(' ', 2 * 1024 * 1024), 200];
+        $second = $this->smokeRun('44');
+        $this->addCrawledPage($second, 'https://my-runnr-site.com/');
+        $result = app(RunnrDeploySmokeService::class)->evaluate($second);
+
+        $this->assertTrue($result['passed']);
+        $this->assertNotContains('sitemap_missing', array_column($result['regressions'], 'rule'));
+        $this->assertTrue($second->refresh()->config['smoke_results']['checks']['sitemap']['too_large']);
+    }
+
     public function test_a_robots_txt_with_a_byte_order_mark_is_parsed(): void
     {
         $this->assertTrue(DeploySiteFilesInspector::parseRobots("\u{FEFF}User-agent: *\nDisallow: /\n")['disallow_all']);

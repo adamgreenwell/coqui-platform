@@ -25,7 +25,7 @@ class DeploySiteFilesInspector
     /**
      * @return array{
      *     robots: array{url: string, status: int|null, disallow_all: bool, hash: string|null, sitemaps: list<string>},
-     *     sitemap: array{url: string|null, status: int|null, valid: bool, url_count: int|null}
+     *     sitemap: array{url: string|null, status: int|null, valid: bool, url_count: int|null, too_large: bool}
      * }
      */
     public function inspect(string $seed): array
@@ -49,7 +49,7 @@ class DeploySiteFilesInspector
         }
 
         $sitemapUrl = $robots['sitemaps'][0] ?? $origin.'/sitemap.xml';
-        $sitemap = ['url' => $sitemapUrl, 'status' => null, 'valid' => false, 'url_count' => null];
+        $sitemap = ['url' => $sitemapUrl, 'status' => null, 'valid' => false, 'url_count' => null, 'too_large' => false];
         try {
             $response = $this->http->get($sitemapUrl, timeoutSeconds: 10, maxBytes: self::MAX_BYTES);
             $sitemap['status'] = $response->status();
@@ -58,11 +58,24 @@ class DeploySiteFilesInspector
                 $sitemap['valid'] = $count !== null;
                 $sitemap['url_count'] = $count;
             }
-        } catch (Throwable) {
-            // Unreachable sitemap: reported as status null.
+        } catch (Throwable $e) {
+            // Over the size limit: it exists but can't be checked, which is
+            // not the same as missing. Otherwise unreachable (status null).
+            $sitemap['too_large'] = self::isSizeLimit($e);
         }
 
         return ['robots' => $robots, 'sitemap' => $sitemap];
+    }
+
+    private static function isSizeLimit(Throwable $e): bool
+    {
+        for ($current = $e; $current !== null; $current = $current->getPrevious()) {
+            if (str_contains($current->getMessage(), 'exceeds the maximum allowed size')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

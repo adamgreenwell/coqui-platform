@@ -193,8 +193,10 @@ class RunnrDeploySmokeService
             ];
         }
 
-        // Check 1b: Sitemap missing or shrunk since the last deploy check
-        if ($environment === 'production' && $previousChecks !== null && ($previousChecks['sitemap']['valid'] ?? false) === true) {
+        // Check 1b: Sitemap missing or shrunk since the last deploy check. A
+        // sitemap too large to fetch can't be compared, so it isn't flagged.
+        if ($environment === 'production' && $previousChecks !== null && ($previousChecks['sitemap']['valid'] ?? false) === true
+            && ! $checks['sitemap']['too_large']) {
             $previousCount = (int) ($previousChecks['sitemap']['url_count'] ?? 0);
             $currentCount = (int) ($checks['sitemap']['url_count'] ?? 0);
 
