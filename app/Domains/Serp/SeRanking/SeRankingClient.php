@@ -7,6 +7,8 @@ namespace App\Domains\Serp\SeRanking;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Serp\DataForSeo\DataForSeoCacheRepository;
 use App\Domains\Serp\ProviderNotConfiguredException;
+use App\Domains\Serp\SpendRefusedException;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\DB;
@@ -18,7 +20,8 @@ use RuntimeException;
  *
  * Includes payload-size bisection (~26KB limit) on 400/413/414/422, linear 429
  * throttle backoff, shared caching, credit spend guardrails, and an append-only
- * archive for point-in-time domain metrics.
+ * archive for point-in-time domain metrics. Only successful responses count
+ * against the credit caps.
  */
 class SeRankingClient
 {
@@ -44,13 +47,32 @@ class SeRankingClient
         ?Project $project = null,
         bool $bypassCache = false,
     ): array {
+        return $this->exportKeywordsDetailed($keywords, $source, $project, $bypassCache)['rows'];
+    }
+
+    /**
+     * Like exportKeywords, but a request that fails (an error status, a
+     * connection error, a spend cap reached part-way) only loses its own
+     * keywords: they come back in `failed` so a caller can try them
+     * elsewhere, and the rows already fetched are kept. `credits` is what
+     * this call spent (0 when served from cache).
+     *
+     * @param  list<string>  $keywords
+     * @return array{rows: list<array<string, mixed>>, failed: list<string>, credits: int}
+     */
+    public function exportKeywordsDetailed(
+        array $keywords,
+        string $source = 'us',
+        ?Project $project = null,
+        bool $bypassCache = false,
+    ): array {
         $normalized = array_values(array_unique(array_filter(array_map(
             static fn (string $k): string => mb_strtolower(trim($k)),
             $keywords,
         ), static fn (string $k): bool => $k !== '')));
 
         if ($normalized === []) {
-            return [];
+            return ['rows' => [], 'failed' => [], 'credits' => 0];
         }
 
         $endpoint = 'seranking:v1/keywords/export';
@@ -65,23 +87,50 @@ class SeRankingClient
                 /** @var list<array<string, mixed>> $cachedItems */
                 $cachedItems = $cached['items'];
 
-                return $cachedItems;
+                return ['rows' => $cachedItems, 'failed' => [], 'credits' => 0];
             }
         }
 
         $batchSize = max(50, (int) config('coqui.seranking.batch_size', 1000));
-        $results = [];
+        $rows = [];
+        $failed = [];
+        $credits = 0;
+        $refused = null;
 
         foreach (array_chunk($normalized, $batchSize) as $chunk) {
-            foreach ($this->fetchKeywordChunkWithBisection($chunk, $source, $project) as $row) {
-                $results[] = $row;
+            if ($refused !== null) {
+                array_push($failed, ...$chunk);
+
+                continue;
             }
+
+            try {
+                $result = $this->fetchKeywordChunkWithBisection($chunk, $source, $project);
+            } catch (SpendRefusedException $e) {
+                // A cap reached part-way: keep what was fetched, hand the rest back.
+                $refused = $e;
+                array_push($failed, ...$chunk);
+
+                continue;
+            }
+
+            array_push($rows, ...$result['rows']);
+            array_push($failed, ...$result['failed']);
+            $credits += $result['credits'];
         }
 
-        $ttl = (int) config('coqui.seranking.cache_ttl_hours.keywords_export', 720);
-        $this->cache->put($endpoint, $signature, ['items' => $results], $ttl);
+        // Nothing fetched and nothing spent: let the caller see the refusal.
+        if ($refused !== null && $rows === [] && $credits === 0) {
+            throw $refused;
+        }
 
-        return $results;
+        // A partial result isn't cached, so the failed keywords get retried.
+        if ($failed === []) {
+            $ttl = (int) config('coqui.seranking.cache_ttl_hours.keywords_export', 720);
+            $this->cache->put($endpoint, $signature, ['items' => $rows], $ttl);
+        }
+
+        return ['rows' => $rows, 'failed' => $failed, 'credits' => $credits];
     }
 
     /**
@@ -119,10 +168,11 @@ class SeRankingClient
             ]),
         );
 
+        // SE Ranking doesn't bill throttled or failed requests.
         $this->spendGuard->recordSpend(
             endpoint: '/v1/domain/overview/db',
             estimatedCredits: $estimatedCredits,
-            actualCredits: $estimatedCredits,
+            actualCredits: $response->successful() ? $estimatedCredits : 0,
             workspaceId: $project?->workspace_id,
             projectId: $project?->id,
             httpStatus: $response->status(),
@@ -142,30 +192,53 @@ class SeRankingClient
     }
 
     /**
+     * Splits a rejected batch in half until it fits. A batch that still fails
+     * at the smallest size, or fails for another reason, lands in `failed`
+     * instead of aborting the export.
+     *
      * @param  list<string>  $chunk
-     * @return list<array<string, mixed>>
+     * @return array{rows: list<array<string, mixed>>, failed: list<string>, credits: int}
      */
     private function fetchKeywordChunkWithBisection(array $chunk, string $source, ?Project $project): array
     {
         $estimatedCredits = (int) config('coqui.seranking.credit_costs.keywords_export', 100);
         $this->spendGuard->assertCanSpend($estimatedCredits);
 
-        $response = $this->sendWithRateLimitRetry(
-            fn (): Response => $this->http()->post($this->url('/v1/keywords/export?source='.urlencode(strtolower($source))), [
-                'keywords' => $chunk,
-            ]),
-        );
+        try {
+            $response = $this->sendWithRateLimitRetry(
+                fn (): Response => $this->http()->post($this->url('/v1/keywords/export?source='.urlencode(strtolower($source))), [
+                    'keywords' => $chunk,
+                ]),
+            );
+        } catch (ConnectionException) {
+            $this->spendGuard->recordSpend(
+                endpoint: '/v1/keywords/export',
+                estimatedCredits: $estimatedCredits,
+                actualCredits: 0,
+                workspaceId: $project?->workspace_id,
+                projectId: $project?->id,
+                meta: ['batch_count' => count($chunk), 'error' => 'connection'],
+            );
+
+            return ['rows' => [], 'failed' => $chunk, 'credits' => 0];
+        }
 
         if (in_array($response->status(), [400, 413, 414, 422], true)) {
-            $minSize = (int) config('coqui.seranking.min_split_batch_size', 50);
-            if (count($chunk) > $minSize && count($chunk) > 1) {
+            $minSize = max(1, (int) config('coqui.seranking.min_split_batch_size', 50));
+            if (count($chunk) > $minSize) {
                 $mid = (int) ceil(count($chunk) / 2);
-                $left = array_slice($chunk, 0, $mid);
-                $right = array_slice($chunk, $mid);
+                $left = $this->fetchKeywordChunkWithBisection(array_slice($chunk, 0, $mid), $source, $project);
+                try {
+                    $right = $this->fetchKeywordChunkWithBisection(array_slice($chunk, $mid), $source, $project);
+                } catch (SpendRefusedException) {
+                    // The cap was reached after the left half was paid for; keep it.
+                    $right = ['rows' => [], 'failed' => array_slice($chunk, $mid), 'credits' => 0];
+                }
 
                 return [
-                    ...$this->fetchKeywordChunkWithBisection($left, $source, $project),
-                    ...$this->fetchKeywordChunkWithBisection($right, $source, $project),
+                    'rows' => [...$left['rows'], ...$right['rows']],
+                    'failed' => [...$left['failed'], ...$right['failed']],
+                    'credits' => $left['credits'] + $right['credits'],
                 ];
             }
         }
@@ -182,12 +255,15 @@ class SeRankingClient
             meta: ['batch_count' => count($chunk)],
         );
 
-        $response->throw();
+        if (! $response->successful()) {
+            return ['rows' => [], 'failed' => $chunk, 'credits' => 0];
+        }
 
-        /** @var list<array<string, mixed>> $decoded */
-        $decoded = $response->json() ?? [];
+        $decoded = $response->json();
+        /** @var list<array<string, mixed>> $rows */
+        $rows = is_array($decoded) ? array_values(array_filter($decoded, 'is_array')) : [];
 
-        return $decoded;
+        return ['rows' => $rows, 'failed' => [], 'credits' => $actualCredits];
     }
 
     /**

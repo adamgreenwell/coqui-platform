@@ -110,6 +110,7 @@ export default function ContentBriefPage({
 }: Props) {
   const [keywordInput, setKeywordInput] = useState(selectedKeyword);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [fresh, setFresh] = useState(false);
   const [activeTab, setActiveTab] = useState<'matrix' | 'outline' | 'markdown'>('matrix');
   const [expandedRows, setExpandedRows] = useState<Record<number, boolean>>({});
   const [copied, setCopied] = useState(false);
@@ -126,7 +127,7 @@ export default function ContentBriefPage({
     setIsGenerating(true);
     router.post(
       `/workspaces/${workspace.id}/projects/${project.id}/keywords/brief`,
-      { keyword: query },
+      { keyword: query, fresh },
       {
         onFinish: () => setIsGenerating(false),
       }
@@ -222,6 +223,15 @@ export default function ContentBriefPage({
               <span>{isGenerating ? 'Scraping SERP...' : 'Generate Brief'}</span>
             </button>
           </form>
+          <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer select-none w-fit">
+            <input
+              type="checkbox"
+              checked={fresh}
+              onChange={(e) => setFresh(e.target.checked)}
+              className="rounded border-slate-600 bg-slate-950 text-sky-500 focus:ring-sky-500/50"
+            />
+            <span>Fetch fresh search results (uses your data allowance; otherwise results up to a week old are reused)</span>
+          </label>
 
           {/* Recent Briefs Pills */}
           {recentBriefs.length > 0 && (
