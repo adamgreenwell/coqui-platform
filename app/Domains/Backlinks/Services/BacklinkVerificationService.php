@@ -43,7 +43,11 @@ class BacklinkVerificationService
             if (! $this->worker->isConfigured()) {
                 throw new RuntimeException('Crawl worker is not configured.');
             }
-            $result = $this->worker->inspectUrls($urls, $project->domain);
+            $result = $this->worker->inspectUrls(
+                $urls,
+                $project->domain,
+                $links->mapWithKeys(fn (MonitoredBacklink $link): array => [$link->source_url => $link->target_url])->all(),
+            );
             foreach (($result['results'] ?? []) as $item) {
                 if (is_array($item) && isset($item['url'])) {
                     $observations[(string) $item['url']] = $item;
@@ -105,7 +109,7 @@ class BacklinkVerificationService
             if (! $this->worker->isConfigured()) {
                 throw new RuntimeException('Crawl worker is not configured.');
             }
-            $result = $this->worker->inspectUrls([$link->source_url], $project->domain);
+            $result = $this->worker->inspectUrls([$link->source_url], $project->domain, [$link->source_url => $link->target_url]);
             $items = $result['results'] ?? [];
             if (is_array($items) && isset($items[0]) && is_array($items[0])) {
                 $obs = $items[0];

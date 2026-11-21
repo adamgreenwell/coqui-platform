@@ -127,8 +127,16 @@ worker is shutting down.
 ### `POST /jobs/inspect`
 
 ```json
-{ "urls": ["https://partner.com/reviews/our-app"], "targetDomain": "example.com" }
+{
+  "urls": ["https://partner.com/reviews/our-app"],
+  "targetDomain": "example.com",
+  "targetUrls": { "https://partner.com/reviews/our-app": "https://example.com/pricing" }
+}
 ```
+
+`targetUrls` is optional. For a page listed there, only a link to that exact
+host (ignoring `www.`) and path (ignoring a trailing slash) counts. Other pages
+match any link to `targetDomain` or one of its subdomains.
 
 Up to 200 URLs. Answers:
 
@@ -147,7 +155,7 @@ Up to 200 URLs. Answers:
 ```
 
 `observedRel` is one of `nofollow`, `sponsored`, `ugc`, `dofollow`, taken from
-the first link to the target domain or a subdomain of it. A URL that couldn't
+the first link that matches the target. A URL that couldn't
 be fetched has `status: null` and an `error`. URLs not finished by the deadline
 are left out.
 

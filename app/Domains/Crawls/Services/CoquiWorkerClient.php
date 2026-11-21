@@ -74,9 +74,10 @@ class CoquiWorkerClient
      * Inspect specific external URLs (backlink verification or SERP top-10 scraping).
      *
      * @param  list<string>  $urls
+     * @param  array<string, string>  $targetUrls  Source URL => monitored target URL
      * @return array<string, mixed>
      */
-    public function inspectUrls(array $urls, ?string $targetDomain = null): array
+    public function inspectUrls(array $urls, ?string $targetDomain = null, array $targetUrls = []): array
     {
         foreach ($urls as $url) {
             $this->ssrf->assertAllowed((string) $url);
@@ -85,6 +86,8 @@ class CoquiWorkerClient
         $response = $this->http()->post($this->url('/jobs/inspect'), [
             'urls' => $urls,
             'targetDomain' => $targetDomain,
+            // Source URL => the exact page the monitored link should point at.
+            'targetUrls' => (object) $targetUrls,
         ]);
 
         $response->throw();

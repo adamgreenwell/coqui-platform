@@ -1,8 +1,13 @@
 //! `POST /jobs/inspect`: fetch a list of pages and report, for each, its
-//! status, whether it links to the target domain (and with what rel), and
-//! whether it's noindex. Used for backlink verification; Laravel falls back to
+//! status, whether it links to the target (and with what rel), and whether
+//! it's noindex. Used for backlink verification; Laravel falls back to
 //! fetching any URL missing from the response itself.
+//!
+//! The target is the page's entry in `targetUrls` when there is one (the
+//! monitored link must point at that host and path), otherwise any link to
+//! `targetDomain` or its subdomains.
 
+use std::collections::HashMap;
 use std::time::Duration;
 
 use futures::StreamExt as _;
@@ -22,6 +27,40 @@ pub struct InspectRequest {
     pub urls: Vec<String>,
     #[serde(default)]
     pub target_domain: Option<String>,
+    /// Source URL => the exact URL the monitored link should point at.
+    #[serde(default)]
+    pub target_urls: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Target {
+    /// Any link to this host or its subdomains.
+    Domain(String),
+    /// A link to this host (ignoring `www.`) and path (ignoring a trailing slash).
+    Page { host: String, path: String },
+}
+
+impl Target {
+    fn page(target_url: &str) -> Option<Self> {
+        let parsed = url::Url::parse(target_url.trim()).ok()?;
+        let host = normalise_host(parsed.host_str()?);
+        Some(Self::Page {
+            host,
+            path: parsed.path().trim_end_matches('/').to_string(),
+        })
+    }
+
+    fn matches(&self, link: &url::Url) -> bool {
+        let Some(host) = link.host_str().map(normalise_host) else {
+            return false;
+        };
+        match self {
+            Self::Domain(domain) => host == *domain || host.ends_with(&format!(".{domain}")),
+            Self::Page { host: want, path } => {
+                host == *want && link.path().trim_end_matches('/') == path
+            }
+        }
+    }
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -56,17 +95,22 @@ pub async fn inspect_all(
     request: &InspectRequest,
     deadline: Duration,
 ) -> Vec<Observation> {
-    let target = request
+    let domain = request
         .target_domain
         .as_deref()
         .map(normalise_host)
-        .filter(|host| !host.is_empty());
+        .filter(|host| !host.is_empty())
+        .map(Target::Domain);
 
     let urls: Vec<String> = request.urls.iter().take(MAX_URLS).cloned().collect();
     let mut stream = futures::stream::iter(urls)
         .map(|url| {
-            let target = target.clone();
-            async move { inspect_one(client, &url, target.as_deref()).await }
+            let target = request
+                .target_urls
+                .get(&url)
+                .and_then(|target_url| Target::page(target_url))
+                .or_else(|| domain.clone());
+            async move { inspect_one(client, &url, target.as_ref()).await }
         })
         .buffer_unordered(CONCURRENCY);
 
@@ -78,7 +122,7 @@ pub async fn inspect_all(
     results
 }
 
-async fn inspect_one(client: &reqwest::Client, url: &str, target: Option<&str>) -> Observation {
+async fn inspect_one(client: &reqwest::Client, url: &str, target: Option<&Target>) -> Observation {
     let mut current = url.to_string();
     for _ in 0..=MAX_REDIRECTS {
         if let Err(blocked) = net::check_url(&current) {
@@ -182,7 +226,11 @@ fn robots_says_noindex(value: &str) -> bool {
 /// Returns (links to target, rel of the first such link, meta robots noindex).
 /// Rel is reported the way Laravel stores it: nofollow, sponsored, ugc or
 /// dofollow.
-fn analyse_html(html: &str, page_url: &str, target: Option<&str>) -> (bool, Option<String>, bool) {
+fn analyse_html(
+    html: &str,
+    page_url: &str,
+    target: Option<&Target>,
+) -> (bool, Option<String>, bool) {
     let document = Html::parse_document(html);
     let meta = Selector::parse("meta[name]").expect("selector");
     let noindex = document.select(&meta).any(|element| {
@@ -209,11 +257,7 @@ fn analyse_html(html: &str, page_url: &str, target: Option<&str>) -> (bool, Opti
             Some(base) => base.join(href.trim()).ok(),
             None => url::Url::parse(href.trim()).ok(),
         };
-        let Some(host) = resolved.as_ref().and_then(|url| url.host_str()) else {
-            continue;
-        };
-        let host = normalise_host(host);
-        if host == target || host.ends_with(&format!(".{target}")) {
+        if resolved.as_ref().is_some_and(|link| target.matches(link)) {
             let rel = anchor
                 .value()
                 .attr("rel")
@@ -243,7 +287,8 @@ mod tests {
         let html = r#"<html><head><meta name="ROBOTS" content="index,follow"></head>
             <body><a href="https://other.com/">x</a>
             <a rel="nofollow ugc" href="https://www.example.com/pricing">y</a></body></html>"#;
-        let (has, rel, noindex) = analyse_html(html, "https://blog.test/post", Some("example.com"));
+        let (has, rel, noindex) =
+            analyse_html(html, "https://blog.test/post", Some(&domain("example.com")));
         assert!(has);
         assert_eq!(rel.as_deref(), Some("nofollow"));
         assert!(!noindex);
@@ -252,7 +297,7 @@ mod tests {
     #[test]
     fn resolves_relative_links_and_subdomains() {
         let html = r#"<a href="//app.example.com/signup">a</a>"#;
-        let (has, rel, _) = analyse_html(html, "https://blog.test/", Some("example.com"));
+        let (has, rel, _) = analyse_html(html, "https://blog.test/", Some(&domain("example.com")));
         assert!(has);
         assert_eq!(rel.as_deref(), Some("dofollow"));
     }
@@ -260,8 +305,34 @@ mod tests {
     #[test]
     fn lookalike_domains_do_not_match() {
         let html = r#"<a href="https://notexample.com/">a</a>"#;
-        let (has, _, _) = analyse_html(html, "https://blog.test/", Some("example.com"));
+        let (has, _, _) = analyse_html(html, "https://blog.test/", Some(&domain("example.com")));
         assert!(!has);
+    }
+
+    fn domain(host: &str) -> Target {
+        Target::Domain(host.to_string())
+    }
+
+    #[test]
+    fn a_page_target_needs_the_monitored_host_and_path() {
+        let target = Target::page("https://example.com/pricing/").unwrap();
+
+        // Only a homepage link left: the monitored /pricing link is gone.
+        let html = r#"<a rel="nofollow" href="https://example.com/">home</a>"#;
+        let (has, rel, _) = analyse_html(html, "https://blog.test/", Some(&target));
+        assert!(!has);
+        assert_eq!(rel, None);
+
+        // The monitored link's own rel is reported, not an earlier link's.
+        let html = r#"<a rel="nofollow" href="https://example.com/">home</a>
+            <a href="https://www.example.com/pricing?ref=blog">pricing</a>"#;
+        let (has, rel, _) = analyse_html(html, "https://blog.test/", Some(&target));
+        assert!(has);
+        assert_eq!(rel.as_deref(), Some("dofollow"));
+
+        // A subdomain isn't the monitored page.
+        let html = r#"<a href="https://app.example.com/pricing">app</a>"#;
+        assert!(!analyse_html(html, "https://blog.test/", Some(&target)).0);
     }
 
     #[test]

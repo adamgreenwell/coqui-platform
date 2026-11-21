@@ -181,6 +181,10 @@ const HOP_BY_HOP: &[&str] = &[
 
 type ProxyBody = BoxBody<Bytes, Infallible>;
 
+/// Largest plain-HTTP response the proxy will relay. The body is buffered, so
+/// this bounds the memory one hostile or endless response can take.
+const MAX_PROXY_BODY_BYTES: usize = 10 * 1024 * 1024;
+
 fn text_response(status: StatusCode, message: String) -> Response<ProxyBody> {
     Response::builder()
         .status(status)
@@ -347,10 +351,53 @@ async fn forward(req: Request<Incoming>, client: reqwest::Client) -> Response<Pr
             builder = builder.header(name.as_str(), value.as_bytes());
         }
     }
-    let bytes = response.bytes().await.unwrap_or_default();
+    let bytes = match read_capped(response, MAX_PROXY_BODY_BYTES).await {
+        Ok(bytes) => bytes,
+        Err(BodyError::TooLarge) => {
+            tracing::warn!(target = %target, "upstream response over {MAX_PROXY_BODY_BYTES} bytes");
+            return text_response(
+                StatusCode::BAD_GATEWAY,
+                "upstream response too large".into(),
+            );
+        }
+        // A body that fails part-way must not reach the crawler as a valid,
+        // truncated page.
+        Err(BodyError::Upstream(error)) => {
+            let status = if error.is_timeout() {
+                StatusCode::GATEWAY_TIMEOUT
+            } else {
+                StatusCode::BAD_GATEWAY
+            };
+            return text_response(status, format!("upstream body error: {error}"));
+        }
+    };
     builder
         .body(Full::new(bytes).boxed())
         .unwrap_or_else(|_| text_response(StatusCode::BAD_GATEWAY, "bad upstream headers".into()))
+}
+
+#[derive(Debug)]
+enum BodyError {
+    TooLarge,
+    Upstream(reqwest::Error),
+}
+
+/// Read a response body, giving up as soon as it passes `limit` bytes.
+async fn read_capped(mut response: reqwest::Response, limit: usize) -> Result<Bytes, BodyError> {
+    if response
+        .content_length()
+        .is_some_and(|length| length > limit as u64)
+    {
+        return Err(BodyError::TooLarge);
+    }
+    let mut body = bytes::BytesMut::new();
+    while let Some(chunk) = response.chunk().await.map_err(BodyError::Upstream)? {
+        if body.len() + chunk.len() > limit {
+            return Err(BodyError::TooLarge);
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body.freeze())
 }
 
 #[cfg(test)]
@@ -386,6 +433,67 @@ mod tests {
         assert!(check_url("http://[::1]:8080/").is_err());
         assert!(check_url("ftp://example.com/").is_err());
         assert!(check_url("https://example.com/").is_ok());
+    }
+
+    /// Serve one raw HTTP response on a local port and return its URL.
+    async fn serve_once(raw: &'static [u8]) -> String {
+        use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut buf = [0_u8; 1024];
+            let _ = socket.read(&mut buf).await;
+            let _ = socket.write_all(raw).await;
+            let _ = socket.shutdown().await;
+        });
+        format!("http://{addr}/")
+    }
+
+    #[tokio::test]
+    async fn oversized_bodies_are_refused_while_reading() {
+        // No Content-Length: the size is only known by reading.
+        let url = serve_once(
+            b"HTTP/1.1 200 OK
+Connection: close
+
+0123456789abcdefghij",
+        )
+        .await;
+        let response = reqwest::get(&url).await.unwrap();
+        assert!(matches!(
+            read_capped(response, 8).await,
+            Err(BodyError::TooLarge)
+        ));
+
+        let url = serve_once(
+            b"HTTP/1.1 200 OK
+Content-Length: 5
+
+hello",
+        )
+        .await;
+        let response = reqwest::get(&url).await.unwrap();
+        assert_eq!(
+            read_capped(response, 8).await.unwrap(),
+            Bytes::from_static(b"hello")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_body_cut_short_is_an_error_not_an_empty_page() {
+        let url = serve_once(
+            b"HTTP/1.1 200 OK
+Content-Length: 100
+
+only part",
+        )
+        .await;
+        let response = reqwest::get(&url).await.unwrap();
+        assert!(matches!(
+            read_capped(response, 1024).await,
+            Err(BodyError::Upstream(_))
+        ));
     }
 
     #[tokio::test]
