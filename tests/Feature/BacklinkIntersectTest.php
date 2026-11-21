@@ -7,8 +7,10 @@ namespace Tests\Feature;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectCompetitor;
 use App\Domains\Projects\Models\Workspace;
+use App\Domains\Serp\DataForSeo\DataForSeoClient;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
@@ -87,20 +89,17 @@ class BacklinkIntersectTest extends TestCase
                     ],
                 ],
             ], 200),
-            'https://sandbox.dataforseo.com/v3/backlinks/pages/live' => Http::response([
+            // Broken backlinks: one row per link, grouped into pages.
+            'https://sandbox.dataforseo.com/v3/backlinks/backlinks/live' => Http::response([
                 'status_code' => 20000,
                 'tasks' => [
                     [
                         'result' => [
                             [
                                 'items' => [
-                                    [
-                                        'page' => 'https://competitor-a.com/discontinued-guide',
-                                        'status_code' => 404,
-                                        'backlinks' => 38,
-                                        'referring_domains' => 14,
-                                        'dofollow' => 30,
-                                    ],
+                                    ['url_to' => 'https://competitor-a.com/discontinued-guide', 'url_to_status_code' => 404, 'domain_from' => 'blog-one.com', 'dofollow' => true],
+                                    ['url_to' => 'https://competitor-a.com/discontinued-guide', 'url_to_status_code' => 404, 'domain_from' => 'blog-one.com', 'dofollow' => false],
+                                    ['url_to' => 'https://competitor-a.com/discontinued-guide', 'url_to_status_code' => 404, 'domain_from' => 'news-two.com', 'dofollow' => true],
                                 ],
                             ],
                         ],
@@ -123,7 +122,10 @@ class BacklinkIntersectTest extends TestCase
             ->has('brokenReclaim', 2)
             ->where('brokenReclaim.0.path', '/discontinued-guide')
             ->where('brokenReclaim.0.status_code', 404)
-            ->where('brokenReclaim.0.backlinks', 38)
+            ->where('brokenReclaim.0.backlinks', 3)
+            ->where('brokenReclaim.0.referring_domains', 2)
+            ->where('brokenReclaim.0.dofollow', 2)
+            ->where('brokenReclaim.0.dofollow_ratio', 67)
             ->where('metrics.total_opportunities', 1)
             ->where('metrics.high_authority', 1)
         );
@@ -284,5 +286,68 @@ class BacklinkIntersectTest extends TestCase
             'project_id' => $this->project->id,
             'event_type' => 'backlinks.intersect_refreshed',
         ]);
+    }
+
+    public function test_broken_reclaim_asks_for_broken_backlinks_only(): void
+    {
+        Http::fake([
+            'https://sandbox.dataforseo.com/v3/backlinks/domain_intersection/live' => Http::response(['status_code' => 20000, 'tasks' => [['result' => [['items' => []]]]]], 200),
+            'https://sandbox.dataforseo.com/v3/backlinks/backlinks/live' => Http::response(['status_code' => 20000, 'tasks' => [['result' => [['items' => []]]]]], 200),
+        ]);
+
+        $this->actingAs($this->user)
+            ->get("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks/intersect")
+            ->assertOk();
+
+        Http::assertSent(function (Request $request): bool {
+            if (! str_contains($request->url(), '/v3/backlinks/backlinks/live')) {
+                return false;
+            }
+            $task = $request->data()[0] ?? [];
+
+            return ($task['filters'] ?? null) === ['is_broken', '=', true];
+        });
+        Http::assertNotSent(fn (Request $request): bool => str_contains($request->url(), '/v3/backlinks/pages/live'));
+    }
+
+    public function test_a_domain_without_an_intersection_map_is_not_counted_as_linking_to_every_competitor(): void
+    {
+        Http::fake([
+            'https://sandbox.dataforseo.com/v3/backlinks/domain_intersection/live' => Http::response([
+                'status_code' => 20000,
+                'tasks' => [['result' => [['items' => [
+                    ['domain' => 'no-map.org', 'rank' => 500, 'backlinks' => 10, 'spam_score' => 1],
+                    ['domain' => 'one-link.org', 'rank' => 500, 'backlinks' => 4, 'spam_score' => 1, 'intersection' => ['1' => ['backlinks' => 4], '2' => null]],
+                ]]]]],
+            ], 200),
+            'https://sandbox.dataforseo.com/v3/backlinks/backlinks/live' => Http::response(['status_code' => 20000, 'tasks' => [['result' => [['items' => []]]]]], 200),
+        ]);
+
+        $url = "/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/backlinks/intersect";
+
+        $this->actingAs($this->user)->get($url.'?min_intersections=1')
+            ->assertInertia(fn ($page) => $page
+                ->has('opportunities', 2)
+                ->where('opportunities', fn ($rows): bool => collect($rows)->firstWhere('domain', 'no-map.org')['intersections_count'] === null
+                    && collect($rows)->firstWhere('domain', 'no-map.org')['linked_competitors'] === []
+                    && collect($rows)->firstWhere('domain', 'one-link.org')['intersections_count'] === 1));
+
+        // The default (links to at least two competitors) excludes both.
+        $this->actingAs($this->user)->get($url)
+            ->assertInertia(fn ($page) => $page->has('opportunities', 0));
+    }
+
+    public function test_the_same_competitors_in_another_order_share_one_cached_request(): void
+    {
+        Http::fake([
+            'https://sandbox.dataforseo.com/v3/backlinks/domain_intersection/live' => Http::response(['status_code' => 20000, 'tasks' => [['result' => [['items' => []]]]]], 200),
+        ]);
+
+        $client = app(DataForSeoClient::class);
+        $client->backlinksDomainIntersection(['1' => 'Beta.com', '2' => 'alpha.com'], ['acme.com'], $this->project);
+        $client->backlinksDomainIntersection(['1' => 'alpha.com', '2' => 'beta.com'], ['acme.com'], $this->project);
+
+        Http::assertSentCount(1);
+        Http::assertSent(fn (Request $request): bool => ($request->data()[0]['targets'] ?? null) === ['1' => 'alpha.com', '2' => 'beta.com']);
     }
 }

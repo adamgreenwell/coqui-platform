@@ -56,14 +56,12 @@ class BacklinkIntersectService
             ];
         }
 
-        $targets = [];
-        $targetIndexToDomain = [];
-        foreach ($analyzedCompetitors as $idx => $domain) {
-            $key = (string) ($idx + 1);
-            $cleanDomain = strtolower(trim((string) $domain));
-            $targets[$key] = $cleanDomain;
-            $targetIndexToDomain[$key] = $cleanDomain;
-        }
+        // The client sends competitors in this canonical (sorted) order, so
+        // the intersection map's "1", "2", ... keys index this list.
+        $targetIndexToDomain = DataForSeoClient::canonicalIntersectionTargets(
+            array_map(static fn (mixed $d): string => (string) $d, $analyzedCompetitors),
+        );
+        $targets = $targetIndexToDomain;
 
         $excludeTargets = [$this->resolveTarget($project)];
 
@@ -94,27 +92,28 @@ class BacklinkIntersectService
                     $spamScore = (int) ($item['spam_score'] ?? 0);
                     $firstSeen = isset($item['first_seen']) ? (string) $item['first_seen'] : null;
 
-                    // Intersection map from DataForSEO
-                    $rawIntersection = $item['intersection'] ?? [];
+                    // Which competitors this domain links to, from the
+                    // provider's per-target map. Without a map the overlap is
+                    // unknown: it is never assumed to be every competitor.
+                    $rawIntersection = $item['intersection'] ?? $item['domain_intersection'] ?? null;
                     $linkedCompetitors = [];
+                    $intersectionCount = null;
 
-                    if (is_array($rawIntersection)) {
+                    if (is_array($rawIntersection) && $rawIntersection !== []) {
                         foreach ($rawIntersection as $k => $val) {
                             if (! empty($val) && isset($targetIndexToDomain[(string) $k])) {
                                 $linkedCompetitors[] = $targetIndexToDomain[(string) $k];
                             }
                         }
+                        $intersectionCount = count($linkedCompetitors);
                     }
 
-                    $intersectionCount = count($linkedCompetitors);
-
-                    // If DataForSEO didn't supply intersection map or single item, fallback to all targets
-                    if ($intersectionCount === 0) {
-                        $intersectionCount = count($analyzedCompetitors);
-                        $linkedCompetitors = $analyzedCompetitors;
+                    if ($rank < $minRank || $spamScore > $maxSpam) {
+                        continue;
                     }
-
-                    if ($rank < $minRank || $spamScore > $maxSpam || $intersectionCount < $minIntersections) {
+                    // An unknown overlap can't be shown to meet a "links to N
+                    // competitors" filter.
+                    if ($minIntersections > 1 && ($intersectionCount ?? 0) < $minIntersections) {
                         continue;
                     }
 
@@ -181,55 +180,67 @@ class BacklinkIntersectService
                 $response = $this->dataForSeo->backlinksBrokenPages(
                     target: $cleanDomain,
                     project: $project,
-                    limit: 50,
+                    limit: 500,
                     forceFresh: $fresh,
                 );
+            } catch (Throwable) {
+                continue;
+            }
 
-                $items = $response['tasks'][0]['result'][0]['items'] ?? [];
-                if (! is_array($items)) {
+            $items = $response['tasks'][0]['result'][0]['items'] ?? [];
+            if (! is_array($items)) {
+                continue;
+            }
+
+            // Each item is one backlink to a broken page; group them by page.
+            /** @var array<string, array{status: int|null, backlinks: int, dofollow: int, domains: array<string, true>}> $pages */
+            $pages = [];
+            foreach ($items as $item) {
+                if (! is_array($item)) {
                     continue;
                 }
 
-                foreach ($items as $item) {
-                    if (! is_array($item)) {
-                        continue;
-                    }
-
-                    $pageUrl = (string) ($item['page'] ?? $item['url'] ?? '');
-                    if ($pageUrl === '') {
-                        continue;
-                    }
-
-                    $statusCode = (int) ($item['status_code'] ?? 0);
-                    $isBroken = (bool) ($item['is_broken'] ?? false);
-                    $backlinks = (int) ($item['backlinks'] ?? 0);
-                    $referringDomains = (int) ($item['referring_domains'] ?? 0);
-                    $dofollow = (int) ($item['dofollow'] ?? 0);
-
-                    // Consider broken if status is 404/410/5xx or explicitly flagged as broken
-                    if ($statusCode === 404 || $statusCode === 410 || ($statusCode >= 400 && $backlinks > 0) || $isBroken) {
-                        $path = parse_url($pageUrl, PHP_URL_PATH) ?: '/';
-
-                        $reclaimList[] = [
-                            'competitor_domain' => $cleanDomain,
-                            'page_url' => $pageUrl,
-                            'path' => $path,
-                            'status_code' => $statusCode > 0 ? $statusCode : 404,
-                            'backlinks' => $backlinks,
-                            'referring_domains' => $referringDomains,
-                            'dofollow' => $dofollow,
-                            'dofollow_ratio' => $backlinks > 0 ? (int) round(($dofollow / $backlinks) * 100) : 0,
-                            'pitch_idea' => sprintf(
-                                'Outreach hook: %s 404 dead resource with %d backlinks. Pitch relevant %s page as replacement.',
-                                $cleanDomain,
-                                $backlinks,
-                                $project->domain
-                            ),
-                        ];
-                    }
+                $pageUrl = (string) ($item['url_to'] ?? '');
+                if ($pageUrl === '') {
+                    continue;
                 }
-            } catch (Throwable) {
-                continue;
+
+                $status = isset($item['url_to_status_code']) ? (int) $item['url_to_status_code'] : null;
+                $pages[$pageUrl] ??= ['status' => $status, 'backlinks' => 0, 'dofollow' => 0, 'domains' => []];
+                $pages[$pageUrl]['backlinks']++;
+                if (($item['dofollow'] ?? false) === true) {
+                    $pages[$pageUrl]['dofollow']++;
+                }
+                $fromDomain = strtolower((string) ($item['domain_from'] ?? ''));
+                if ($fromDomain !== '') {
+                    $pages[$pageUrl]['domains'][$fromDomain] = true;
+                }
+                if ($pages[$pageUrl]['status'] === null && $status !== null) {
+                    $pages[$pageUrl]['status'] = $status;
+                }
+            }
+
+            foreach ($pages as $pageUrl => $page) {
+                $backlinks = $page['backlinks'];
+                $statusCode = $page['status'] !== null && $page['status'] > 0 ? $page['status'] : null;
+
+                $reclaimList[] = [
+                    'competitor_domain' => $cleanDomain,
+                    'page_url' => $pageUrl,
+                    'path' => parse_url($pageUrl, PHP_URL_PATH) ?: '/',
+                    'status_code' => $statusCode,
+                    'backlinks' => $backlinks,
+                    'referring_domains' => count($page['domains']),
+                    'dofollow' => $page['dofollow'],
+                    'dofollow_ratio' => $backlinks > 0 ? (int) round(($page['dofollow'] / $backlinks) * 100) : null,
+                    'pitch_idea' => sprintf(
+                        'Outreach hook: %s has a dead page (%s) with %d broken backlinks. Pitch a relevant %s page as the replacement.',
+                        $cleanDomain,
+                        $statusCode !== null ? 'HTTP '.$statusCode : 'broken',
+                        $backlinks,
+                        $project->domain
+                    ),
+                ];
             }
         }
 

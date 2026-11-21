@@ -520,6 +520,13 @@ class DataForSeoClient
         $endpoint = '/v3/backlinks/domain_intersection/live';
         $estimatedCost = (float) config('coqui.dataforseo.prices.backlinks_task', 0.024);
 
+        // Order-independent: the same competitor set in any order is one
+        // request and one cache entry. Targets are re-indexed "1", "2", ... in
+        // sorted order, which callers must use to read the intersection map.
+        $targets = self::canonicalIntersectionTargets($targets);
+        $excludeTargets = array_values(array_unique(array_map(static fn (string $t): string => strtolower(trim($t)), $excludeTargets)));
+        sort($excludeTargets);
+
         $payload = [
             [
                 'targets' => $targets,
@@ -559,6 +566,29 @@ class DataForSeoClient
     }
 
     /**
+     * Competitor domains lowercased, de-duplicated, sorted and keyed 1, 2, ...
+     * (encoded as the provider's "1", "2", ... target map).
+     *
+     * @param  array<array-key, string>  $targets
+     * @return array<int, string>
+     */
+    public static function canonicalIntersectionTargets(array $targets): array
+    {
+        $domains = array_values(array_unique(array_filter(array_map(
+            static fn (string $t): string => strtolower(trim($t)),
+            $targets,
+        ), static fn (string $t): bool => $t !== '')));
+        sort($domains);
+
+        $keyed = [];
+        foreach ($domains as $i => $domain) {
+            $keyed[$i + 1] = $domain;
+        }
+
+        return $keyed;
+    }
+
+    /**
      * Discover broken (404/5xx) pages receiving backlinks on competitor domains for reclaim outreach.
      *
      * @return array<string, mixed>
@@ -569,21 +599,26 @@ class DataForSeoClient
         int $limit = 100,
         bool $forceFresh = false,
     ): array {
-        $endpoint = '/v3/backlinks/pages/live';
+        // Backlinks pointing at pages of the target that answer 4xx/5xx, so
+        // only broken pages come back (the top pages by backlinks rarely
+        // include any).
+        $endpoint = '/v3/backlinks/backlinks/live';
         $estimatedCost = (float) config('coqui.dataforseo.prices.backlinks_task', 0.024);
 
         $payload = [
             [
                 'target' => $target,
-                'limit' => min(500, max(1, $limit)),
-                'order_by' => ['backlinks,desc'],
+                'mode' => 'as_is',
+                'filters' => ['is_broken', '=', true],
+                'limit' => min(1000, max(1, $limit)),
+                'order_by' => ['rank,desc'],
             ],
         ];
 
         $cacheParams = [
-            'target' => $target,
+            'target' => strtolower(trim($target)),
             'limit' => $limit,
-            'type' => 'broken_reclaim',
+            'type' => 'broken_backlinks',
         ];
 
         if (! $forceFresh) {

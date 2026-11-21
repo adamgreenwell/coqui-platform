@@ -9,11 +9,15 @@ use App\Domains\Backlinks\Models\BacklinkHistorySnapshot;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Serp\DataForSeo\DataForSeoClient;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Throwable;
 
 class BacklinkTimelineService
 {
     public const HISTORY_ENDPOINT = '/v3/backlinks/history/live';
+
+    /** How long a failed history fetch is skipped on ordinary page loads. */
+    private const FAILURE_TTL_MINUTES = 15;
 
     public function __construct(
         private readonly DataForSeoClient $dataForSeo,
@@ -42,7 +46,7 @@ class BacklinkTimelineService
             ->get();
 
         if ($snapshots->isEmpty() || $fresh) {
-            $this->syncHistorySnapshots($project, $days);
+            $this->syncHistorySnapshots($project, $days, force: $fresh);
 
             $snapshots = $project->backlinkHistorySnapshots()
                 ->where('snapshot_date', '>=', $startDate)
@@ -79,13 +83,19 @@ class BacklinkTimelineService
     }
 
     /**
-     * Fetch historical backlink timeseries from DataForSEO and persist into database.
+     * Fetch historical backlink timeseries and persist it. Unless forced, a
+     * fetch that failed in the last few minutes isn't retried (and re-billed).
      */
-    public function syncHistorySnapshots(Project $project, int $days = 90): int
+    public function syncHistorySnapshots(Project $project, int $days = 90, bool $force = true): int
     {
         $target = $this->resolveTarget($project);
         $dateFrom = now()->subDays($days)->toDateString();
         $dateTo = now()->toDateString();
+        $failureKey = 'backlinks:failed:'.md5(self::HISTORY_ENDPOINT.'|'.$project->id.'|'.$target.'|'.$days);
+
+        if (! $force && Cache::has($failureKey)) {
+            return 0;
+        }
 
         try {
             $response = $this->dataForSeo->backlinksHistory($target, $project, $dateFrom, $dateTo);
@@ -135,6 +145,8 @@ class BacklinkTimelineService
 
             return $count;
         } catch (Throwable) {
+            Cache::put($failureKey, true, now()->addMinutes(self::FAILURE_TTL_MINUTES));
+
             return 0;
         }
     }
