@@ -498,6 +498,50 @@ class DataForSeoClient
     }
 
     /**
+     * Daily backlink and referring-domain totals (`timeseries_summary`).
+     *
+     * @return array<string, mixed>
+     */
+    public function backlinksTimeseriesSummary(string $target, Project $project, string $dateFrom, string $dateTo, bool $isScheduled = false): array
+    {
+        return $this->backlinksTimeseries('/v3/backlinks/timeseries_summary/live', $target, $project, $dateFrom, $dateTo, $isScheduled);
+    }
+
+    /**
+     * Daily new and lost backlinks and referring domains
+     * (`timeseries_new_lost_summary`).
+     *
+     * @return array<string, mixed>
+     */
+    public function backlinksTimeseriesNewLost(string $target, Project $project, string $dateFrom, string $dateTo, bool $isScheduled = false): array
+    {
+        return $this->backlinksTimeseries('/v3/backlinks/timeseries_new_lost_summary/live', $target, $project, $dateFrom, $dateTo, $isScheduled);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function backlinksTimeseries(string $endpoint, string $target, Project $project, string $dateFrom, string $dateTo, bool $isScheduled): array
+    {
+        $estimatedCost = (float) config('coqui.dataforseo.prices.backlinks_timeseries_task', 0.02);
+
+        $this->spendGuard->assertCanSpend($estimatedCost, $project->workspace, $isScheduled);
+
+        return $this->postPaid(
+            endpoint: $endpoint,
+            payload: [[
+                'target' => $target,
+                'date_from' => $dateFrom,
+                'date_to' => $dateTo,
+                'group_range' => 'day',
+            ]],
+            mode: 'live',
+            estimatedCostUsd: $estimatedCost,
+            project: $project,
+        );
+    }
+
+    /**
      * Fetch individual backlinks for a target domain or page.
      *
      * @return array<string, mixed>

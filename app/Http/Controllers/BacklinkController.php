@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Domains\Backlinks\Services\BacklinkDigestService;
 use App\Domains\Backlinks\Services\BacklinkProfileService;
 use App\Domains\Backlinks\Services\BacklinkTimelineService;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\Workspace;
 use App\Domains\Serp\ProviderNotConfiguredException;
+use App\Models\User;
+use Closure;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
@@ -32,8 +35,12 @@ class BacklinkController extends Controller
             $days = 90;
         }
 
+        /** @var User $user */
+        $user = $request->user();
+
         $profile = $this->backlinkService->getBacklinkProfile($project, false);
-        $timelineData = $this->timelineService->getTimelineData($project, $days, false);
+        // Read-only members see stored history only.
+        $timelineData = $this->timelineService->getTimelineData($project, $days, false, $user->can('spend', $project));
 
         return Inertia::render('Backlinks/Index', [
             'workspace' => [
@@ -59,7 +66,64 @@ class BacklinkController extends Controller
             'velocity' => $timelineData['velocity'],
             'alerts' => $timelineData['alerts'],
             'selectedDays' => $days,
+            'digest' => [
+                'subscribed' => $project->backlinkDigestSubscribers()->where('users.id', $user->id)->exists(),
+                'slackConfigured' => $project->backlink_digest_slack_webhook !== null,
+                'canManageSlack' => $user->can('update', $project),
+                'lastSentAt' => $project->backlink_digest_sent_at?->toIso8601String(),
+            ],
         ]);
+    }
+
+    /**
+     * Subscribe or unsubscribe the current member from the weekly email digest.
+     */
+    public function updateDigestSubscription(Request $request, Workspace $workspace, Project $project): RedirectResponse
+    {
+        Gate::authorize('view', $project);
+
+        $data = $request->validate(['subscribed' => ['required', 'boolean']]);
+
+        /** @var User $user */
+        $user = $request->user();
+
+        if ((bool) $data['subscribed']) {
+            $project->backlinkDigestSubscribers()->syncWithoutDetaching([$user->id]);
+        } else {
+            $project->backlinkDigestSubscribers()->detach($user->id);
+        }
+
+        return back()->with('success', (bool) $data['subscribed']
+            ? 'You will get the weekly backlink digest by email.'
+            : 'You will no longer get the weekly backlink digest.');
+    }
+
+    /**
+     * Set or clear the project's Slack incoming webhook for the digest.
+     */
+    public function updateDigestSlack(Request $request, Workspace $workspace, Project $project): RedirectResponse
+    {
+        Gate::authorize('update', $project);
+
+        $data = $request->validate([
+            'webhook_url' => [
+                'nullable',
+                'string',
+                'max:500',
+                function (string $attribute, mixed $value, Closure $fail): void {
+                    if (is_string($value) && trim($value) !== '' && ! BacklinkDigestService::isSlackWebhook(trim($value))) {
+                        $fail('Enter a Slack incoming webhook URL (https://hooks.slack.com/services/...).');
+                    }
+                },
+            ],
+        ]);
+
+        $url = trim((string) ($data['webhook_url'] ?? ''));
+        $project->forceFill(['backlink_digest_slack_webhook' => $url === '' ? null : $url])->save();
+
+        return back()->with('success', $url === ''
+            ? 'Slack digest turned off.'
+            : 'The weekly backlink digest will be posted to Slack.');
     }
 
     public function refresh(Request $request, Workspace $workspace, Project $project): RedirectResponse
