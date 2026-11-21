@@ -215,6 +215,28 @@ class BotTelemetryTest extends TestCase
         $this->assertSame(0, BotCrawlLog::query()->where('bot_family', 'bingbot')->count());
     }
 
+    public function test_replacing_a_batch_locks_that_batch_first_on_postgres(): void
+    {
+        $queries = [];
+        DB::listen(function ($query) use (&$queries): void {
+            $queries[] = $query->sql;
+        });
+
+        $this->sendBatch([$this->googlebot404s(10)], 'batch-0500-a')->assertStatus(202);
+
+        $lock = array_keys(array_filter($queries, fn (string $sql): bool => str_contains($sql, 'pg_advisory_xact_lock')));
+        $delete = array_keys(array_filter($queries, fn (string $sql): bool => str_starts_with(strtolower($sql), 'delete from "bot_crawl_logs"')));
+        if (DB::getDriverName() !== 'pgsql') {
+            $this->assertSame([], $lock);
+
+            return;
+        }
+
+        $this->assertCount(1, $lock);
+        $this->assertNotEmpty($delete);
+        $this->assertLessThan($delete[0], $lock[0]);
+    }
+
     public function test_different_batches_for_the_same_hour_add_up(): void
     {
         $this->sendBatch([$this->googlebot404s(10)], 'batch-0500-a')->assertStatus(202);

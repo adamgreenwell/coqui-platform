@@ -71,6 +71,14 @@ class BotTelemetryService
 
         try {
             $duplicate = DB::transaction(function () use ($project, $batchKey, $buckets): bool {
+                // Two copies of a batch with no bucket in common would both
+                // pass the unique key and store their union. Serialize each
+                // project's batch until commit; SQLite already serializes
+                // writers.
+                if (DB::getDriverName() === 'pgsql') {
+                    DB::select('SELECT pg_advisory_xact_lock(hashtextextended(?, 0))', ["bot_crawl_logs:{$project->id}:{$batchKey}"]);
+                }
+
                 $previous = BotCrawlLog::query()
                     ->where('project_id', $project->id)
                     ->where('batch_id', $batchKey)
