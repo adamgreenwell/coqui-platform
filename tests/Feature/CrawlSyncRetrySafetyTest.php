@@ -157,6 +157,37 @@ class CrawlSyncRetrySafetyTest extends TestCase
         $this->assertSame(3, $this->rowCounts()['urls']);
     }
 
+    public function test_resuming_a_paused_run_reopens_it_for_chunks(): void
+    {
+        $this->postJson($this->chunkUrl(), $this->chunk())->assertOk();
+        $this->postJson($this->finalizeUrl(), ['status' => 'paused'])->assertOk();
+
+        // The client resumes and re-syncs the run as running.
+        $this->postJson("/api/v1/projects/{$this->project->uuid}/crawls/sync", [
+            'id' => $this->crawlId,
+            'seed' => 'https://coquiseo.com/',
+            'seedKind' => 'url',
+            'status' => 'running',
+            'config' => ['maxDepth' => 3],
+            'createdAt' => 1795022400000,
+        ])->assertSuccessful();
+
+        $run = CrawlRun::query()->where('external_crawl_id', $this->crawlId)->firstOrFail();
+        $this->assertSame('running', $run->status);
+        $this->assertNull($run->finalized_at);
+
+        $this->postJson($this->chunkUrl(), [
+            'urls' => [['url' => 'https://coquiseo.com/about', 'status' => 200]],
+        ])->assertOk();
+
+        $this->postJson($this->finalizeUrl(), ['status' => 'completed'])->assertOk();
+        $this->postJson($this->chunkUrl(), [
+            'urls' => [['url' => 'https://coquiseo.com/late', 'status' => 200]],
+        ])->assertStatus(409);
+
+        $this->assertSame(3, $this->rowCounts()['urls']);
+    }
+
     public function test_finalize_honors_issue_counts_and_broadcasts_crawl_synced(): void
     {
         Event::fake([CrawlSynced::class]);

@@ -67,6 +67,12 @@ class IngestDesktopCrawlSnapshot
                 throw CrawlOwnershipConflictException::forCrawl($payload->externalCrawlId);
             }
 
+            // Resuming a paused run reopens it, so its chunks are accepted
+            // again until the next finalize.
+            if ($existing->finalized_at !== null && $existing->status === 'paused' && $payload->status !== 'paused') {
+                $attributes['finalized_at'] = null;
+            }
+
             $existing->update($attributes);
 
             return $existing;
