@@ -10,10 +10,149 @@ use App\Domains\Projects\Models\Project;
 use App\Models\User;
 use App\Support\PageUrl;
 use Carbon\Carbon;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 
 class CrawlDiffService
 {
+    public const DRILL_DOWN_PER_PAGE = 50;
+
+    /** Days a share link lasts when no expiry is chosen. */
+    public const DEFAULT_SHARE_DAYS = 30;
+
+    /** Page fields compared before and after for each issue's URL. */
+    private const PAGE_FIELDS = [
+        'status' => 'status',
+        'title' => 'title',
+        'metaDescription' => 'meta_description',
+        'h1' => 'h1',
+        'canonical' => 'canonical',
+        'metaRobots' => 'meta_robots',
+        'redirectTarget' => 'redirect_target',
+        'wordCount' => 'word_count',
+    ];
+
+    /**
+     * One page of a rule's new or resolved issues, with each URL's page
+     * fields in both crawls.
+     *
+     * @return array{data: list<array<string, mixed>>, total: int, page: int, perPage: int, lastPage: int}
+     */
+    public function issueDrillDown(CrawlRun $baselineRun, CrawlRun $targetRun, string $type, string $rule, ?string $severity, int $page): array
+    {
+        $total = $this->issueDeltaQuery($baselineRun->id, $targetRun->id, $type, $rule, $severity)->count();
+        $lastPage = max(1, (int) ceil($total / self::DRILL_DOWN_PER_PAGE));
+        $page = min(max(1, $page), $lastPage);
+
+        return [
+            'data' => $this->issueDeltaRows(
+                $baselineRun->id,
+                $targetRun->id,
+                $type,
+                $rule,
+                $severity,
+                ($page - 1) * self::DRILL_DOWN_PER_PAGE,
+                self::DRILL_DOWN_PER_PAGE,
+            ),
+            'total' => $total,
+            'page' => $page,
+            'perPage' => self::DRILL_DOWN_PER_PAGE,
+            'lastPage' => $lastPage,
+        ];
+    }
+
+    /**
+     * Issues present in one crawl and not the other: "new" are in the target
+     * only, "resolved" in the baseline only. Aliased `i`.
+     */
+    private function issueDeltaQuery(int $baselineId, int $targetId, string $type, ?string $rule = null, ?string $severity = null): Builder
+    {
+        [$in, $notIn] = $type === 'resolved' ? [$baselineId, $targetId] : [$targetId, $baselineId];
+
+        return DB::table('crawl_issues as i')
+            ->where('i.crawl_run_id', $in)
+            ->when($rule !== null, fn (Builder $q) => $q->where('i.rule', $rule))
+            ->when($severity !== null, fn (Builder $q) => $q->where('i.severity', $severity))
+            ->whereNotExists(function ($query) use ($notIn): void {
+                $query->select(DB::raw(1))
+                    ->from('crawl_issues as o')
+                    ->where('o.crawl_run_id', $notIn)
+                    ->whereColumn('o.url_hash', 'i.url_hash')
+                    ->whereColumn('o.rule', 'i.rule');
+            });
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function issueDeltaRows(int $baselineId, int $targetId, string $type, ?string $rule = null, ?string $severity = null, int $offset = 0, int $limit = 100): array
+    {
+        $select = ['i.url', 'i.url_hash', 'i.rule', 'i.severity', 'i.detail'];
+        foreach (self::PAGE_FIELDS as $column) {
+            $select[] = "bu.{$column} as before_{$column}";
+            $select[] = "tu.{$column} as after_{$column}";
+        }
+        $select[] = 'bu.id as before_id';
+        $select[] = 'tu.id as after_id';
+
+        $rows = $this->issueDeltaQuery($baselineId, $targetId, $type, $rule, $severity)
+            ->leftJoin('crawl_urls as bu', function ($join) use ($baselineId): void {
+                $join->on('bu.url_hash', '=', 'i.url_hash')->where('bu.crawl_run_id', '=', $baselineId);
+            })
+            ->leftJoin('crawl_urls as tu', function ($join) use ($targetId): void {
+                $join->on('tu.url_hash', '=', 'i.url_hash')->where('tu.crawl_run_id', '=', $targetId);
+            })
+            ->select($select)
+            ->orderBy('i.id')
+            ->offset($offset)
+            ->limit($limit)
+            ->get();
+
+        return $rows->map(function (object $row): array {
+            $before = $this->pageFields($row, 'before');
+            $after = $this->pageFields($row, 'after');
+
+            $changed = [];
+            if ($before !== null && $after !== null) {
+                foreach (array_keys(self::PAGE_FIELDS) as $field) {
+                    if ($before[$field] !== $after[$field]) {
+                        $changed[] = $field;
+                    }
+                }
+            }
+
+            return [
+                'url' => (string) $row->url,
+                'urlHash' => (string) $row->url_hash,
+                'rule' => (string) $row->rule,
+                'severity' => (string) $row->severity,
+                'detail' => isset($row->detail) ? (string) $row->detail : null,
+                // null when the URL wasn't in that crawl.
+                'before' => $before,
+                'after' => $after,
+                'changedFields' => $changed,
+            ];
+        })->values()->all();
+    }
+
+    /**
+     * @return array<string, int|string|null>|null
+     */
+    private function pageFields(object $row, string $side): ?array
+    {
+        if (! isset($row->{$side.'_id'})) {
+            return null;
+        }
+
+        $fields = [];
+        foreach (self::PAGE_FIELDS as $field => $column) {
+            $value = $row->{$side.'_'.$column} ?? null;
+            $fields[$field] = $value === null ? null : (in_array($column, ['status', 'word_count'], true) ? (int) $value : (string) $value);
+        }
+
+        return $fields;
+    }
+
     /**
      * Compute comprehensive technical diff between baseline and target crawl runs.
      *
@@ -215,28 +354,36 @@ class CrawlDiffService
             return $bClicks <=> $aClicks;
         });
 
-        // 3. Issue Delta Breakdown: New, Resolved, Persistent
-        $newIssues = DB::table('crawl_issues as t')
-            ->leftJoin('crawl_issues as b', function ($join) use ($baselineId): void {
-                $join->on('b.url_hash', '=', 't.url_hash')
-                    ->on('b.rule', '=', 't.rule')
-                    ->where('b.crawl_run_id', '=', $baselineId);
-            })
-            ->where('t.crawl_run_id', $targetId)
-            ->whereNull('b.id')
-            ->select(['t.url', 't.url_hash', 't.rule', 't.severity', 't.detail'])
-            ->get();
+        // 3. Issue Delta Breakdown: New, Resolved, Persistent. Counts come
+        // from the database; only samples are loaded, with each URL's page
+        // fields from both crawls so the change itself is visible.
+        $ruleDeltas = [];
+        $newIssuesCount = 0;
+        $resolvedIssuesCount = 0;
 
-        $resolvedIssues = DB::table('crawl_issues as b')
-            ->leftJoin('crawl_issues as t', function ($join) use ($targetId): void {
-                $join->on('t.url_hash', '=', 'b.url_hash')
-                    ->on('t.rule', '=', 'b.rule')
-                    ->where('t.crawl_run_id', '=', $targetId);
-            })
-            ->where('b.crawl_run_id', $baselineId)
-            ->whereNull('t.id')
-            ->select(['b.url', 'b.url_hash', 'b.rule', 'b.severity', 'b.detail'])
-            ->get();
+        foreach (['new' => 'newCount', 'resolved' => 'resolvedCount'] as $type => $field) {
+            $counts = $this->issueDeltaQuery($baselineId, $targetId, $type)
+                ->select('i.rule', 'i.severity')
+                ->selectRaw('COUNT(*) as issue_count')
+                ->groupBy('i.rule', 'i.severity')
+                ->get();
+
+            foreach ($counts as $row) {
+                $key = $row->severity.'|'.$row->rule;
+                $ruleDeltas[$key] ??= [
+                    'rule' => (string) $row->rule,
+                    'severity' => (string) $row->severity,
+                    'newCount' => 0,
+                    'resolvedCount' => 0,
+                ];
+                $ruleDeltas[$key][$field] += (int) $row->issue_count;
+                if ($type === 'new') {
+                    $newIssuesCount += (int) $row->issue_count;
+                } else {
+                    $resolvedIssuesCount += (int) $row->issue_count;
+                }
+            }
+        }
 
         $persistentCount = (int) DB::table('crawl_issues as t')
             ->join('crawl_issues as b', function ($join) use ($baselineId): void {
@@ -247,35 +394,6 @@ class CrawlDiffService
             ->where('t.crawl_run_id', $targetId)
             ->count();
 
-        // Aggregate issue delta by rule and severity
-        $ruleDeltas = [];
-
-        foreach ($newIssues as $iss) {
-            $key = $iss->severity.'|'.$iss->rule;
-            if (! isset($ruleDeltas[$key])) {
-                $ruleDeltas[$key] = [
-                    'rule' => (string) $iss->rule,
-                    'severity' => (string) $iss->severity,
-                    'newCount' => 0,
-                    'resolvedCount' => 0,
-                ];
-            }
-            $ruleDeltas[$key]['newCount']++;
-        }
-
-        foreach ($resolvedIssues as $iss) {
-            $key = $iss->severity.'|'.$iss->rule;
-            if (! isset($ruleDeltas[$key])) {
-                $ruleDeltas[$key] = [
-                    'rule' => (string) $iss->rule,
-                    'severity' => (string) $iss->severity,
-                    'newCount' => 0,
-                    'resolvedCount' => 0,
-                ];
-            }
-            $ruleDeltas[$key]['resolvedCount']++;
-        }
-
         $rulesSummary = array_values(array_map(static fn (array $d): array => [
             'rule' => $d['rule'],
             'severity' => $d['severity'],
@@ -284,22 +402,13 @@ class CrawlDiffService
             'netChange' => $d['newCount'] - $d['resolvedCount'],
         ], $ruleDeltas));
 
-        // Sample top new issues
-        $newIssuesSample = $newIssues->take(100)->map(fn (object $iss): array => [
-            'url' => (string) $iss->url,
-            'rule' => (string) $iss->rule,
-            'severity' => (string) $iss->severity,
-            'detail' => isset($iss->detail) ? (string) $iss->detail : null,
-            'gscClicks' => $trafficStats[(string) $iss->url_hash]['clicks'] ?? null,
-        ])->all();
+        $newIssuesSample = array_map(function (array $issue) use ($trafficStats): array {
+            $issue['gscClicks'] = $trafficStats[$issue['urlHash']]['clicks'] ?? null;
 
-        // Sample top resolved issues
-        $resolvedIssuesSample = $resolvedIssues->take(100)->map(fn (object $iss): array => [
-            'url' => (string) $iss->url,
-            'rule' => (string) $iss->rule,
-            'severity' => (string) $iss->severity,
-            'detail' => isset($iss->detail) ? (string) $iss->detail : null,
-        ])->all();
+            return $issue;
+        }, $this->issueDeltaRows($baselineId, $targetId, 'new', limit: 100));
+
+        $resolvedIssuesSample = $this->issueDeltaRows($baselineId, $targetId, 'resolved', limit: 100);
 
         $baselineTotal = (int) $baselineRun->total_urls;
         $targetTotal = (int) $targetRun->total_urls;
@@ -338,8 +447,8 @@ class CrawlDiffService
                     'removedUrlsCount' => $removedUrlsCount,
                     'newlyBrokenCount' => count($newlyBroken),
                     'statusChangesCount' => count($rawTransitions),
-                    'newIssuesCount' => $newIssues->count(),
-                    'resolvedIssuesCount' => $resolvedIssues->count(),
+                    'newIssuesCount' => $newIssuesCount,
+                    'resolvedIssuesCount' => $resolvedIssuesCount,
                     'persistentIssuesCount' => $persistentCount,
                     'trafficImpactedBrokenUrls' => count(array_filter($newlyBroken, static fn ($item) => ($item['gscClicks'] ?? 0) > 0)),
                     'totalLostClicks' => $totalLostClicks,
@@ -372,9 +481,8 @@ class CrawlDiffService
     ): CrawlDiffReport {
         $diffData = $this->compare($baselineRun, $targetRun);
 
-        $expiresAt = $expiresInDays !== null && $expiresInDays > 0
-            ? Carbon::now()->addDays($expiresInDays)
-            : null;
+        // Every link expires; it can also be revoked sooner.
+        $expiresAt = Carbon::now()->addDays($expiresInDays !== null && $expiresInDays > 0 ? $expiresInDays : self::DEFAULT_SHARE_DAYS);
 
         $reportTitle = $title ?? sprintf(
             'Crawl Diff: %s (%s vs %s)',
@@ -409,7 +517,7 @@ class CrawlDiffService
             ->where('share_token', $token)
             ->first();
 
-        if ($report === null || $report->isExpired()) {
+        if ($report === null || $report->isExpired() || $report->isRevoked()) {
             return null;
         }
 

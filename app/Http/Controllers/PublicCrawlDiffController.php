@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Domains\Billing\PlanFeature;
+use App\Domains\Crawls\Models\CrawlDiffReport;
 use App\Domains\Crawls\Services\CrawlDiffService;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
 
@@ -17,13 +20,7 @@ class PublicCrawlDiffController extends Controller
 
     public function show(string $shareToken): Response
     {
-        $report = $this->diffService->getReportByToken($shareToken);
-
-        // Share links are a white-label reports feature: once the workspace's
-        // plan no longer includes it, its links read as expired.
-        if ($report === null || ! $report->project->workspace->hasFeature(PlanFeature::WhiteLabelReports)) {
-            abort(404, 'Shared crawl report has expired or does not exist.');
-        }
+        $report = $this->liveReport($shareToken);
 
         $report->incrementViews();
 
@@ -45,6 +42,39 @@ class PublicCrawlDiffController extends Controller
             'isReadOnly' => true,
             'reportTitle' => $report->title,
             'expiresAt' => $report->expires_at?->toIso8601String(),
+            'shareToken' => $shareToken,
         ]);
+    }
+
+    /**
+     * One page of a rule's new or resolved issues in a shared report.
+     */
+    public function issues(Request $request, string $shareToken): JsonResponse
+    {
+        $report = $this->liveReport($shareToken);
+        $validated = CrawlCompareController::validateDrillDown($request);
+
+        return response()->json($this->diffService->issueDrillDown(
+            $report->baselineRun,
+            $report->targetRun,
+            $validated['type'],
+            $validated['rule'],
+            $validated['severity'],
+            $validated['page'],
+        ));
+    }
+
+    private function liveReport(string $shareToken): CrawlDiffReport
+    {
+        $report = $this->diffService->getReportByToken($shareToken);
+
+        // Share links are a white-label reports feature: once the workspace's
+        // plan no longer includes it, its links read as expired. Revoked and
+        // expired links are gone too.
+        if ($report === null || ! $report->project->workspace->hasFeature(PlanFeature::WhiteLabelReports)) {
+            abort(404, 'Shared crawl report has expired or does not exist.');
+        }
+
+        return $report;
     }
 }

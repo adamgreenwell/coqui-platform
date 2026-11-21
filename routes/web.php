@@ -139,9 +139,14 @@ Route::middleware(['auth'])->group(function (): void {
     });
 
     Route::get('/workspaces/{workspace}/projects/{project}/crawls/compare', [CrawlCompareController::class, 'show'])->name('workspaces.projects.crawls.compare');
+    Route::get('/workspaces/{workspace}/projects/{project}/crawls/compare/issues', [CrawlCompareController::class, 'issues'])->name('workspaces.projects.crawls.compare.issues');
     Route::post('/workspaces/{workspace}/projects/{project}/crawls/compare/share', [CrawlCompareController::class, 'share'])->name('workspaces.projects.crawls.compare.share')
         ->middleware('feature:white-label-reports');
+    // Revoking works even after the plan loses share links.
+    Route::delete('/workspaces/{workspace}/projects/{project}/crawls/compare/shares/{report}', [CrawlCompareController::class, 'revokeShare'])->name('workspaces.projects.crawls.compare.shares.revoke');
     Route::post('/workspaces/{workspace}/projects/{project}/crawls/dispatch', [CloudCrawlController::class, 'dispatch'])->name('workspaces.projects.crawls.dispatch');
 });
 
 Route::get('/reports/crawls/diff/{shareToken}', [PublicCrawlDiffController::class, 'show'])->name('reports.crawls.diff');
+Route::get('/reports/crawls/diff/{shareToken}/issues', [PublicCrawlDiffController::class, 'issues'])->name('reports.crawls.diff.issues')
+    ->middleware('throttle:60,1');
