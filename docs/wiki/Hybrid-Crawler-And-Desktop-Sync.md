@@ -31,3 +31,14 @@ Laravel dispatches two bounded job types to `coqui-worker`:
 
 - **`POST /jobs/crawl`** — Weekly site audits (capped by `workspace.cloud_crawl_url_limit`) and post-deploy Runnr smoke checks (`config('coqui.worker.smoke_max_urls')`).
 - **`POST /jobs/inspect`** — Single-page fetches for SERP top-10 content briefs and active backlink verification.
+
+## Crawl Comparison and Share Links
+
+`CrawlDiffService::compare()` diffs two runs of a project:
+
+- **URL changes:** new and removed URLs, plus status, title, canonical and robots transitions. Newly broken URLs are ranked by Search Console clicks.
+- **Issue deltas:** new, resolved and persistent issues. Counts per rule and severity are computed in the database, and only samples are loaded.
+- **Before/after values:** each issue sample carries the URL's page fields from both crawls (`before`/`after`: status, title, meta description, H1, canonical, robots, redirect target, word count) and the list of `changedFields`. `before` is `null` when the URL is new, and `after` is `null` when it is no longer crawled.
+- **Drill-down:** `GET /workspaces/{workspace}/projects/{project}/crawls/compare/issues?baseline=&target=&type=new|resolved&rule=&severity=&page=` returns one rule's affected URLs, 50 per page. Shared reports have the same endpoint at `/reports/crawls/diff/{token}/issues`, rate-limited to 60 requests a minute.
+- **Share links:** owners, admins and editors can create them (white-label reports feature) and revoke them (`DELETE .../crawls/compare/shares/{uuid}`, allowed even after a downgrade). Every link expires after 7, 30 (the default) or 90 days. Revoked and expired links return 404.
+- **Performance:** a 10k-URL diff finishes in under two seconds (`CrawlDiffDrillDownTest`).
