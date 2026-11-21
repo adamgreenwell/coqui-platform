@@ -30,6 +30,10 @@ return [
         'default_language_code' => env('DATAFORSEO_LANGUAGE_CODE', 'en'),
 
         'scheduled_spend' => (bool) env('DATAFORSEO_SCHEDULED_SPEND', false),
+
+        // Rank checks wait for AI Overviews that load after the page (billed
+        // as prices.serp_ai_overview_surcharge per check).
+        'load_async_ai_overview' => (bool) env('DATAFORSEO_LOAD_ASYNC_AI_OVERVIEW', true),
         'daily_cap_usd' => (float) env('DATAFORSEO_DAILY_CAP_USD', 5.00),
         'monthly_cap_usd' => (float) env('DATAFORSEO_MONTHLY_CAP_USD', 100.00),
         // How long a paid call waits for the spend lock (cap check + ledger
@@ -49,6 +53,8 @@ return [
 
         'cache_ttl_hours' => [
             'keyword_overview' => 24 * 30,
+            // Keywords a lookup returned no data for; shorter, since data may appear.
+            'keyword_no_data' => 24 * 7,
             'related_keywords' => 24 * 30,
             'domain_overview' => 24 * 14,
             'domain_intersection' => 24 * 14,

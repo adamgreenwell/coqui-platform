@@ -33,6 +33,7 @@ import {
 import { type FormEvent, useEffect, useState } from 'react';
 import { getEcho } from '../../echo';
 import { FeatureLink, UpgradeNotice, usePlan } from '../../components/PlanGate';
+import TrendChart from '../../components/TrendChart';
 import AppLayout, { type WorkspaceSummary } from '../../layouts/AppLayout';
 import DataProviderNotice from '../../components/DataProviderNotice';
 
@@ -117,6 +118,51 @@ interface HistorySnapshot {
   checked_on: string;
 }
 
+interface TrendPoint {
+  date: string;
+  tracked: number;
+  visibility: number | null;
+  avg_rank: number | null;
+  top_3: number;
+  top_10: number;
+  top_20: number;
+  top_100: number;
+  unranked: number;
+  volatility: number | null;
+  checked: number;
+  ai_overview: number;
+  ai_overview_cited: number;
+}
+
+interface AiOverviewCitation {
+  position: number;
+  domain: string;
+  url?: string | null;
+  title?: string | null;
+  is_project: boolean;
+}
+
+interface LocalPackListing {
+  rank?: number | null;
+  title: string;
+  domain?: string | null;
+  url?: string | null;
+  rating?: number | null;
+}
+
+interface HistoryDetails {
+  volatility: number | null;
+  ai_overview: {
+    checked_on: string | null;
+    position: number | null;
+    citations: AiOverviewCitation[];
+  };
+  people_also_ask: string[];
+  local_pack: LocalPackListing[];
+}
+
+const COMPETITOR_COLORS = ['#a78bfa', '#f472b6', '#38bdf8', '#fbbf24', '#fb923c'];
+
 interface IntegrationSummary {
   status: 'connected' | 'needs_reconnect' | 'not_connected';
   site_url?: string | null;
@@ -133,6 +179,7 @@ interface KeywordsIndexProps {
   competitors: CompetitorItem[];
   keywords: TrackedKeywordItem[];
   metrics: VisibilityMetrics;
+  trend?: TrendPoint[];
   filters: {
     device?: string | null;
     search?: string | null;
@@ -168,6 +215,7 @@ export default function KeywordsIndex({
   competitors,
   keywords,
   metrics,
+  trend = [],
   filters,
   canEdit,
   gscIntegration,
@@ -183,6 +231,7 @@ export default function KeywordsIndex({
   const [historyModalKeyword, setHistoryModalKeyword] = useState<TrackedKeywordItem | null>(null);
   const [historySnapshots, setHistorySnapshots] = useState<HistorySnapshot[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyDetails, setHistoryDetails] = useState<HistoryDetails | null>(null);
   const [livePulse, setLivePulse] = useState(false);
 
   const addForm = useForm({
@@ -200,7 +249,7 @@ export default function KeywordsIndex({
     channel.listen('.SerpBatchCompleted', (e: { updated_count: number }) => {
       setLivePulse(true);
       setTimeout(() => setLivePulse(false), 2500);
-      router.reload({ only: ['keywords', 'metrics'] });
+      router.reload({ only: ['keywords', 'metrics', 'trend'] });
     });
 
     return () => {
@@ -240,6 +289,8 @@ export default function KeywordsIndex({
 
   const openHistory = async (kw: TrackedKeywordItem) => {
     setHistoryModalKeyword(kw);
+    setHistorySnapshots([]);
+    setHistoryDetails(null);
     setHistoryLoading(true);
     try {
       const resp = await fetch(
@@ -251,6 +302,12 @@ export default function KeywordsIndex({
       if (resp.ok) {
         const data = await resp.json();
         setHistorySnapshots(data.snapshots || []);
+        setHistoryDetails({
+          volatility: data.volatility ?? null,
+          ai_overview: data.ai_overview ?? { checked_on: null, position: null, citations: [] },
+          people_also_ask: data.people_also_ask ?? [],
+          local_pack: data.local_pack ?? [],
+        });
       }
     } catch {
       // Fallback
@@ -410,6 +467,51 @@ export default function KeywordsIndex({
             </div>
           </div>
         </div>
+
+        {/* Trends over the last 30 days */}
+        {trend.some((p) => p.tracked > 0) && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3.5">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-amber-400 text-xs font-medium">Visibility, last 30 days</span>
+              </div>
+              <TrendChart
+                ariaLabel="Visibility score by day"
+                labels={trend.map((p) => p.date)}
+                series={[{ key: 'visibility', label: 'Visibility', color: '#fbbf24', values: trend.map((p) => p.visibility) }]}
+                min={0}
+                formatValue={(v) => `${v}%`}
+              />
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3.5">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sky-400 text-xs font-medium">Keywords by position</span>
+              </div>
+              <TrendChart
+                ariaLabel="Keywords in the top 3, 10 and 20 by day"
+                labels={trend.map((p) => p.date)}
+                series={[
+                  { key: 'top_3', label: 'Top 3', color: '#34d399', values: trend.map((p) => (p.tracked > 0 ? p.top_3 : null)) },
+                  { key: 'top_10', label: 'Top 10', color: '#38bdf8', values: trend.map((p) => (p.tracked > 0 ? p.top_10 : null)) },
+                  { key: 'top_20', label: 'Top 20', color: '#818cf8', values: trend.map((p) => (p.tracked > 0 ? p.top_20 : null)) },
+                ]}
+                min={0}
+              />
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-3.5">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-rose-400 text-xs font-medium">Volatility</span>
+                <span className="text-[10px] text-slate-500">Avg positions moved per re-check</span>
+              </div>
+              <TrendChart
+                ariaLabel="Average rank movement by day"
+                labels={trend.map((p) => p.date)}
+                series={[{ key: 'volatility', label: 'Positions moved', color: '#fb7185', values: trend.map((p) => p.volatility) }]}
+                min={0}
+              />
+            </div>
+          </div>
+        )}
 
         {/* The GSC/Bing overlay is part of traffic attribution. */}
         {!hasTrafficAttribution && (
@@ -1012,7 +1114,7 @@ export default function KeywordsIndex({
       {/* SERP History Modal */}
       {historyModalKeyword && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-3xl w-full p-6 shadow-2xl space-y-4">
             <div className="flex items-center justify-between border-b border-slate-800 pb-3">
               <div>
                 <h2 className="text-base font-semibold text-white">
@@ -1041,7 +1143,101 @@ export default function KeywordsIndex({
                 No historical snapshots recorded yet for this keyword.
               </div>
             ) : (
-              <div className="max-h-96 overflow-y-auto space-y-2 pr-1">
+              <div className="max-h-[70vh] overflow-y-auto space-y-4 pr-1">
+                <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-medium text-slate-300">Rank over time</span>
+                    {historyDetails?.volatility !== null && historyDetails?.volatility !== undefined && (
+                      <span className="text-[10px] text-slate-400">
+                        Volatility: <span className="font-mono text-rose-300">{historyDetails.volatility}</span> positions per check
+                      </span>
+                    )}
+                  </div>
+                  {(() => {
+                    const dates = Array.from(new Set(historySnapshots.map((s) => s.checked_on))).sort();
+                    const domains = [project.domain, ...competitors.map((c) => c.domain)];
+                    return (
+                      <TrendChart
+                        ariaLabel={`Rank history for ${historyModalKeyword.keyword}`}
+                        labels={dates}
+                        invert
+                        min={1}
+                        formatValue={(v) => `#${v}`}
+                        series={domains.map((domain, i) => ({
+                          key: domain,
+                          label: domain,
+                          color: i === 0 ? '#34d399' : COMPETITOR_COLORS[(i - 1) % COMPETITOR_COLORS.length],
+                          values: dates.map((d) => {
+                            const snap = historySnapshots.find((s) => s.domain === domain && s.checked_on === d);
+                            return snap?.rank_group ?? null;
+                          }),
+                        }))}
+                      />
+                    );
+                  })()}
+                </div>
+
+                {historyDetails && historyDetails.ai_overview.citations.length > 0 && (
+                  <div className="rounded-xl border border-purple-500/20 bg-purple-500/5 p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-medium text-purple-300 flex items-center gap-1">
+                        <Sparkles className="h-3 w-3" /> AI Overview sources
+                      </span>
+                      <span className="text-[10px] text-slate-400 font-mono">
+                        {historyDetails.ai_overview.checked_on}
+                        {historyDetails.ai_overview.position !== null && ` • SERP position ${historyDetails.ai_overview.position}`}
+                      </span>
+                    </div>
+                    <ol className="space-y-1 text-[11px]">
+                      {historyDetails.ai_overview.citations.map((c) => (
+                        <li key={c.position} className="flex items-start gap-2">
+                          <span className="font-mono text-slate-500 w-4 text-right">{c.position}.</span>
+                          <span className="min-w-0">
+                            <span className={c.is_project ? 'font-semibold text-emerald-400' : 'text-slate-200'}>{c.domain}</span>
+                            {c.title && <span className="text-slate-400"> — {c.title}</span>}
+                            {c.url && (
+                              <a href={c.url} target="_blank" rel="noreferrer" className="ml-1 inline-flex text-slate-500 hover:text-white">
+                                <ExternalLink className="h-3 w-3" />
+                              </a>
+                            )}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
+
+                {historyDetails && (historyDetails.people_also_ask.length > 0 || historyDetails.local_pack.length > 0) && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {historyDetails.people_also_ask.length > 0 && (
+                      <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+                        <span className="text-xs font-medium text-slate-300">People also ask</span>
+                        <ul className="mt-1.5 space-y-1 text-[11px] text-slate-400 list-disc pl-4">
+                          {historyDetails.people_also_ask.map((q) => (
+                            <li key={q}>{q}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                    {historyDetails.local_pack.length > 0 && (
+                      <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-3">
+                        <span className="text-xs font-medium text-slate-300 flex items-center gap-1">
+                          <MapPin className="h-3 w-3" /> Local pack
+                        </span>
+                        <ol className="mt-1.5 space-y-1 text-[11px] text-slate-400">
+                          {historyDetails.local_pack.map((l, i) => (
+                            <li key={`${l.title}-${i}`}>
+                              <span className="font-mono text-slate-500">{l.rank ?? i + 1}.</span> <span className="text-slate-200">{l.title}</span>
+                              {l.domain && <span className="text-slate-500"> ({l.domain})</span>}
+                              {l.rating !== null && l.rating !== undefined && <span className="text-amber-300"> ★ {l.rating}</span>}
+                            </li>
+                          ))}
+                        </ol>
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="border-b border-slate-800 text-slate-400 bg-slate-950/40">

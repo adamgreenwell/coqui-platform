@@ -10,8 +10,10 @@ use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\ProjectCompetitor;
 use App\Domains\Projects\Models\Workspace;
+use App\Domains\Serp\Models\KeywordAiOverviewCitation;
 use App\Domains\Serp\Models\KeywordRankSnapshot;
 use App\Domains\Serp\Models\TrackedKeyword;
+use App\Domains\Serp\Services\RankTrendService;
 use App\Domains\Serp\Support\VisibilityScore;
 use App\Models\User;
 use Carbon\Carbon;
@@ -28,7 +30,7 @@ use Inertia\Response;
 
 class TrackedKeywordController extends Controller
 {
-    public function index(Request $request, Workspace $workspace, Project $project): Response
+    public function index(Request $request, Workspace $workspace, Project $project, RankTrendService $trends): Response
     {
         abort_if($project->workspace_id !== $workspace->id, 404);
         Gate::authorize('view', $project);
@@ -279,6 +281,7 @@ class TrackedKeywordController extends Controller
             ],
             'competitors' => $competitors,
             'keywords' => $items,
+            'trend' => $trends->daily($project->domain, array_map(intval(...), $keywordIds)),
             'metrics' => [
                 'total_keywords' => $totalCount,
                 'top_3' => $top3Count,
@@ -441,7 +444,7 @@ class TrackedKeywordController extends Controller
         return back()->with('success', "Tracked keyword [{$kwText}] removed.");
     }
 
-    public function snapshots(Workspace $workspace, Project $project, TrackedKeyword $keyword): JsonResponse
+    public function snapshots(Workspace $workspace, Project $project, TrackedKeyword $keyword, RankTrendService $trends): JsonResponse
     {
         abort_if($project->workspace_id !== $workspace->id || $keyword->project_id !== $project->id, 404);
         Gate::authorize('view', $project);
@@ -461,6 +464,33 @@ class TrackedKeywordController extends Controller
                 'checked_on',
             ]);
 
+        $own = $snapshots->where('domain', $project->domain)->values();
+        /** @var KeywordRankSnapshot|null $latest */
+        $latest = $own->last();
+        $features = $latest !== null && is_array($latest->serp_features) ? $latest->serp_features : [];
+
+        // The latest check's AI Overview: its position and sources, in the
+        // order it cited them, whoever it cited. None when that check had no
+        // overview. (Older rows only know whether the project was cited.)
+        $overviewPresent = $latest !== null
+            && (($features['ai_overview_present'] ?? null) === true || $latest->has_ai_overview);
+        $overviewOn = $overviewPresent
+            ? Carbon::parse($latest->checked_on)->toDateString()
+            : null;
+        $citations = $overviewOn === null ? [] : KeywordAiOverviewCitation::query()
+            ->where('tracked_keyword_id', $keyword->id)
+            ->whereDate('checked_on', $overviewOn)
+            ->orderBy('position')
+            ->get(['position', 'domain', 'url', 'title'])
+            ->map(fn (KeywordAiOverviewCitation $c): array => [
+                'position' => $c->position,
+                'domain' => $c->domain,
+                'url' => $c->url,
+                'title' => $c->title,
+                'is_project' => $this->sameSite($c->domain, $project->domain),
+            ])
+            ->all();
+
         return response()->json([
             'keyword' => [
                 'id' => $keyword->uuid,
@@ -469,7 +499,24 @@ class TrackedKeywordController extends Controller
                 'location_code' => $keyword->location_code,
             ],
             'snapshots' => $snapshots,
+            'volatility' => $trends->volatility($own),
+            'ai_overview' => [
+                'checked_on' => $overviewOn,
+                'position' => $overviewOn !== null ? ($features['ai_overview_position'] ?? null) : null,
+                'citations' => $citations,
+            ],
+            'people_also_ask' => is_array($features['people_also_ask'] ?? null) ? $features['people_also_ask'] : [],
+            'local_pack' => is_array($features['local_pack'] ?? null) ? $features['local_pack'] : [],
         ]);
+    }
+
+    private function sameSite(string $domain, string $projectDomain): bool
+    {
+        $strip = static fn (string $d): string => (string) preg_replace('/^www\./', '', strtolower(trim($d)));
+        $a = $strip($domain);
+        $b = $strip($projectDomain);
+
+        return $a === $b || str_ends_with($a, '.'.$b);
     }
 
     /**
