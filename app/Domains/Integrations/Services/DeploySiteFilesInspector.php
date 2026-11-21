@@ -16,6 +16,9 @@ class DeploySiteFilesInspector
 {
     private const MAX_BYTES = 2 * 1024 * 1024;
 
+    /** Cap on a gzipped sitemap's decompressed size. */
+    private const MAX_DECODED_BYTES = 20 * 1024 * 1024;
+
     private const SITEMAP_NAMESPACE = 'http://www.sitemaps.org/schemas/sitemap/0.9';
 
     public function __construct(
@@ -54,9 +57,15 @@ class DeploySiteFilesInspector
             $response = $this->http->get($sitemapUrl, timeoutSeconds: 10, maxBytes: self::MAX_BYTES);
             $sitemap['status'] = $response->status();
             if ($response->successful()) {
-                $count = self::countSitemapEntries($response->body());
-                $sitemap['valid'] = $count !== null;
-                $sitemap['url_count'] = $count;
+                $body = self::decodeSitemap($response->body());
+                if ($body === null) {
+                    // Gzipped past the decompressed cap (or corrupt): can't be checked.
+                    $sitemap['too_large'] = true;
+                } else {
+                    $count = self::countSitemapEntries($body);
+                    $sitemap['valid'] = $count !== null;
+                    $sitemap['url_count'] = $count;
+                }
             }
         } catch (Throwable $e) {
             // Over the size limit: it exists but can't be checked, which is
@@ -65,6 +74,19 @@ class DeploySiteFilesInspector
         }
 
         return ['robots' => $robots, 'sitemap' => $sitemap];
+    }
+
+    /**
+     * A sitemap.xml.gz served without Content-Encoding arrives still gzipped.
+     */
+    private static function decodeSitemap(string $body): ?string
+    {
+        if (! str_starts_with($body, "\x1f\x8b")) {
+            return $body;
+        }
+        $decoded = @gzdecode($body, self::MAX_DECODED_BYTES);
+
+        return is_string($decoded) ? $decoded : null;
     }
 
     private static function isSizeLimit(Throwable $e): bool

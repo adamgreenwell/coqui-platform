@@ -897,6 +897,23 @@ Disallow: /
         $this->assertTrue($second->refresh()->config['smoke_results']['checks']['sitemap']['too_large']);
     }
 
+    public function test_a_gzipped_sitemap_without_content_encoding_is_read(): void
+    {
+        $this->siteFiles['/sitemap.xml'] = [$this->sitemap(20), 200];
+        $first = $this->smokeRun('45');
+        $this->addCrawledPage($first, 'https://my-runnr-site.com/');
+        app(RunnrDeploySmokeService::class)->evaluate($first);
+
+        $this->siteFiles['/sitemap.xml'] = [(string) gzencode($this->sitemap(20)), 200];
+        $second = $this->smokeRun('46');
+        $this->addCrawledPage($second, 'https://my-runnr-site.com/');
+        $result = app(RunnrDeploySmokeService::class)->evaluate($second);
+
+        $this->assertTrue($result['passed']);
+        $this->assertSame([], $result['regressions']);
+        $this->assertSame(20, $second->refresh()->config['smoke_results']['checks']['sitemap']['url_count']);
+    }
+
     public function test_a_robots_txt_with_a_byte_order_mark_is_parsed(): void
     {
         $this->assertTrue(DeploySiteFilesInspector::parseRobots("\u{FEFF}User-agent: *\nDisallow: /\n")['disallow_all']);
