@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Domains\Backlinks\Jobs\VerifyMonitoredBacklinksJob;
 use App\Domains\Backlinks\Models\MonitoredBacklink;
 use App\Domains\Backlinks\Services\BacklinkVerificationService;
 use App\Domains\Projects\Models\Project;
@@ -35,6 +36,7 @@ class BacklinkWatchlistController extends Controller
             'active' => $links->where('state', 'active')->count(),
             'lost' => $links->where('state', 'lost')->count(),
             'rel_changed' => $links->where('state', 'rel_changed')->count(),
+            'anchor_changed' => $links->where('state', 'anchor_changed')->count(),
             'error' => $links->where('state', 'error')->count(),
             'noindex' => $links->where('last_page_noindex', true)->count(),
         ];
@@ -60,6 +62,7 @@ class BacklinkWatchlistController extends Controller
                 'state' => $link->state,
                 'last_http_status' => $link->last_http_status,
                 'last_observed_rel' => $link->last_observed_rel,
+                'last_observed_anchor' => $link->last_observed_anchor,
                 'last_page_noindex' => $link->last_page_noindex,
                 'last_verified_at' => $link->last_verified_at?->toIso8601String(),
                 'created_at' => $link->created_at?->toIso8601String(),
@@ -82,6 +85,11 @@ class BacklinkWatchlistController extends Controller
         $targetUrl = ! empty($validated['target_url'])
             ? (string) $validated['target_url']
             : (string) $project->canonical_url;
+
+        if ($this->verificationService->wouldExceedCap($project, (string) $validated['source_url'])) {
+            return redirect()->route('workspaces.projects.backlinks.watchlist.index', [$workspace, $project])
+                ->with('error', sprintf('A project can monitor at most %d backlinks. Remove one before adding another.', BacklinkVerificationService::maxMonitoredLinks()));
+        }
 
         $link = $this->verificationService->addSingleLink(
             project: $project,
@@ -114,21 +122,23 @@ class BacklinkWatchlistController extends Controller
     {
         Gate::authorize('update', $project);
 
-        $updated = $this->verificationService->verifyProjectWatchlist($project);
+        // Checked in queued batches: a large watchlist would otherwise hold
+        // this request for minutes.
+        $queued = VerifyMonitoredBacklinksJob::dispatchForProject($project);
 
         ProjectActivity::log(
             project: $project,
             eventType: 'backlinks.watchlist_verified',
-            title: 'Watchlist verification ran',
-            description: sprintf('Verified %d monitored backlinks for link rot, rel changes, and noindex tags.', $updated),
+            title: 'Watchlist verification started',
+            description: sprintf('Started checking %d monitored backlinks for link rot, rel and anchor changes, and noindex tags.', $queued),
             properties: [
-                'verified_count' => $updated,
+                'queued_count' => $queued,
             ],
             user: $request->user(),
         );
 
         return redirect()->route('workspaces.projects.backlinks.watchlist.index', [$workspace, $project])
-            ->with('success', sprintf('Successfully verified %d monitored backlinks.', $updated));
+            ->with('success', sprintf('Checking %d monitored backlinks. Their states update as each one is verified; refresh to see progress.', $queued));
     }
 
     public function verifySingle(Request $request, Workspace $workspace, Project $project, MonitoredBacklink $monitoredBacklink): RedirectResponse
@@ -147,7 +157,7 @@ class BacklinkWatchlistController extends Controller
         Gate::authorize('update', $project);
         ProviderNotConfiguredException::throwUnlessSeoDataConfigured();
 
-        $count = $this->verificationService->importFromDataForSeo($project, 100);
+        ['imported' => $count, 'skipped' => $skipped] = $this->verificationService->importFromDataForSeo($project, 100);
 
         ProjectActivity::log(
             project: $project,
@@ -156,12 +166,13 @@ class BacklinkWatchlistController extends Controller
             description: sprintf('Imported %d high-value backlinks into active link-rot monitoring.', $count),
             properties: [
                 'imported_count' => $count,
+                'skipped_count' => $skipped,
             ],
             user: $request->user(),
         );
 
         return redirect()->route('workspaces.projects.backlinks.watchlist.index', [$workspace, $project])
-            ->with('success', sprintf('Successfully imported %d backlinks into the watchlist.', $count));
+            ->with('success', sprintf('Successfully imported %d backlinks into the watchlist.', $count).$this->capNote($skipped));
     }
 
     public function importCsv(Request $request, Workspace $workspace, Project $project): RedirectResponse
@@ -184,7 +195,7 @@ class BacklinkWatchlistController extends Controller
                 ->with('error', 'The uploaded CSV file was empty.');
         }
 
-        $count = $this->verificationService->importFromCsv($project, $content);
+        ['imported' => $count, 'skipped' => $skipped] = $this->verificationService->importFromCsv($project, $content);
 
         ProjectActivity::log(
             project: $project,
@@ -193,12 +204,26 @@ class BacklinkWatchlistController extends Controller
             description: sprintf('Imported %d backlinks from CSV into active link-rot monitor.', $count),
             properties: [
                 'imported_count' => $count,
+                'skipped_count' => $skipped,
             ],
             user: $request->user(),
         );
 
         return redirect()->route('workspaces.projects.backlinks.watchlist.index', [$workspace, $project])
-            ->with('success', sprintf('Successfully imported %d backlinks from CSV into watchlist.', $count));
+            ->with('success', sprintf('Successfully imported %d backlinks from CSV into watchlist.', $count).$this->capNote($skipped));
+    }
+
+    private function capNote(int $skipped): string
+    {
+        if ($skipped === 0) {
+            return '';
+        }
+
+        return sprintf(
+            ' %d more were skipped: a project can monitor at most %d backlinks.',
+            $skipped,
+            BacklinkVerificationService::maxMonitoredLinks(),
+        );
     }
 
     public function destroy(Request $request, Workspace $workspace, Project $project, MonitoredBacklink $monitoredBacklink): RedirectResponse

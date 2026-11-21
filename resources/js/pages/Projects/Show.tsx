@@ -141,6 +141,10 @@ interface ProjectShowProps {
   latestCrawl?: LatestCrawlSummary | null;
   trackedKeywordsCount: number;
   monitoredBacklinksCount: number;
+  // Score is null until a tracked keyword has been checked.
+  keywordVisibility?: { score: number | null; tracked: number; ranked: number; top10: number };
+  // Latest backlink history snapshot, if any.
+  backlinkBaseline?: { backlinks: number; referringDomains: number; rank: number; date: string } | null;
   competitors: CompetitorItem[];
   integrations?: IntegrationItem[];
   bingCrawl?: BingCrawlSummary | null;
@@ -213,6 +217,8 @@ export default function ProjectShow({
   latestCrawl,
   trackedKeywordsCount,
   monitoredBacklinksCount,
+  keywordVisibility,
+  backlinkBaseline = null,
   competitors,
   integrations = [],
   bingCrawl = null,
@@ -621,7 +627,9 @@ export default function ProjectShow({
               {trackedKeywordsCount}
             </div>
             <p className="mt-1 text-[11px] text-slate-500">
-              Active ranking monitors & SERP intelligence
+              {keywordVisibility && keywordVisibility.score !== null
+                ? `Visibility ${keywordVisibility.score}% · ${keywordVisibility.top10} in top 10`
+                : 'Visibility appears after the first rank check'}
             </p>
           </Link>
 
@@ -635,7 +643,9 @@ export default function ProjectShow({
               {monitoredBacklinksCount}
             </div>
             <p className="mt-1 text-[11px] text-slate-500">
-              Live link status checks
+              {backlinkBaseline
+                ? `Baseline ${backlinkBaseline.backlinks.toLocaleString()} backlinks · ${backlinkBaseline.referringDomains.toLocaleString()} domains`
+                : 'No backlink baseline yet'}
             </p>
           </div>
 

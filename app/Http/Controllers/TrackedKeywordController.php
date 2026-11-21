@@ -12,6 +12,7 @@ use App\Domains\Projects\Models\ProjectCompetitor;
 use App\Domains\Projects\Models\Workspace;
 use App\Domains\Serp\Models\KeywordRankSnapshot;
 use App\Domains\Serp\Models\TrackedKeyword;
+use App\Domains\Serp\Support\VisibilityScore;
 use App\Models\User;
 use Carbon\Carbon;
 use Carbon\CarbonInterface;
@@ -252,24 +253,7 @@ class TrackedKeywordController extends Controller
                     $top100Count++;
                 }
 
-                // CTR weight points
-                if ($r === 1) {
-                    $visibilityPoints += 100;
-                } elseif ($r === 2) {
-                    $visibilityPoints += 70;
-                } elseif ($r === 3) {
-                    $visibilityPoints += 50;
-                } elseif ($r <= 5) {
-                    $visibilityPoints += 35;
-                } elseif ($r <= 10) {
-                    $visibilityPoints += 20;
-                } elseif ($r <= 20) {
-                    $visibilityPoints += 10;
-                } elseif ($r <= 50) {
-                    $visibilityPoints += 5;
-                } else {
-                    $visibilityPoints += 2;
-                }
+                $visibilityPoints += VisibilityScore::points($r);
             }
         }
 

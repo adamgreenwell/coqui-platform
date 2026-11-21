@@ -52,6 +52,14 @@ For production on Coolify, follow [Coolify Deployment and Operations](docs/wiki/
 docker compose up -d --build
 ```
 
+   To start with a usable login and a populated project, run the migrations and seed the demo data:
+
+```bash
+docker compose exec app php artisan migrate --seed
+```
+
+   This creates the login from `DEMO_USER_EMAIL` / `DEMO_USER_PASSWORD` in `.env` (see `.env.example`), a Pro workspace and a "Demo Roastery" project with two synced crawls, 30 days of rank history, 90 days of backlink history, a link watchlist and a week of bot telemetry. No DataForSEO or other provider credentials are needed to browse it. The seeder refuses to run when `APP_ENV=production`, and running it again leaves existing demo data alone (use `php artisan migrate:fresh --seed` to rebuild).
+
 3. Regenerate roadmap docs and GitHub issue payloads after editing `tools/plan/*.mjs`:
 
 ```bash

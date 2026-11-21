@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domains\Integrations\Jobs;
 
 use App\Domains\Billing\PlanFeature;
+use App\Domains\Integrations\Actions\LogIntegrationSyncFailure;
 use App\Domains\Integrations\Models\ProjectIntegration;
 use App\Domains\Integrations\Services\SearchConsoleAuthException;
 use App\Domains\Integrations\Services\TrafficAttributionService;
@@ -14,6 +15,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
+use Throwable;
 
 /**
  * Syncs one analytics integration (GA4, Plausible, ...) into page traffic
@@ -76,5 +78,13 @@ class SyncTrafficAnalyticsJob implements ShouldQueue
         if ($trafficService->umamiSyncPending($this->integration)) {
             self::dispatch($this->integration, $this->days);
         }
+    }
+
+    /**
+     * After the last retry: record the failure in the project's activity feed.
+     */
+    public function failed(?Throwable $exception): void
+    {
+        LogIntegrationSyncFailure::handle($this->integration, 'Traffic analytics', $exception);
     }
 }

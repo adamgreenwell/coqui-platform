@@ -15,7 +15,8 @@ Coqui SEO Platform is structured as a modular Laravel 13 monolith running PHP 8.
 ## Authentication & Tenancy
 
 - **Web App:** Laravel Fortify session auth + Inertia v3 React 19 UI.
-- **Desktop & CLI Clients:** Laravel Sanctum personal access tokens prefixed with `coqui_`, scoped via token abilities (e.g. `crawls:sync`).
+- **Desktop & CLI Clients:** Laravel Sanctum personal access tokens prefixed with `coqui_`, scoped via token abilities (e.g. `crawls:sync`). Each new token is tied to the workspace it was created in (`personal_access_tokens.workspace_id`); policies and the API refuse projects and workspaces outside it. Tokens created before this change have no workspace and keep working everywhere; the tokens page marks them "All workspaces".
+- **Audit trail:** membership changes (added, role changed, removed) are written to `workspace_activities` and appear on the members page and in each project's activity feed, alongside failed rank tasks, rank batch results and failed integration syncs.
 - **Authorization:** Every project action checks `ProjectPolicy` to verify the authenticated user owns or belongs to the owning `Workspace`.
 - **Realtime:** Private broadcast channel `project.{projectId}` (`routes/channels.php`) streams progress events over Laravel Reverb.
 

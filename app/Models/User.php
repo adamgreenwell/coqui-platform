@@ -79,4 +79,29 @@ class User extends Authenticatable
             ->withPivot('role')
             ->withTimestamps();
     }
+
+    /**
+     * The workspace this request's API token is limited to, or null for a
+     * browser session or a token created before tokens were scoped.
+     */
+    public function tokenWorkspaceId(): ?int
+    {
+        $token = $this->currentAccessToken();
+        // Only a stored token can carry a scope (Sanctum::actingAs() in tests
+        // uses an unsaved stand-in).
+        if (! $token instanceof PersonalAccessToken || ! $token->exists) {
+            return null;
+        }
+
+        $workspaceId = $token->getAttribute('workspace_id');
+
+        return is_numeric($workspaceId) ? (int) $workspaceId : null;
+    }
+
+    public function tokenAllowsWorkspace(int $workspaceId): bool
+    {
+        $scoped = $this->tokenWorkspaceId();
+
+        return $scoped === null || $scoped === $workspaceId;
+    }
 }
