@@ -18,9 +18,10 @@ import {
   Search,
   Sparkles,
 } from 'lucide-react';
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useState } from 'react';
 import AppLayout from '../../layouts/AppLayout';
 import DataProviderNotice from '../../components/DataProviderNotice';
+import { getEcho } from '../../echo';
 
 interface CompetitorItem {
   rank: number;
@@ -45,16 +46,19 @@ interface BriefData {
   keyword: string;
   searchVolume: number;
   cpc: number;
+  // True when no competitor page could be fetched: there is no word-count target.
+  incomplete?: boolean;
+  incompleteReason?: string | null;
   metrics: {
-    avgWordCountTop10: number;
-    avgWordCountTop3: number;
-    minWords: number;
-    maxWords: number;
+    avgWordCountTop10: number | null;
+    avgWordCountTop3: number | null;
+    minWords: number | null;
+    maxWords: number | null;
     successfulCompetitorsScraped: number;
     totalCompetitorsTargeted: number;
   };
   recommendations: {
-    suggestedWordCount: string;
+    suggestedWordCount: string | null;
     recommendedSchemas: string[];
     keyH2Themes: string[];
     questionsToAnswer: string[];
@@ -67,10 +71,13 @@ interface ContentBriefProp {
   keyword: string;
   searchVolume: number;
   cpc: number;
-  recommendedWordsMin: number;
-  recommendedWordsMax: number;
-  data: BriefData;
+  recommendedWordsMin: number | null;
+  recommendedWordsMax: number | null;
+  // Null until the first generation finishes.
+  data: BriefData | null;
   markdown: string;
+  status: 'pending' | 'completed' | 'failed';
+  error?: string | null;
   createdAt?: string;
 }
 
@@ -78,7 +85,8 @@ interface RecentBriefSummary {
   id: number;
   keyword: string;
   searchVolume: number;
-  wordRange: string;
+  wordRange: string | null;
+  status?: string;
   createdAt?: string;
 }
 
@@ -115,6 +123,33 @@ export default function ContentBriefPage({
   const [expandedRows, setExpandedRows] = useState<Record<number, boolean>>({});
   const [copied, setCopied] = useState(false);
 
+  const data = brief?.data ?? null;
+  const isPending = brief?.status === 'pending';
+
+  // Generation runs in a queued job: reload when it finishes, over Reverb
+  // when available, otherwise by polling.
+  useEffect(() => {
+    if (!isPending) return;
+
+    const reload = () => router.reload({ only: ['brief', 'recentBriefs'] });
+    const echo = getEcho();
+    if (echo) {
+      const channelName = `project.${project.id}`;
+      echo.private(channelName).listen('.ContentBriefUpdated', (e: { keyword: string; status: string }) => {
+        if (e.keyword === brief?.keyword && e.status !== 'pending') reload();
+      });
+      // A slow fallback in case the event was missed.
+      const timer = window.setInterval(reload, 15000);
+      return () => {
+        window.clearInterval(timer);
+        echo.private(channelName).stopListening('.ContentBriefUpdated');
+      };
+    }
+
+    const timer = window.setInterval(reload, 3000);
+    return () => window.clearInterval(timer);
+  }, [isPending, project.id, brief?.keyword]);
+
   const toggleRow = (rank: number) => {
     setExpandedRows((prev) => ({ ...prev, [rank]: !prev[rank] }));
   };
@@ -135,7 +170,7 @@ export default function ContentBriefPage({
   };
 
   const handleCopyMarkdown = () => {
-    if (!brief) return;
+    if (!brief || !brief.markdown) return;
     navigator.clipboard.writeText(brief.markdown);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -180,7 +215,7 @@ export default function ContentBriefPage({
               </p>
             </div>
 
-            {brief && (
+            {brief && data && (
               <div className="flex items-center gap-2">
                 <button
                   type="button"
@@ -220,7 +255,7 @@ export default function ContentBriefPage({
               className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-sm transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <RefreshCw className={`h-4 w-4 ${isGenerating ? 'animate-spin' : ''}`} />
-              <span>{isGenerating ? 'Scraping SERP...' : 'Generate Brief'}</span>
+              <span>{isGenerating ? 'Starting...' : 'Generate Brief'}</span>
             </button>
           </form>
           <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer select-none w-fit">
@@ -254,8 +289,30 @@ export default function ContentBriefPage({
           )}
         </div>
 
+        {brief && isPending && (
+          <div className="flex items-center gap-3 rounded-xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-200">
+            <RefreshCw className="h-4 w-4 animate-spin shrink-0" />
+            <span>
+              Generating the brief for <span className="font-semibold">{brief.keyword}</span>: fetching the top-ranking pages. This usually takes under 15 seconds.
+              {data ? ' The previous version is shown until it finishes.' : ''}
+            </span>
+          </div>
+        )}
+
+        {brief && brief.status === 'failed' && (
+          <div className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+            {brief.error || 'The brief could not be generated. Please try again.'}
+          </div>
+        )}
+
+        {data && data.incomplete && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+            This brief is incomplete. {data.incompleteReason}
+          </div>
+        )}
+
         {/* Content Brief View */}
-        {brief ? (
+        {brief && data ? (
           <div className="space-y-6">
             {/* Core Metrics Grid */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -264,12 +321,21 @@ export default function ContentBriefPage({
                   <span>Target Word Count</span>
                   <BookOpen className="h-4 w-4 text-sky-400" />
                 </div>
-                <div className="mt-2 text-xl font-bold text-white font-mono">
-                  {brief.recommendedWordsMin.toLocaleString()} – {brief.recommendedWordsMax.toLocaleString()}
-                </div>
-                <p className="mt-1 text-[11px] text-slate-500">
-                  Top-3 Competitor Avg: {brief.data.metrics.avgWordCountTop3.toLocaleString()} words
-                </p>
+                {brief.recommendedWordsMin !== null && brief.recommendedWordsMax !== null ? (
+                  <>
+                    <div className="mt-2 text-xl font-bold text-white font-mono">
+                      {brief.recommendedWordsMin.toLocaleString()} – {brief.recommendedWordsMax.toLocaleString()}
+                    </div>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Top-3 Competitor Avg: {(data.metrics.avgWordCountTop3 ?? 0).toLocaleString()} words
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="mt-2 text-xl font-bold text-slate-500 font-mono">Not available</div>
+                    <p className="mt-1 text-[11px] text-slate-500">No competitor pages could be measured</p>
+                  </>
+                )}
               </div>
 
               <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
@@ -291,7 +357,7 @@ export default function ContentBriefPage({
                   <Layers className="h-4 w-4 text-purple-400" />
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1">
-                  {brief.data.recommendations.recommendedSchemas.slice(0, 2).map((s) => (
+                  {data.recommendations.recommendedSchemas.slice(0, 2).map((s) => (
                     <span
                       key={s}
                       className="px-2 py-0.5 rounded text-[11px] font-mono font-medium bg-purple-500/15 text-purple-300 border border-purple-500/30"
@@ -311,7 +377,7 @@ export default function ContentBriefPage({
                   <Radio className="h-4 w-4 text-amber-400" />
                 </div>
                 <div className="mt-2 text-xl font-bold text-white font-mono">
-                  {brief.data.metrics.successfulCompetitorsScraped} / {brief.data.metrics.totalCompetitorsTargeted}
+                  {data.metrics.successfulCompetitorsScraped} / {data.metrics.totalCompetitorsTargeted}
                 </div>
                 <p className="mt-1 text-[11px] text-slate-500">
                   Reachable organic ranking pages
@@ -331,7 +397,7 @@ export default function ContentBriefPage({
                 }`}
               >
                 <ListTree className="h-3.5 w-3.5" />
-                <span>Competitor Structure Matrix ({brief.data.competitors.length})</span>
+                <span>Competitor Structure Matrix ({data.competitors.length})</span>
               </button>
 
               <button
@@ -344,7 +410,7 @@ export default function ContentBriefPage({
                 }`}
               >
                 <HelpCircle className="h-3.5 w-3.5" />
-                <span>Headings & FAQ Ideas ({brief.data.recommendations.keyH2Themes.length + brief.data.recommendations.questionsToAnswer.length})</span>
+                <span>Headings & FAQ Ideas ({data.recommendations.keyH2Themes.length + data.recommendations.questionsToAnswer.length})</span>
               </button>
 
               <button
@@ -378,7 +444,7 @@ export default function ContentBriefPage({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-800/60">
-                      {brief.data.competitors.map((c) => {
+                      {data.competitors.map((c) => {
                         const isExpanded = !!expandedRows[c.rank];
                         const hasOutlines = (c.headings.h1.length + c.headings.h2.length + c.headings.h3.length) > 0;
 
@@ -526,7 +592,7 @@ export default function ContentBriefPage({
                     Recurring H2 subtopics identified across top ranking competitor articles:
                   </p>
                   <div className="space-y-2">
-                    {brief.data.recommendations.keyH2Themes.map((theme, idx) => (
+                    {data.recommendations.keyH2Themes.map((theme, idx) => (
                       <div
                         key={idx}
                         className="p-3 rounded-lg bg-slate-950/60 border border-slate-800 text-xs text-slate-200 flex items-start gap-2.5"
@@ -548,8 +614,8 @@ export default function ContentBriefPage({
                     High-intent questions extracted directly from Google People Also Ask features:
                   </p>
                   <div className="space-y-2">
-                    {brief.data.recommendations.questionsToAnswer.length > 0 ? (
-                      brief.data.recommendations.questionsToAnswer.map((q, idx) => (
+                    {data.recommendations.questionsToAnswer.length > 0 ? (
+                      data.recommendations.questionsToAnswer.map((q, idx) => (
                         <div
                           key={idx}
                           className="p-3 rounded-lg bg-slate-950/60 border border-slate-800 text-xs text-slate-200 flex items-start gap-2.5"
@@ -588,7 +654,7 @@ export default function ContentBriefPage({
               </div>
             )}
           </div>
-        ) : (
+        ) : isPending ? null : (
           <div className="rounded-2xl border border-dashed border-slate-800 p-12 text-center space-y-4">
             <div className="w-12 h-12 rounded-xl bg-sky-500/10 text-sky-400 flex items-center justify-center mx-auto">
               <FileText className="h-6 w-6" />

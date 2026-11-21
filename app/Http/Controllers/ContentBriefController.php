@@ -5,14 +5,15 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Domains\Projects\Models\Project;
-use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Projects\Models\Workspace;
+use App\Domains\Serp\Jobs\GenerateContentBriefJob;
 use App\Domains\Serp\Models\ContentBrief;
 use App\Domains\Serp\ProviderNotConfiguredException;
-use App\Domains\Serp\Services\ContentBriefService;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -21,10 +22,6 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ContentBriefController extends Controller
 {
-    public function __construct(
-        private readonly ContentBriefService $briefService,
-    ) {}
-
     public function show(Request $request, Workspace $workspace, Project $project): Response
     {
         Gate::authorize('view', $project);
@@ -44,12 +41,15 @@ class ContentBriefController extends Controller
         $recentBriefs = $project->contentBriefs()
             ->latest('id')
             ->limit(10)
-            ->get(['id', 'keyword', 'search_volume', 'recommended_words_min', 'recommended_words_max', 'created_at'])
+            ->get(['id', 'keyword', 'search_volume', 'recommended_words_min', 'recommended_words_max', 'status', 'created_at'])
             ->map(fn (ContentBrief $b): array => [
                 'id' => $b->id,
                 'keyword' => $b->keyword,
                 'searchVolume' => $b->search_volume,
-                'wordRange' => "{$b->recommended_words_min} – {$b->recommended_words_max}",
+                'wordRange' => $b->recommended_words_min !== null && $b->recommended_words_max !== null
+                    ? "{$b->recommended_words_min} – {$b->recommended_words_max}"
+                    : null,
+                'status' => $b->status,
                 'createdAt' => $b->created_at?->format('M j, Y'),
             ])
             ->all();
@@ -76,8 +76,10 @@ class ContentBriefController extends Controller
                 'cpc' => $brief->cpc,
                 'recommendedWordsMin' => $brief->recommended_words_min,
                 'recommendedWordsMax' => $brief->recommended_words_max,
-                'data' => $brief->data,
+                'data' => $brief->data !== [] ? $brief->data : null,
                 'markdown' => $brief->markdown,
+                'status' => $brief->status,
+                'error' => $brief->error,
                 'createdAt' => $brief->created_at?->toIso8601String(),
             ] : null,
             'recentBriefs' => $recentBriefs,
@@ -95,39 +97,84 @@ class ContentBriefController extends Controller
             'fresh' => ['nullable', 'boolean'],
         ]);
 
-        $keyword = (string) $validated['keyword'];
+        $keyword = strtolower(trim((string) $validated['keyword']));
+        /** @var User|null $user */
+        $user = $request->user();
         // A fresh lookup skips the shared cache, so it's for members who can spend.
         $fresh = (bool) ($validated['fresh'] ?? false) && Gate::allows('spend', $project);
-        $brief = $this->briefService->buildBrief($project, $keyword, bypassCache: $fresh);
 
-        ProjectActivity::log(
-            project: $project,
-            eventType: 'content_brief.generated',
-            title: sprintf('Content brief generated for "%s"', Str::limit($brief->keyword, 50)),
-            description: sprintf('Generated SERP content brief for "%s" with recommendations and competitor analysis.', $brief->keyword),
-            properties: [
-                'keyword' => $brief->keyword,
-                'search_volume' => $brief->search_volume,
-                'recommended_words_min' => $brief->recommended_words_min,
-                'recommended_words_max' => $brief->recommended_words_max,
-            ],
-            user: $request->user(),
-        );
+        // The SERP lookup and competitor fetches run in a queued job, so the
+        // request returns at once. The lock and the pending check stop a
+        // double submit from paying for the same brief twice.
+        $dispatch = null;
+        $brief = Cache::lock("content-brief:{$project->id}:".md5($keyword), 10)->get(function () use ($project, $keyword, $fresh, &$dispatch): ContentBrief {
+            /** @var ContentBrief|null $brief */
+            $brief = $project->contentBriefs()->where('keyword', $keyword)->latest('id')->first();
+
+            $inFlight = $brief !== null
+                && $brief->status === ContentBrief::STATUS_PENDING
+                && $brief->updated_at !== null
+                && $brief->updated_at->greaterThan(now()->subMinutes(5));
+            if ($inFlight) {
+                return $brief;
+            }
+
+            $generation = (string) Str::uuid();
+            if ($brief === null) {
+                /** @var ContentBrief $brief */
+                $brief = $project->contentBriefs()->create([
+                    'keyword' => $keyword,
+                    'location_code' => (int) ($project->location_code ?? 2840),
+                    'language_code' => strtolower((string) ($project->language_code ?? 'en')),
+                    'recommended_words_min' => null,
+                    'recommended_words_max' => null,
+                    'data' => [],
+                    'markdown' => '',
+                    'status' => ContentBrief::STATUS_PENDING,
+                    'generation' => $generation,
+                ]);
+            } else {
+                // A refresh keeps the previous brief visible until the new one lands.
+                $brief->update(['status' => ContentBrief::STATUS_PENDING, 'error' => null, 'generation' => $generation]);
+            }
+
+            $dispatch = [$brief, $fresh, $generation];
+
+            return $brief;
+        });
+
+        // Dispatched after the lock is released: the job claims the brief
+        // under the same lock (and a sync queue runs it right here).
+        if ($dispatch !== null) {
+            GenerateContentBriefJob::dispatch($dispatch[0], $user, $dispatch[1], $dispatch[2]);
+        }
+
+        if (! $brief instanceof ContentBrief) {
+            // Another request holds the lock and is starting this brief.
+            /** @var ContentBrief|null $brief */
+            $brief = $project->contentBriefs()->where('keyword', $keyword)->latest('id')->first();
+        }
+
+        $brief?->refresh();
 
         if ($request->wantsJson()) {
             return response()->json([
-                'id' => $brief->id,
-                'keyword' => $brief->keyword,
-                'data' => $brief->data,
-                'markdown' => $brief->markdown,
-            ], 201);
+                'id' => $brief?->id,
+                'keyword' => $keyword,
+                'status' => $brief->status ?? ContentBrief::STATUS_PENDING,
+                'error' => $brief?->error,
+                'data' => $brief?->data,
+                'markdown' => $brief?->markdown,
+            ], 202);
         }
 
-        return redirect()->route('workspaces.projects.keywords.brief', [
-            $workspace,
-            $project,
-            'keyword' => $brief->keyword,
-        ])->with('success', sprintf('Content brief generated for "%s".', $brief->keyword));
+        $redirect = redirect()->route('workspaces.projects.keywords.brief', [$workspace, $project, 'keyword' => $keyword]);
+
+        return match ($brief?->status) {
+            ContentBrief::STATUS_COMPLETED => $redirect->with('success', sprintf('Content brief generated for "%s".', $keyword)),
+            ContentBrief::STATUS_FAILED => $redirect->with('error', (string) $brief->error),
+            default => $redirect->with('success', sprintf('Generating the content brief for "%s". It will appear here in a few seconds.', $keyword)),
+        };
     }
 
     public function download(Request $request, Workspace $workspace, Project $project): StreamedResponse
