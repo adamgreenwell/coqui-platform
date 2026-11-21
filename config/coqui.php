@@ -142,6 +142,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Backlink link-rot watchlist
+    |--------------------------------------------------------------------------
+    */
+    'backlinks' => [
+        // Most links one project can monitor.
+        'max_monitored_links' => (int) env('COQUI_MAX_MONITORED_BACKLINKS', 500),
+        // Minimum gap between direct checks of pages on the same host.
+        'verify_host_delay_ms' => (int) env('COQUI_BACKLINK_HOST_DELAY_MS', 1000),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Headless Rust Cloud Worker (coqui-worker)
     |--------------------------------------------------------------------------
     */

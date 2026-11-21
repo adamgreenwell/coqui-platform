@@ -245,7 +245,8 @@ class BacklinkTimelineService
                     ],
                 ];
 
-                BacklinkAlertTriggered::dispatch(
+                // A broadcast failure mustn't break the page that found the drop.
+                rescue(static fn () => BacklinkAlertTriggered::dispatch(
                     $project->id,
                     'backlink_drop',
                     'warning',
@@ -255,7 +256,7 @@ class BacklinkTimelineService
                         'lost_backlinks' => $lostBacklinks,
                         'total_backlinks' => $totalBacklinks,
                     ]
-                );
+                ));
             }
         }
 
@@ -285,14 +286,14 @@ class BacklinkTimelineService
                 ],
             ];
 
-            BacklinkAlertTriggered::dispatch(
+            rescue(static fn () => BacklinkAlertTriggered::dispatch(
                 $project->id,
                 'spam_spike',
                 'critical',
                 $message,
                 $project->canonical_url,
                 ['high_spam_domains_count' => $highSpamCount]
-            );
+            ));
         }
 
         return $alerts;

@@ -17,7 +17,13 @@ return [
                 'scheme' => env('REVERB_SCHEME', 'https'),
                 'useTLS' => env('REVERB_SCHEME', 'https') === 'https',
             ],
-            'client_options' => [],
+            // A slow or unreachable Reverb must not hold up the request or
+            // job that broadcasts (events here broadcast synchronously).
+            // BacklinkVerificationService::BROADCAST_MAX_SECONDS assumes these.
+            'client_options' => [
+                'timeout' => 2,
+                'connect_timeout' => 1,
+            ],
         ],
 
         'log' => [
