@@ -6,6 +6,7 @@ namespace App\Domains\Projects\Models;
 
 use App\Domains\Backlinks\Models\BacklinkHistorySnapshot;
 use App\Domains\Backlinks\Models\MonitoredBacklink;
+use App\Domains\Crawls\CrawlSource;
 use App\Domains\Crawls\Models\CrawlDiffReport;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Integrations\Models\BingCrawlStat;
@@ -24,6 +25,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Str;
 
@@ -142,6 +144,40 @@ class Project extends Model
     public function crawlRuns(): HasMany
     {
         return $this->hasMany(CrawlRun::class);
+    }
+
+    /**
+     * The newest run that is a real audit. Imported snapshots have no issue
+     * data, so they never stand in for the project's latest audit.
+     *
+     * @return HasOne<CrawlRun, $this>
+     */
+    public function latestAuditRun(): HasOne
+    {
+        return $this->hasOne(CrawlRun::class)
+            ->where('source', '!=', CrawlSource::Import->value)
+            // The aggregate subquery is built from a fresh query, so the
+            // source filter must be applied to it as well as to the rows.
+            ->ofMany(
+                ['id' => 'max'],
+                fn ($query) => $query->where('source', '!=', CrawlSource::Import->value),
+            );
+    }
+
+    /**
+     * The newest imported snapshot, shown as an import badge but never used
+     * for audit numbers.
+     *
+     * @return HasOne<CrawlRun, $this>
+     */
+    public function latestImportRun(): HasOne
+    {
+        return $this->hasOne(CrawlRun::class)
+            ->where('source', CrawlSource::Import->value)
+            ->ofMany(
+                ['id' => 'max'],
+                fn ($query) => $query->where('source', CrawlSource::Import->value),
+            );
     }
 
     /**

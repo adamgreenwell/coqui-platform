@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Domains\Crawls\CrawlSource;
 use App\Domains\Crawls\Jobs\DispatchCloudCrawlJob;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Crawls\Services\CoquiWorkerClient;
@@ -52,8 +53,11 @@ class RunScheduledCrawlsCommand extends Command
             }
 
             // Check if there is already an active run
+            // Imported snapshots are not cloud audits, so an in-flight import
+            // must not block a scheduled crawl.
             $hasActiveRun = $project->crawlRuns()
                 ->whereIn('status', ['pending', 'running'])
+                ->where('source', '!=', CrawlSource::Import->value)
                 ->exists();
 
             if ($hasActiveRun) {
@@ -72,7 +76,7 @@ class RunScheduledCrawlsCommand extends Command
             CrawlRun::query()->create([
                 'project_id' => $project->id,
                 'external_crawl_id' => $crawlId,
-                'source' => 'worker',
+                'source' => CrawlSource::Worker->value,
                 'seed' => $project->canonical_url,
                 'seed_kind' => 'url',
                 'status' => 'pending',

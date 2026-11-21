@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domains\Crawls\DTOs;
 
+use App\Domains\Crawls\CrawlSource;
+use InvalidArgumentException;
+
 /**
  * Validates and scrubs camelCase payloads emitted by `coqui-core` (Rust).
  *
@@ -41,6 +44,13 @@ final readonly class CrawlSyncPayload
     {
         /** @var array<string, mixed> $rawConfig */
         $rawConfig = is_array($validated['config'] ?? null) ? $validated['config'] : [];
+        $source = (string) ($validated['source'] ?? CrawlSource::Desktop->value);
+
+        // The DTO is the last line of defence against a source the platform
+        // does not recognise; the API controller narrows this to client sources.
+        if (CrawlSource::tryFrom($source) === null) {
+            throw new InvalidArgumentException(sprintf('Unknown crawl source [%s].', $source));
+        }
 
         return new self(
             externalCrawlId: (string) $validated['id'],
@@ -52,7 +62,7 @@ final readonly class CrawlSyncPayload
             startedAtMs: isset($validated['startedAt']) ? (int) $validated['startedAt'] : null,
             finishedAtMs: isset($validated['finishedAt']) ? (int) $validated['finishedAt'] : null,
             totalUrls: (int) ($validated['totalUrls'] ?? 0),
-            source: (string) ($validated['source'] ?? 'desktop'),
+            source: $source,
         );
     }
 

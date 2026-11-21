@@ -32,9 +32,9 @@ class ProjectApiController extends Controller
                     ->orWhereHas('members', fn ($m) => $m->where('users.id', $user->id));
             })
             ->with(['workspace:id,uuid,name,slug'])
-            ->with(['crawlRuns' => function ($cQuery): void {
-                $cQuery->latest('id')->limit(1);
-            }])
+            // Latest crawl summaries must not fall back to an imported
+            // snapshot, which carries no issue data.
+            ->with('latestAuditRun')
             // A workspace-scoped token only lists that workspace's projects.
             ->when($user->tokenWorkspaceId() !== null, fn ($q) => $q->where('workspace_id', $user->tokenWorkspaceId()));
 
@@ -58,7 +58,7 @@ class ProjectApiController extends Controller
         $paginator = $query->orderBy('name')->paginate($perPage);
 
         $projects = $paginator->getCollection()->map(function (Project $p): array {
-            $latestCrawl = $p->crawlRuns->first();
+            $latestCrawl = $p->latestAuditRun;
 
             return [
                 'id' => $p->uuid,
@@ -242,7 +242,7 @@ class ProjectApiController extends Controller
         Gate::authorize('view', $project);
 
         $project->load(['workspace:id,uuid,name,slug']);
-        $latestCrawl = $project->crawlRuns()->latest('id')->first();
+        $latestCrawl = $project->latestAuditRun;
         $crawlCount = $project->crawlRuns()->count();
 
         return response()->json([

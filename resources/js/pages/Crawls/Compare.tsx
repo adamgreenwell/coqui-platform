@@ -47,6 +47,8 @@ interface RunSummary {
   externalCrawlId: string;
   seed: string;
   source: string;
+  // False when this side is an imported snapshot with no issue data.
+  issuesMeasured?: boolean;
   status: string;
   totalUrls: number;
   errorCount: number;
@@ -62,9 +64,10 @@ interface DeltaSummary {
   removedUrlsCount: number;
   newlyBrokenCount: number;
   statusChangesCount: number;
-  newIssuesCount: number;
-  resolvedIssuesCount: number;
-  persistentIssuesCount: number;
+  // Null (not zero) when either side is an import: issue deltas were not measured.
+  newIssuesCount: number | null;
+  resolvedIssuesCount: number | null;
+  persistentIssuesCount: number | null;
   trafficImpactedBrokenUrls: number;
   totalLostClicks: number;
 }
@@ -181,6 +184,8 @@ interface UrlSampleItem {
 }
 
 interface DiffData {
+  // "not_measured" when either side is an imported snapshot.
+  issueMeasurement?: 'measured' | 'not_measured';
   summary: {
     baseline: RunSummary;
     target: RunSummary;
@@ -241,7 +246,11 @@ export default function Compare({
   const [baselineId, setBaselineId] = useState<string>(selectedBaselineId || '');
   const [targetId, setTargetId] = useState<string>(selectedTargetId || '');
   const [activeTab, setActiveTab] = useState<'broken' | 'issues' | 'transitions' | 'urls'>(
-    diff && diff.newlyBroken.length > 0 ? 'broken' : 'issues'
+    diff && diff.newlyBroken.length > 0
+      ? 'broken'
+      : diff?.issueMeasurement === 'not_measured'
+        ? 'transitions'
+        : 'issues'
   );
   const [issueSubFilter, setIssueSubFilter] = useState<'all' | 'new' | 'resolved'>('all');
   const [searchFilter, setSearchFilter] = useState('');
@@ -256,6 +265,10 @@ export default function Compare({
   const [links, setLinks] = useState<ShareLink[]>(shareLinks);
   const [linksCursor, setLinksCursor] = useState<string | null>(shareLinksNextCursor);
   const [linksLoading, setLinksLoading] = useState(false);
+  // An imported snapshot has no issue data, so its zero issue counts are not
+  // a measured result. URL/status/metadata diffs stay meaningful.
+  const issueDeltasMeasured = diff ? diff.issueMeasurement !== 'not_measured' : true;
+  const selectedBaselineRun = availableRuns.find((run) => run.id === baselineId) ?? null;
   // Only the latest drill-down request may update the modal.
   const drillRequest = useRef<AbortController | null>(null);
   const [drillRule, setDrillRule] = useState<{ rule: string; severity: string; type: 'new' | 'resolved' } | null>(null);
@@ -513,13 +526,33 @@ export default function Compare({
         )}
       </div>
 
+      {/* Issue measurement notice */}
+      {diff && !issueDeltasMeasured && (
+        <div className="flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+          <AlertTriangle className="h-4 w-4 shrink-0 text-amber-400 mt-0.5" />
+          <div className="text-xs">
+            <p className="font-semibold text-amber-200">Issue deltas not measured</p>
+            <p className="mt-0.5 text-amber-200/80">
+              At least one side of this comparison is an imported snapshot with no issue data, so
+              new, resolved and persistent issue counts are unavailable. URL, status, metadata and
+              redirect diffs are still shown.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Crawl Run Selector Bar (Authenticated View) */}
       {!isReadOnly && (
         <div className="p-4 rounded-xl border border-slate-800 bg-slate-900/60 backdrop-blur-sm">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
             <div className="md:col-span-5">
-              <label className="block text-xs font-semibold text-slate-300 mb-1.5">
-                Baseline Crawl (Earlier Snapshot)
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-300 mb-1.5">
+                <span>Baseline Crawl (Earlier Snapshot)</span>
+                {selectedBaselineRun?.source === 'import' && (
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-500/10 text-violet-300 border border-violet-500/30">
+                    Imported
+                  </span>
+                )}
               </label>
               <select
                 value={baselineId}
@@ -611,8 +644,13 @@ export default function Compare({
                   {diff.summary.delta.totalUrls >= 0 ? `+${diff.summary.delta.totalUrls}` : diff.summary.delta.totalUrls}
                 </span>
               </div>
-              <div className="mt-1 text-[11px] text-slate-500 font-mono">
-                Baseline: {diff.summary.baseline.totalUrls.toLocaleString()}
+              <div className="mt-1 flex items-center gap-1.5 text-[11px] text-slate-500 font-mono">
+                <span>Baseline: {diff.summary.baseline.totalUrls.toLocaleString()}</span>
+                {diff.summary.baseline.source === 'import' && (
+                  <span className="px-1 py-0.5 rounded text-[9px] font-sans font-medium bg-violet-500/10 text-violet-300 border border-violet-500/30">
+                    Imported
+                  </span>
+                )}
               </div>
             </div>
 
@@ -667,19 +705,30 @@ export default function Compare({
               <div className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
                 Issue Health Delta
               </div>
-              <div className="mt-1.5 flex items-baseline gap-2">
-                <span className="text-sm font-bold font-mono text-rose-400">
-                  +{diff.summary.delta.newIssuesCount}
-                </span>
-                <span className="text-xs text-slate-500">/</span>
-                <span className="text-sm font-bold font-mono text-emerald-400">
-                  -{diff.summary.delta.resolvedIssuesCount}
-                </span>
-                <span className="text-xs text-slate-400">resolved</span>
-              </div>
-              <div className="mt-1 text-[11px] text-slate-500 font-mono">
-                {diff.summary.delta.persistentIssuesCount} persistent issues
-              </div>
+              {issueDeltasMeasured ? (
+                <>
+                  <div className="mt-1.5 flex items-baseline gap-2">
+                    <span className="text-sm font-bold font-mono text-rose-400">
+                      +{diff.summary.delta.newIssuesCount}
+                    </span>
+                    <span className="text-xs text-slate-500">/</span>
+                    <span className="text-sm font-bold font-mono text-emerald-400">
+                      -{diff.summary.delta.resolvedIssuesCount}
+                    </span>
+                    <span className="text-xs text-slate-400">resolved</span>
+                  </div>
+                  <div className="mt-1 text-[11px] text-slate-500 font-mono">
+                    {diff.summary.delta.persistentIssuesCount} persistent issues
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="mt-1.5 text-sm font-semibold text-amber-300">Not measured</div>
+                  <div className="mt-1 text-[11px] text-slate-500">
+                    Imported snapshot has no issue data
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
@@ -714,7 +763,7 @@ export default function Compare({
                 <Layers className="h-3.5 w-3.5" />
                 <span>Issue Deltas</span>
                 <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-slate-800 text-slate-300">
-                  {diff.issueDeltas.rules.length}
+                  {issueDeltasMeasured ? diff.issueDeltas.rules.length : '—'}
                 </span>
               </button>
 
@@ -846,6 +895,16 @@ export default function Compare({
 
           {/* TAB 2: Issue Deltas */}
           {activeTab === 'issues' && (
+            !issueDeltasMeasured ? (
+              <div className="py-12 text-center rounded-xl border border-slate-800 bg-slate-900/40">
+                <AlertTriangle className="h-8 w-8 text-amber-400 mx-auto mb-2" />
+                <h4 className="text-sm font-semibold text-white">Issue deltas not measured</h4>
+                <p className="mt-1 text-xs text-slate-400 max-w-md mx-auto">
+                  An imported snapshot does not include issue data, so new, resolved and persistent
+                  issues cannot be compared for this pair of runs.
+                </p>
+              </div>
+            ) : (
             <div className="space-y-4">
               {/* Rules summary cards */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -994,6 +1053,7 @@ export default function Compare({
                 </div>
               </div>
             </div>
+            )
           )}
 
           {/* TAB 3: Technical Transitions */}

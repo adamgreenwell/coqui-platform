@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domains\Crawls\Actions;
 
+use App\Domains\Crawls\CrawlSource;
 use App\Domains\Crawls\DTOs\CrawlSyncPayload;
 use App\Domains\Crawls\Events\CrawlProgressUpdated;
 use App\Domains\Crawls\Events\CrawlSynced;
@@ -17,8 +18,6 @@ use Illuminate\Support\Facades\DB;
 
 class IngestDesktopCrawlSnapshot
 {
-    public const DESKTOP_SOURCE = 'desktop';
-
     /**
      * Whether a run takes no more chunks. A paused desktop crawl can resume
      * and upload more; anything else that was finalized is sealed.
@@ -34,19 +33,24 @@ class IngestDesktopCrawlSnapshot
     }
 
     /**
-     * Create or update a desktop-synced run for this project.
+     * Create or update a client-synced run for this project.
      *
      * Runs are matched by (project, external crawl ID). A crawl ID that already
-     * belongs to another project, or to a server-side run (cloud worker or
-     * deploy smoke test), is never taken over.
+     * belongs to another project, or to a run from another source (including a
+     * server-side cloud worker or deploy smoke test), is never taken over.
+     *
+     * Imported runs are re-importable: syncing a finalized import again reopens
+     * it so its chunks are accepted and finalize recomputes the same totals.
      *
      * @throws CrawlOwnershipConflictException
      */
     public function upsertRun(Project $project, CrawlSyncPayload $payload): CrawlRun
     {
+        $source = CrawlSource::from($payload->source);
+
         $attributes = [
             'project_id' => $project->id,
-            'source' => self::DESKTOP_SOURCE,
+            'source' => $source->value,
             'seed' => $payload->seed,
             'seed_kind' => $payload->seedKind,
             'status' => $payload->status,
@@ -63,13 +67,18 @@ class IngestDesktopCrawlSnapshot
             ->first();
 
         if ($existing !== null) {
-            if ($existing->project_id !== $project->id || $existing->source !== self::DESKTOP_SOURCE) {
+            if ($existing->project_id !== $project->id || $existing->source !== $source->value) {
                 throw CrawlOwnershipConflictException::forCrawl($payload->externalCrawlId);
             }
 
-            // Resuming a paused run reopens it, so its chunks are accepted
-            // again until the next finalize.
-            if ($existing->finalized_at !== null && $existing->status === 'paused' && $payload->status !== 'paused') {
+            if ($existing->finalized_at !== null && (
+                // A re-import replaces the previous snapshot, so chunks are
+                // accepted again until the next finalize.
+                $source->isImported()
+                // Resuming a paused desktop run reopens it, so its chunks are
+                // accepted again until the next finalize.
+                || ($existing->status === 'paused' && $payload->status !== 'paused')
+            )) {
                 $attributes['finalized_at'] = null;
             }
 
@@ -284,7 +293,11 @@ class IngestDesktopCrawlSnapshot
             'finalized_at' => now(),
         ]);
 
-        $run->project()->withTrashed()->update(['last_crawled_at' => now()]);
+        // An import is not an audit of the project, so it must not advance
+        // "last crawled" (which drives crawl cadence and overview stats).
+        if ($run->source !== CrawlSource::Import->value) {
+            $run->project()->withTrashed()->update(['last_crawled_at' => now()]);
+        }
 
         $refreshed = $run->refresh();
 
@@ -329,7 +342,7 @@ class IngestDesktopCrawlSnapshot
             );
         }
 
-        if ($refreshed->source === 'deploy_smoke') {
+        if ($refreshed->source === CrawlSource::DeploySmoke->value) {
             // A failed or cancelled crawl has no results to evaluate; judging
             // them would report an empty site as a passing deploy.
             match ($refreshed->status) {

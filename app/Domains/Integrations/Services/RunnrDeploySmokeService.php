@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domains\Integrations\Services;
 
+use App\Domains\Crawls\CrawlSource;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Crawls\Services\SafeHttpClient;
 use App\Domains\Projects\Models\ProjectActivity;
@@ -47,7 +48,7 @@ class RunnrDeploySmokeService
         // between can't push the baseline out of reach.
         $previous = CrawlRun::query()
             ->where('project_id', $run->project_id)
-            ->where('source', 'deploy_smoke')
+            ->where('source', CrawlSource::DeploySmoke->value)
             ->where('id', '<', $run->id)
             // A preview deploy is no baseline for production, or vice versa
             // (a run without an environment counts as production).

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Domains\Crawls\Actions\IngestDesktopCrawlSnapshot;
+use App\Domains\Crawls\CrawlSource;
 use App\Domains\Crawls\DTOs\CrawlSyncPayload;
 use App\Domains\Crawls\Exceptions\CrawlOwnershipConflictException;
 use App\Domains\Crawls\Models\CrawlRun;
@@ -16,6 +17,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class CrawlSyncController extends Controller
 {
@@ -55,7 +57,7 @@ class CrawlSyncController extends Controller
 
         $query = $project->crawlRuns()->latest('id');
 
-        if (is_string($source) && in_array($source, ['desktop', 'worker', 'deploy_smoke'], true)) {
+        if (is_string($source) && in_array($source, CrawlSource::values(), true)) {
             $query->where('source', $source);
         }
 
@@ -155,8 +157,9 @@ class CrawlSyncController extends Controller
             'startedAt' => ['nullable', 'integer', 'min:0'],
             'finishedAt' => ['nullable', 'integer', 'min:0'],
             'totalUrls' => ['nullable', 'integer', 'min:0'],
-            // Server-side sources (worker, deploy_smoke) are never accepted from clients.
-            'source' => ['nullable', 'in:desktop'],
+            // Client sources only; server-side runs (worker, deploy_smoke) are
+            // never accepted from clients.
+            'source' => ['nullable', Rule::in(CrawlSource::clientValues())],
         ]);
 
         try {
@@ -176,7 +179,7 @@ class CrawlSyncController extends Controller
     {
         Gate::authorize('update', $project);
 
-        $run = $this->findRun($project, $crawlId, IngestDesktopCrawlSnapshot::DESKTOP_SOURCE);
+        $run = $this->findRun($project, $crawlId, CrawlSource::clientValues());
 
         if (IngestDesktopCrawlSnapshot::isSealed($run)) {
             return response()->json([
@@ -208,7 +211,7 @@ class CrawlSyncController extends Controller
     {
         Gate::authorize('update', $project);
 
-        $run = $this->findRun($project, $crawlId, IngestDesktopCrawlSnapshot::DESKTOP_SOURCE);
+        $run = $this->findRun($project, $crawlId, CrawlSource::clientValues());
 
         $validated = $request->validate([
             'status' => ['nullable', 'in:completed,paused,failed,cancelled'],
@@ -243,8 +246,10 @@ class CrawlSyncController extends Controller
      * Crawl runs are addressed only by their external UUID. Anything else,
      * including a sequential run ID, is a 404 (and never reaches a Postgres
      * uuid comparison that would reject the input).
+     *
+     * @param  list<string>|null  $sources  Client-ingestable sources this endpoint may address.
      */
-    private function findRun(Project $project, mixed $crawlId, ?string $source = null): CrawlRun
+    private function findRun(Project $project, mixed $crawlId, ?array $sources = null): CrawlRun
     {
         if (! is_string($crawlId) || ! Str::isUuid($crawlId)) {
             abort(404);
@@ -253,7 +258,7 @@ class CrawlSyncController extends Controller
         /** @var CrawlRun */
         return $project->crawlRuns()
             ->where('external_crawl_id', $crawlId)
-            ->when($source !== null, fn ($q) => $q->where('source', $source))
+            ->when($sources !== null, fn ($q) => $q->whereIn('source', $sources))
             ->firstOrFail();
     }
 }

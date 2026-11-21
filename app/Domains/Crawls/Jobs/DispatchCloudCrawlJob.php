@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domains\Crawls\Jobs;
 
 use App\Domains\Billing\PlanFeature;
+use App\Domains\Crawls\CrawlSource;
 use App\Domains\Crawls\Events\CrawlProgressUpdated;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Crawls\Services\CoquiWorkerClient;
@@ -123,7 +124,7 @@ class DispatchCloudCrawlJob implements ShouldQueue
                 status: 'failed',
             )));
 
-            if ($run->source === 'deploy_smoke') {
+            if ($run->source === CrawlSource::DeploySmoke->value) {
                 app(RunnrDeploySmokeService::class)->reportFailure($run, $reason);
             }
 
