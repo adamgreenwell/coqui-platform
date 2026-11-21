@@ -464,8 +464,11 @@ class TrackedKeywordController extends Controller
         $features = $latest !== null && is_array($latest->serp_features) ? $latest->serp_features : [];
 
         // The latest check's AI Overview: its position and sources, in the
-        // order it cited them. None when that check had no overview.
-        $overviewOn = $latest !== null && $latest->has_ai_overview
+        // order it cited them, whoever it cited. None when that check had no
+        // overview. (Older rows only know whether the project was cited.)
+        $overviewPresent = $latest !== null
+            && (($features['ai_overview_present'] ?? null) === true || $latest->has_ai_overview);
+        $overviewOn = $overviewPresent
             ? Carbon::parse($latest->checked_on)->toDateString()
             : null;
         $citations = $overviewOn === null ? [] : KeywordAiOverviewCitation::query()

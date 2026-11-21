@@ -363,4 +363,32 @@ class RankTrackerInsightsTest extends TestCase
 
         Carbon::setTestNow();
     }
+
+    public function test_history_shows_an_ai_overview_that_cites_only_other_sites(): void
+    {
+        Carbon::setTestNow('2026-11-21 12:00:00');
+        $keyword = $this->keyword();
+        $items = array_map(function (array $item): array {
+            if ($item['type'] === 'ai_overview') {
+                // Cites a rival and a third site, never the project.
+                $item['references'] = [['domain' => 'www.rival.com', 'url' => 'https://www.rival.com/guide', 'title' => 'Rival guide']];
+                $item['items'] = [['type' => 'ai_overview_element', 'references' => [['url' => 'https://docs.example.org/page', 'source' => 'Example Docs']]]];
+            }
+
+            return $item;
+        }, $this->serpItems());
+        app(RecordSerpRankSnapshots::class)->handle($keyword, ['items' => $items], '2026-11-21');
+
+        $response = $this->actingAs($this->owner)
+            ->getJson("/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/keywords/{$keyword->uuid}/snapshots")
+            ->assertOk()
+            ->assertJsonPath('ai_overview.checked_on', '2026-11-21');
+
+        $this->assertNotNull($response->json('ai_overview.position'));
+        $citations = $response->json('ai_overview.citations');
+        $this->assertNotEmpty($citations);
+        $this->assertFalse(collect($citations)->contains('is_project', true));
+
+        Carbon::setTestNow();
+    }
 }

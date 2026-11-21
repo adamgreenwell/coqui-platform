@@ -49,6 +49,9 @@ class RecordSerpRankSnapshots
             if ($domain === $projectDomain) {
                 // The rest of the page, kept once per keyword and day on the
                 // project's own snapshot.
+                // Whether the page had an overview at all; has_ai_overview
+                // is only set when the project itself is cited.
+                $features['ai_overview_present'] = $parsed['ai_overview']['present'];
                 $features['ai_overview_position'] = $parsed['ai_overview']['position'];
                 $features['ai_overview_citation_count'] = count($parsed['ai_overview']['citations']);
                 $features['people_also_ask'] = $parsed['people_also_ask'];
