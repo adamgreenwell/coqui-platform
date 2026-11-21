@@ -35,6 +35,7 @@ class WorkspaceBillingController extends Controller
         $dfsSpend = $workspace->currentMonthDfsSpend();
         $dfsBudget = (float) $workspace->monthly_dfs_budget_usd;
         $keywordsCount = $workspace->trackedKeywordsCount();
+        $creditsUsed = $workspace->serpCreditsUsedThisMonth();
 
         $invoices = $workspace->invoices()
             ->latest('id')
@@ -69,6 +70,9 @@ class WorkspaceBillingController extends Controller
             'dfs_spend_usd' => round($dfsSpend, 4),
             'dfs_budget_usd' => $dfsBudget,
             'dfs_remaining_usd' => round(max(0.0, $dfsBudget - $dfsSpend), 4),
+            'serp_credits_used' => $creditsUsed,
+            'serp_credits_limit' => $workspace->serpCreditLimit(),
+            'serp_credits_remaining' => $workspace->remainingSerpCredits(),
         ];
 
         if ($runnrEnabled) {
@@ -91,7 +95,7 @@ class WorkspaceBillingController extends Controller
         Gate::authorize('update', $workspace);
 
         $validated = $request->validate([
-            'plan_tier' => ['required', 'string', 'in:personal,pro,agency,runnr_addon'],
+            'plan_tier' => ['required', 'string', 'in:solo,pro,agency,runnr_addon'],
         ]);
 
         $tier = (string) $validated['plan_tier'];

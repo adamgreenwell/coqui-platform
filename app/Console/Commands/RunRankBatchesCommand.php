@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Domains\Billing\PlanCatalog;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
 use App\Domains\Serp\DataForSeo\DataForSeoClient;
@@ -134,6 +135,32 @@ class RunRankBatchesCommand extends Command
             $chunks = array_chunk($kwList, 100);
 
             foreach ($chunks as $chunk) {
+                // Depth 100 is ten credits per keyword. Refuse the chunk
+                // before spending anything when the plan's monthly allowance
+                // cannot cover it, instead of sending a batch DataForSEO will
+                // bill and the workspace cannot afford.
+                $depth = 100;
+                $chunkCredits = count($chunk) * PlanCatalog::creditsForDepth($depth);
+                $remainingCredits = $project->workspace->remainingSerpCredits();
+
+                if ($chunkCredits > $remainingCredits) {
+                    $this->warn(sprintf(
+                        'Skipped %d keyword(s) for project %d: %d SERP credits remain this month and the batch needs %d.',
+                        count($chunk),
+                        $project->id,
+                        $remainingCredits,
+                        $chunkCredits,
+                    ));
+                    $projectRefused += count($chunk);
+                    $projectFailures[] = sprintf(
+                        'Monthly SERP allowance reached: %d credits remaining, %d needed.',
+                        $remainingCredits,
+                        $chunkCredits,
+                    );
+
+                    continue;
+                }
+
                 $tasksPayload = [];
                 $tokenMap = [];
 
@@ -148,7 +175,7 @@ class RunRankBatchesCommand extends Command
                         'device' => $kw->device,
                         'location_code' => $kw->location_code,
                         'language_code' => $kw->language_code,
-                        'depth' => 100,
+                        'depth' => $depth,
                         'postback_url' => $callbackUrl,
                         'postback_data' => 'advanced',
                         // Wait for AI Overviews that load after the page, so

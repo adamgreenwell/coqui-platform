@@ -17,7 +17,7 @@ class SetWorkspacePlanTierCommand extends Command
 {
     protected $signature = 'billing:set-tier
         {workspace : Workspace ID or slug}
-        {tier : free, personal, pro or agency}
+        {tier : free, solo, pro or agency}
         {--runnr : Grant the Runnr hosting add-on}';
 
     protected $description = 'Manually override a workspace plan tier (operator use only; bypasses Stripe).';
@@ -26,7 +26,7 @@ class SetWorkspacePlanTierCommand extends Command
     {
         $tier = strtolower(trim((string) $this->argument('tier')));
         if (! in_array($tier, ['free', ...Workspace::PAID_PLAN_TIERS], true)) {
-            $this->error("Unknown tier [{$tier}]. Use free, personal, pro or agency.");
+            $this->error("Unknown tier [{$tier}]. Use free, solo, pro or agency.");
 
             return self::FAILURE;
         }

@@ -406,6 +406,7 @@ class DataForSeoSpendControlsTest extends TestCase
 
         // 10 pages, plus one AI Overview page, plus one page for the depth-10 task.
         $this->assertEqualsWithDelta(0.0072, (float) $row->estimated_cost_usd, 0.000001);
+        $this->assertSame(11, (int) $row->serp_pages);
     }
 
     public function test_a_task_without_a_depth_reserves_one_serp_page(): void

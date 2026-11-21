@@ -37,11 +37,12 @@ class DataForSeoSpendGuard
         ?int $projectId = null,
         bool $isScheduled = false,
         array $meta = [],
+        int $serpPages = 0,
     ): int {
         $wait = max(0, (int) config('coqui.dataforseo.spend_lock_wait_seconds', 10));
 
         try {
-            return Cache::lock(self::LOCK, 30)->block($wait, function () use ($endpoint, $mode, $estimatedCostUsd, $workspace, $projectId, $isScheduled, $meta): int {
+            return Cache::lock(self::LOCK, 30)->block($wait, function () use ($endpoint, $mode, $estimatedCostUsd, $workspace, $projectId, $isScheduled, $meta, $serpPages): int {
                 $this->assertCanSpend($estimatedCostUsd, $workspace, $isScheduled);
 
                 $now = now();
@@ -51,6 +52,7 @@ class DataForSeoSpendGuard
                     'project_id' => $projectId,
                     'endpoint' => $endpoint,
                     'mode' => $mode,
+                    'serp_pages' => $serpPages > 0 ? $serpPages : null,
                     'estimated_cost_usd' => $estimatedCostUsd,
                     'actual_cost_usd' => $estimatedCostUsd,
                     'status' => self::STATUS_RESERVED,

@@ -441,4 +441,23 @@ class RankTrackerInsightsTest extends TestCase
 
         Carbon::setTestNow();
     }
+
+    public function test_rank_batches_stop_when_the_monthly_serp_credit_allowance_is_spent(): void
+    {
+        config()->set('coqui.dataforseo.scheduled_spend', true);
+
+        // The free plan includes 100 credits; depth 100 costs 10 per keyword,
+        // so eleven keywords cannot be funded.
+        foreach (range(1, 11) as $i) {
+            $this->keyword("credit keyword {$i}");
+        }
+
+        Http::fake();
+
+        $this->artisan('dataforseo:run-rank-batches', ['--project' => $this->project->id])
+            ->expectsOutputToContain('SERP credits remain')
+            ->assertSuccessful();
+
+        Http::assertNothingSent();
+    }
 }

@@ -45,6 +45,9 @@ interface WorkspaceBillingProps {
     dfs_spend_usd: number;
     dfs_budget_usd: number;
     dfs_remaining_usd: number;
+    serp_credits_used: number;
+    serp_credits_limit: number;
+    serp_credits_remaining: number;
     runnr_entitled?: boolean;
   };
   plans: Record<string, PlanDetail>;
@@ -89,6 +92,7 @@ export default function WorkspaceBilling({
 
   const keywordPct = Math.min(100, Math.round((usage.keywords_count / Math.max(1, usage.keywords_limit)) * 100));
   const dfsPct = Math.min(100, Math.round((usage.dfs_spend_usd / Math.max(1, usage.dfs_budget_usd)) * 100));
+  const creditsPct = Math.min(100, Math.round((usage.serp_credits_used / Math.max(1, usage.serp_credits_limit)) * 100));
 
   return (
     <AppLayout currentWorkspace={workspace}>
@@ -186,7 +190,7 @@ export default function WorkspaceBilling({
         )}
 
         {/* Usage & Metering KPI Grid */}
-        <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${runnrIntegration ? 'lg:grid-cols-4' : 'lg:grid-cols-3'}`}>
+        <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${runnrIntegration ? 'lg:grid-cols-5' : 'lg:grid-cols-4'}`}>
           {/* Monthly live data spend guard */}
           <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 space-y-3">
             <div className="flex items-center justify-between">
@@ -215,6 +219,37 @@ export default function WorkspaceBilling({
             </div>
             <p className="text-[11px] text-slate-500">
               ${usage.dfs_remaining_usd.toFixed(2)} remaining this month. Resets on the 1st.
+            </p>
+          </div>
+
+          {/* SERP credit meter: one credit is one page of 10 results. */}
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-slate-400">SERP Credits</span>
+              <span className="p-1 rounded bg-sky-500/10 text-sky-400 border border-sky-500/20">
+                <Sparkles className="h-3.5 w-3.5" />
+              </span>
+            </div>
+            <div>
+              <div className="flex items-baseline justify-between text-xs">
+                <span className="text-lg font-bold text-white font-mono">
+                  {usage.serp_credits_used.toLocaleString()}
+                </span>
+                <span className="text-slate-400 font-mono">
+                  / {usage.serp_credits_limit.toLocaleString()}
+                </span>
+              </div>
+              <div className="mt-2 w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    creditsPct > 90 ? 'bg-rose-500' : creditsPct > 70 ? 'bg-amber-500' : 'bg-sky-500'
+                  }`}
+                  style={{ width: `${creditsPct}%` }}
+                />
+              </div>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              1 credit = one page of 10 results. A depth-100 check costs 10.
             </p>
           </div>
 

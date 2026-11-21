@@ -227,7 +227,7 @@ class WorkspaceBillingTest extends TestCase
 
         // Personal tier: the Pro feature set, without the Agency extras
         Feature::flushCache();
-        $this->workspace->applyPlanTier('personal');
+        $this->workspace->applyPlanTier('solo');
         $this->assertTrue(Feature::for($this->workspace)->active('content-briefs'));
         $this->assertTrue(Feature::for($this->workspace)->active('backlink-intelligence'));
         $this->assertTrue(Feature::for($this->workspace)->active('traffic-attribution'));
@@ -271,23 +271,23 @@ class WorkspaceBillingTest extends TestCase
         $this->assertStringContainsString('plan=pro', $target);
     }
 
-    public function test_the_personal_plan_has_its_own_limits_and_checkout(): void
+    public function test_the_solo_plan_has_its_own_limits_and_checkout(): void
     {
-        $this->workspace->applyPlanTier('personal');
+        $this->workspace->applyPlanTier('solo');
         $this->workspace->refresh();
-        $this->assertSame('personal', $this->workspace->plan_tier);
+        $this->assertSame('solo', $this->workspace->plan_tier);
         $this->assertSame(300, $this->workspace->tracked_keyword_limit);
         $this->assertSame(5000, $this->workspace->cloud_crawl_url_limit);
-        $this->assertSame(6.0, (float) $this->workspace->monthly_dfs_budget_usd);
+        $this->assertSame(8.0, (float) $this->workspace->monthly_dfs_budget_usd);
 
         $this->workspace->applyPlanTier('free');
         $response = $this->actingAs($this->owner)
             ->post(route('workspaces.billing.checkout', $this->workspace), [
-                'plan_tier' => 'personal',
+                'plan_tier' => 'solo',
             ]);
 
         $response->assertRedirect();
-        $this->assertStringContainsString('plan=personal', (string) $response->headers->get('Location'));
+        $this->assertStringContainsString('plan=solo', (string) $response->headers->get('Location'));
     }
 
     public function test_customer_portal_redirect(): void
@@ -323,9 +323,9 @@ class WorkspaceBillingTest extends TestCase
         $this->workspace->refresh();
 
         $this->assertSame('agency', $this->workspace->plan_tier);
-        $this->assertSame(10000, $this->workspace->tracked_keyword_limit);
+        $this->assertSame(5000, $this->workspace->tracked_keyword_limit);
         $this->assertSame(250000, $this->workspace->cloud_crawl_url_limit);
-        $this->assertEquals(60.00, $this->workspace->monthly_dfs_budget_usd);
+        $this->assertEquals(58.00, $this->workspace->monthly_dfs_budget_usd);
     }
 
     public function test_operator_command_rejects_unknown_tier(): void
@@ -368,7 +368,7 @@ class WorkspaceBillingTest extends TestCase
         $this->assertSame('active', $this->workspace->subscription_status);
         $this->assertSame(1000, $this->workspace->tracked_keyword_limit);
         $this->assertSame(25000, $this->workspace->cloud_crawl_url_limit);
-        $this->assertEquals(15.00, $this->workspace->monthly_dfs_budget_usd);
+        $this->assertEquals(22.00, $this->workspace->monthly_dfs_budget_usd);
 
         $this->assertDatabaseHas('workspace_subscriptions', [
             'workspace_id' => $this->workspace->id,
@@ -421,7 +421,7 @@ class WorkspaceBillingTest extends TestCase
         $this->workspace->refresh();
         $this->assertSame('free', $this->workspace->plan_tier);
         $this->assertSame('canceled', $this->workspace->subscription_status);
-        $this->assertSame(100, $this->workspace->tracked_keyword_limit);
+        $this->assertSame(20, $this->workspace->tracked_keyword_limit);
         $this->assertSame(1000, $this->workspace->cloud_crawl_url_limit);
 
         $this->assertDatabaseHas('workspace_subscriptions', [
