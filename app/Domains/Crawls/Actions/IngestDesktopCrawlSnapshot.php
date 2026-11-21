@@ -330,7 +330,13 @@ class IngestDesktopCrawlSnapshot
         }
 
         if ($refreshed->source === 'deploy_smoke') {
-            app(RunnrDeploySmokeService::class)->evaluate($refreshed);
+            // A failed or cancelled crawl has no results to evaluate; judging
+            // them would report an empty site as a passing deploy.
+            match ($refreshed->status) {
+                'failed' => app(RunnrDeploySmokeService::class)->reportFailure($refreshed, 'The crawl worker reported that the crawl failed.'),
+                'cancelled' => app(RunnrDeploySmokeService::class)->reportFailure($refreshed, 'The smoke crawl was cancelled.'),
+                default => app(RunnrDeploySmokeService::class)->evaluate($refreshed),
+            };
         }
 
         return $refreshed;
