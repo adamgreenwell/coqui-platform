@@ -264,7 +264,9 @@ fn analyse_html(
 }
 
 fn anchor_text(anchor: &scraper::ElementRef<'_>) -> String {
-    let text = anchor.text().collect::<Vec<_>>().join(" ");
+    // Join text nodes as-is (like textContent), so `Coqui<b>SEO</b>` stays
+    // "CoquiSEO"; then collapse whitespace.
+    let text = anchor.text().collect::<String>();
     text.split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
@@ -411,6 +413,10 @@ mod tests {
         );
         let page = analyse_page(&long, "https://blog.test/", Some(&target));
         assert_eq!(page.link.unwrap().anchor.chars().count(), MAX_ANCHOR_CHARS);
+
+        let joined = r#"<a href="https://example.com/pricing">Coqui<b>SEO</b></a>"#;
+        let page = analyse_page(joined, "https://blog.test/", Some(&target));
+        assert_eq!(page.link.unwrap().anchor, "CoquiSEO");
 
         let missing = observation("https://blog.test/", 200, None, false);
         assert_eq!(missing.observed_anchor, None);
