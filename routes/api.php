@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Http\Controllers\Api\V1\BotTelemetryApiController;
+use App\Http\Controllers\Api\V1\CrawlImportController;
 use App\Http\Controllers\Api\V1\CrawlSyncController;
 use App\Http\Controllers\Api\V1\MeApiController;
 use App\Http\Controllers\Api\V1\ProjectApiController;
@@ -46,6 +47,20 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function (): void {
         ->middleware('ability:crawls:sync');
 
     Route::post('/projects/{project}/crawls/{crawlId}/finalize', [CrawlSyncController::class, 'finalize'])
+        ->middleware('ability:crawls:sync');
+
+    // Crawl export imports: reserve an upload, PUT straight to object
+    // storage, then complete so the server can verify what landed.
+    Route::post('/projects/{project}/imports', [CrawlImportController::class, 'store'])
+        ->middleware('ability:crawls:sync');
+
+    Route::get('/imports/{import}', [CrawlImportController::class, 'show'])
+        ->middleware('ability:crawls:read,crawls:sync');
+
+    Route::post('/imports/{import}/complete', [CrawlImportController::class, 'complete'])
+        ->middleware('ability:crawls:sync');
+
+    Route::delete('/imports/{import}', [CrawlImportController::class, 'destroy'])
         ->middleware('ability:crawls:sync');
 
     // Runnr deploy smoke test inspection

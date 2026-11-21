@@ -4,6 +4,8 @@ This contract defines the REST and streaming JSON API exchanged between the **Co
 
 Because `coqui-core` serializes every struct with `#[serde(rename_all = "camelCase")]`, all API requests and responses use `camelCase` field names directly so the desktop app and `coqui-worker` can stream records without translation overhead.
 
+Crawl files (Screaming Frog databases and other exports) do **not** travel through this API. They upload directly to object storage through a presigned URL; see [object-storage.md](object-storage.md) for that contract.
+
 ---
 
 ## Authentication & Authorization

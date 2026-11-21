@@ -35,6 +35,11 @@ Schedule::command('rank:fallback')
     ->hourly()
     ->withoutOverlapping();
 
+// Drop expired uploads and old failed imports, objects included.
+Schedule::command('imports:prune')
+    ->dailyAt('03:45')
+    ->withoutOverlapping();
+
 // Weekly verification of starred customer backlinks using coqui-worker.
 Schedule::command('coqui:verify-backlinks')
     ->weeklyOn(1, '03:30')

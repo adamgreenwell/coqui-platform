@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domains\Crawls\StorageNotConfiguredException;
 use App\Domains\Serp\ProviderNotConfiguredException;
 use App\Http\Middleware\EnsureWorkspaceHasFeature;
 use App\Http\Middleware\ForceHttpsScheme;
@@ -43,6 +44,20 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withExceptions(function (Exceptions $exceptions): void {
         // Missing provider credentials are a setup problem, not a crash: say
         // so instead of a 500, and keep it out of the error log.
+        // Object storage that isn't configured is a setup problem too: say so
+        // instead of failing with a 500 when a client asks to upload a file.
+        $exceptions->dontReport(StorageNotConfiguredException::class);
+        $exceptions->render(function (StorageNotConfiguredException $e, Request $request) {
+            if ($request->expectsJson() && ! $request->header('X-Inertia')) {
+                return response()->json([
+                    'message' => $e->getMessage(),
+                    'storage_not_configured' => true,
+                ], 503);
+            }
+
+            return redirect()->back()->with('error', $e->getMessage());
+        });
+
         $exceptions->dontReport(ProviderNotConfiguredException::class);
         $exceptions->render(function (ProviderNotConfiguredException $e, Request $request) {
             if ($request->expectsJson() && ! $request->header('X-Inertia')) {
