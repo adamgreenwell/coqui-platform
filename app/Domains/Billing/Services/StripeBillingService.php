@@ -118,9 +118,18 @@ class StripeBillingService
     public const MODE_UNCONFIGURED = 'unconfigured';
 
     /**
-     * Subscription statuses that keep a plan or add-on usable.
+     * Subscription statuses that keep a plan or add-on usable. past_due is
+     * the grace period: access stays while Stripe retries the payment.
      */
     private const ENTITLED_STATUSES = ['active', 'trialing', 'past_due'];
+
+    /**
+     * Statuses that end access without a customer.subscription.deleted
+     * event: retries ran out and Stripe marked it unpaid, or the first
+     * payment never completed. Paying later makes it active again, and the
+     * plan comes back with it.
+     */
+    private const LAPSED_STATUSES = ['unpaid', 'incomplete_expired', 'canceled'];
 
     /**
      * How billing actions are served:
@@ -449,8 +458,11 @@ class StripeBillingService
         }
 
         if ($isRunnrAddon) {
-            if (in_array($status, self::ENTITLED_STATUSES, true) && ! $workspace->has_runnr_addon) {
-                $workspace->update(['has_runnr_addon' => true]);
+            // Follow the add-on's status both ways, so an unpaid add-on stops
+            // unlocking Runnr features and a paid-up one unlocks them again.
+            $hasAddon = $this->hasActiveSubscription($workspace, 'runnr_addon');
+            if ($workspace->has_runnr_addon !== $hasAddon) {
+                $workspace->update(['has_runnr_addon' => $hasAddon]);
             }
 
             return [
@@ -467,13 +479,21 @@ class StripeBillingService
         ]);
 
         // A plan switch in the customer portal changes the subscription's
-        // price, so the price decides the plan. Losing access is left to
-        // customer.subscription.deleted.
+        // price, so the price decides the plan.
         if (in_array($planTier, Workspace::PAID_PLAN_TIERS, true)
             && in_array($status, self::ENTITLED_STATUSES, true)
             && $workspace->plan_tier !== $planTier) {
             $workspace->applyPlanTier($planTier);
             Log::info("Workspace {$workspace->id} switched to plan {$planTier} via Stripe subscription {$subId}.");
+        }
+
+        // Retries ran out (or the first payment never went through) and no
+        // other plan subscription is paid up: drop to Free until it is paid.
+        if (in_array($status, self::LAPSED_STATUSES, true)
+            && $workspace->plan_tier !== 'free'
+            && ! $this->hasActiveSubscription($workspace, 'default')) {
+            $workspace->applyPlanTier('free');
+            Log::warning("Workspace {$workspace->id} moved to Free: Stripe subscription {$subId} is {$status}.");
         }
 
         return [
@@ -748,7 +768,12 @@ class StripeBillingService
     {
         $workspace = $this->workspaceForInvoice($invoice);
 
-        if ($workspace !== null) {
+        $subId = data_get($invoice, 'parent.subscription_details.subscription') ?? data_get($invoice, 'subscription');
+        $isAddonInvoice = is_string($subId) && $this->localSubscription($subId)?->type === 'runnr_addon';
+
+        // A failed add-on payment doesn't put the base plan in arrears; the
+        // add-on's own subscription.updated event records its status.
+        if ($workspace !== null && ! $isAddonInvoice) {
             $workspace->update([
                 'subscription_status' => 'past_due',
             ]);
