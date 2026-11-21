@@ -106,6 +106,9 @@ class CrawlSyncController extends Controller
             ->where('crawl_run_id', $run->id)
             ->groupBy('severity', 'rule')
             ->orderByDesc('count')
+            // Ties come back in a stable order (Postgres doesn't keep one).
+            ->orderBy('severity')
+            ->orderBy('rule')
             ->get()
             ->map(fn (object $row): array => [
                 'severity' => (string) $row->severity,
