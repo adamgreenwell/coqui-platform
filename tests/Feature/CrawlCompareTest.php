@@ -8,12 +8,17 @@ use App\Domains\Crawls\Models\CrawlDiffReport;
 use App\Domains\Crawls\Models\CrawlIssue;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Crawls\Models\CrawlUrl;
-use App\Domains\Integrations\Models\SearchPerformancePage;
+use App\Domains\Integrations\Models\ProjectIntegration;
+use App\Domains\Integrations\Services\SearchPerformanceSyncService;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
 use App\Models\User;
+use App\Support\PageUrl;
 use Carbon\Carbon;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Sanctum\Sanctum;
@@ -227,30 +232,35 @@ class CrawlCompareTest extends TestCase
             'status' => 404,
         ]);
 
-        // Seed SearchPerformancePage records
-        SearchPerformancePage::query()->create([
+        // A real Search Console sync writes the page rows. GSC reports URL
+        // variants of one page (trailing slash, http) that crawls don't use.
+        $integration = ProjectIntegration::query()->create([
             'project_id' => $this->project->id,
             'provider' => 'gsc',
-            'url' => $highTrafficUrl,
-            'url_hash' => $highHash,
-            'date' => Carbon::now()->subDays(3)->toDateString(),
-            'clicks' => 850,
-            'impressions' => 12500,
-            'ctr' => 0.068,
-            'position' => 2.4,
+            'site_url' => 'https://acme.test/',
+            'external_identifier' => 'https://acme.test/',
+            'status' => 'connected',
+            'credentials_encrypted' => [
+                'access_token' => 'active-access-token',
+                'refresh_token' => 'active-refresh-token',
+                'expires_at' => Carbon::now()->addHour()->toIso8601String(),
+            ],
+        ]);
+        $day = Carbon::now()->subDays(5)->toDateString();
+
+        Http::fake([
+            'https://searchconsole.googleapis.com/*' => fn (Request $request) => Http::response([
+                'rows' => $request['dimensions'] === ['page', 'date'] ? [
+                    ['keys' => ['https://acme.test/shop/top-seller/', $day], 'clicks' => 600, 'impressions' => 9000, 'ctr' => 0.0667, 'position' => 2.0],
+                    ['keys' => ['http://acme.test/shop/top-seller', $day], 'clicks' => 250, 'impressions' => 3500, 'ctr' => 0.0714, 'position' => 3.0],
+                    ['keys' => ['https://acme.test/shop/rare-item', $day], 'clicks' => 45, 'impressions' => 600, 'ctr' => 0.075, 'position' => 4.1],
+                ] : [],
+            ]),
         ]);
 
-        SearchPerformancePage::query()->create([
-            'project_id' => $this->project->id,
-            'provider' => 'gsc',
-            'url' => $lowTrafficUrl,
-            'url_hash' => $lowHash,
-            'date' => Carbon::now()->subDays(3)->toDateString(),
-            'clicks' => 45,
-            'impressions' => 600,
-            'ctr' => 0.075,
-            'position' => 4.1,
-        ]);
+        $result = app(SearchPerformanceSyncService::class)->syncGoogleSearchConsole($integration);
+        $this->assertTrue($result['success']);
+        $this->assertSame(2, $result['pages_synced'] ?? null);
 
         $response = $this->actingAs($this->user)->get(
             "/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/crawls/compare?baseline={$this->baselineRun->external_crawl_id}&target={$this->targetRun->external_crawl_id}"
@@ -267,6 +277,44 @@ class CrawlCompareTest extends TestCase
             ->where('diff.newlyBroken.0.gscClicks', 850)
             ->where('diff.newlyBroken.1.url', $lowTrafficUrl)
             ->where('diff.newlyBroken.1.gscClicks', 45)
+        );
+    }
+
+    public function test_url_variants_of_one_page_count_its_clicks_once_in_the_lost_total(): void
+    {
+        foreach (['https://acme.test/shop/item', 'https://acme.test/shop/item/'] as $url) {
+            foreach ([[$this->baselineRun, 200], [$this->targetRun, 404]] as [$run, $status]) {
+                CrawlUrl::query()->create([
+                    'crawl_run_id' => $run->id,
+                    'url' => $url,
+                    'url_hash' => hash('sha256', $url),
+                    'status' => $status,
+                ]);
+            }
+        }
+
+        DB::table('search_performance_pages')->insert([
+            'project_id' => $this->project->id,
+            'provider' => 'gsc',
+            'url' => 'https://acme.test/shop/item',
+            'url_hash' => PageUrl::hash('/shop/item'),
+            'date' => Carbon::now()->subDays(5)->toDateString(),
+            'clicks' => 100,
+            'impressions' => 1000,
+            'ctr' => 0.1,
+            'position' => 3.0,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($this->user)->get(
+            "/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/crawls/compare?baseline={$this->baselineRun->external_crawl_id}&target={$this->targetRun->external_crawl_id}"
+        )->assertOk()->assertInertia(fn (Assert $page) => $page
+            ->where('diff.summary.delta.newlyBrokenCount', 2)
+            // Each variant shows the page's traffic, but the total counts it once.
+            ->where('diff.newlyBroken.0.gscClicks', 100)
+            ->where('diff.newlyBroken.1.gscClicks', 100)
+            ->where('diff.summary.delta.totalLostClicks', 100)
         );
     }
 

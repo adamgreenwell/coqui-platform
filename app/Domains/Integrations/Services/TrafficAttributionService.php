@@ -13,6 +13,7 @@ use App\Domains\Integrations\Models\SearchPerformancePage;
 use App\Domains\Integrations\TrafficProvider;
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\ProjectActivity;
+use App\Support\PageUrl;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Carbon;
@@ -38,32 +39,7 @@ class TrafficAttributionService
      */
     public function normalizePath(string $urlOrPath): string
     {
-        $raw = trim($urlOrPath);
-        if ($raw === '') {
-            return '/';
-        }
-
-        $parsedPath = parse_url($raw, PHP_URL_PATH);
-        $path = is_string($parsedPath) ? $parsedPath : $raw;
-
-        // Strip query parameters and anchors if raw was just "/path?foo=1"
-        $path = explode('?', $path)[0];
-        $path = explode('#', $path)[0];
-        $path = trim($path);
-
-        if ($path === '' || $path === '/') {
-            return '/';
-        }
-
-        // Ensure leading slash
-        if (! str_starts_with($path, '/')) {
-            $path = '/'.$path;
-        }
-
-        // Remove trailing slash
-        $path = rtrim($path, '/');
-
-        return $path === '' ? '/' : $path;
+        return PageUrl::normalizePath($urlOrPath);
     }
 
     /**
@@ -71,7 +47,7 @@ class TrafficAttributionService
      */
     public function hashPath(string $urlOrPath): string
     {
-        return hash('sha256', $this->normalizePath($urlOrPath));
+        return PageUrl::hash($urlOrPath);
     }
 
     /**
