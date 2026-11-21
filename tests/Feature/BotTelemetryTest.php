@@ -321,6 +321,24 @@ class BotTelemetryTest extends TestCase
         $this->assertSame(['/catalog/old', '/docs/a/page'], $paths);
     }
 
+    public function test_missing_page_details_ignore_other_responses_for_the_path(): void
+    {
+        $this->sendBatch([
+            ['botFamily' => 'googlebot', 'statusBucket' => 404, 'hitCount' => 5, 'bucketHour' => '2026-11-18T05:00:00Z', 'topPaths' => [['path' => '/moved', 'hits' => 5, 'status' => 404]]],
+            // Fixed later: Bingbot now gets a 200 there.
+            ['botFamily' => 'bingbot', 'statusBucket' => 200, 'hitCount' => 9, 'bucketHour' => '2026-11-19T09:00:00Z', 'topPaths' => [['path' => '/moved', 'hits' => 9, 'status' => 200]]],
+        ])->assertStatus(202);
+
+        Sanctum::actingAs($this->user, ['projects:read']);
+        Carbon::setTestNow('2026-11-20 12:00:00');
+        $flagged = $this->getJson("/api/v1/projects/{$this->project->uuid}/telemetry/bot-logs?days=7")->assertOk()->json('flagged404s');
+        Carbon::setTestNow();
+
+        $this->assertCount(1, $flagged);
+        $this->assertSame(['googlebot'], $flagged[0]['bots']);
+        $this->assertStringStartsWith('2026-11-18T05:00:00', $flagged[0]['lastHitAt']);
+    }
+
     public function test_different_batches_for_the_same_hour_add_up(): void
     {
         $this->sendBatch([$this->googlebot404s(10)], 'batch-0500-a')->assertStatus(202);

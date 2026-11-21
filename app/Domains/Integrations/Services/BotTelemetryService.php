@@ -390,12 +390,23 @@ class BotTelemetryService
                 $pHits = (int) ($p['hits'] ?? 0);
                 $pStatus = (int) ($p['status'] ?? $bucket);
 
-                $pathMap[$path] ??= ['path' => $path, 'hits' => 0, 'statusHits' => [], 'bots' => [], 'lastHitAt' => $log->bucket_hour, 'target' => null, 'hops' => 0];
+                $pathMap[$path] ??= ['path' => $path, 'hits' => 0, 'statusHits' => [], 'bots' => [], 'lastHitAt' => $log->bucket_hour, 'target' => null, 'hops' => 0, 'goneBots' => [], 'goneLastHitAt' => null, 'redirectBots' => []];
                 $pathMap[$path]['hits'] += $pHits;
                 $pathMap[$path]['statusHits'][$pStatus] = ($pathMap[$path]['statusHits'][$pStatus] ?? 0) + $pHits;
                 $pathMap[$path]['bots'][$bot] = true;
                 if ($log->bucket_hour->greaterThan($pathMap[$path]['lastHitAt'])) {
                     $pathMap[$path]['lastHitAt'] = $log->bucket_hour;
+                }
+                // Missing-page and redirect lists report only the crawlers
+                // (and, for 404s, the time) of those responses.
+                if (in_array($pStatus, self::GONE_STATUSES, true)) {
+                    $pathMap[$path]['goneBots'][$bot] = true;
+                    $goneLast = $pathMap[$path]['goneLastHitAt'];
+                    if ($goneLast === null || $log->bucket_hour->greaterThan($goneLast)) {
+                        $pathMap[$path]['goneLastHitAt'] = $log->bucket_hour;
+                    }
+                } elseif (self::statusClass($pStatus) === 300) {
+                    $pathMap[$path]['redirectBots'][$bot] = true;
                 }
                 if (isset($p['redirectTarget']) && is_string($p['redirectTarget']) && $p['redirectTarget'] !== '') {
                     $pathMap[$path]['target'] = $p['redirectTarget'];
@@ -466,7 +477,7 @@ class BotTelemetryService
                     && $this->redirectHits($pathMap[$targetPath]['statusHits']) > 0;
                 $hops = max($data['hops'], $targetRedirects ? 2 : 1);
                 if ($hops >= 2) {
-                    $redirectChains[] = ['path' => $path, 'hits' => $pathRedirectHits, 'hops' => $hops, 'target' => $target, 'bots' => $bots];
+                    $redirectChains[] = ['path' => $path, 'hits' => $pathRedirectHits, 'hops' => $hops, 'target' => $target, 'bots' => array_keys($data['redirectBots'])];
                 }
             }
 
@@ -475,7 +486,7 @@ class BotTelemetryService
                 $goneHits += $data['statusHits'][$code] ?? 0;
             }
             if ($goneHits > 0) {
-                $flagged404s[] = ['path' => $path, 'hits' => $goneHits, 'lastHitAt' => $data['lastHitAt'], 'bots' => $bots];
+                $flagged404s[] = ['path' => $path, 'hits' => $goneHits, 'lastHitAt' => $data['goneLastHitAt'] ?? $data['lastHitAt'], 'bots' => array_keys($data['goneBots'])];
             }
         }
         // Rank by missing-page hits before limiting, so a path with many
