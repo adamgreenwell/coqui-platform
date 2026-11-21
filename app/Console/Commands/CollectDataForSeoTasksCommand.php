@@ -6,6 +6,7 @@ namespace App\Console\Commands;
 
 use App\Domains\Serp\Actions\RecordDataForSeoTaskResult;
 use App\Domains\Serp\DataForSeo\DataForSeoClient;
+use App\Domains\Serp\Jobs\ProcessDataForSeoPostbackJob;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Throwable;
@@ -30,6 +31,11 @@ class CollectDataForSeoTasksCommand extends Command
         $expired = $this->failExpiredTasks();
         if ($expired > 0) {
             $this->warn("Marked {$expired} DataForSEO tasks failed after waiting too long for a result.");
+        }
+
+        $requeued = $this->requeueStalledPostbacks();
+        if ($requeued > 0) {
+            $this->warn("Re-queued {$requeued} received DataForSEO results that hadn't been recorded.");
         }
 
         $limit = max(1, (int) $this->option('limit'));
@@ -143,6 +149,32 @@ class CollectDataForSeoTasksCommand extends Command
      * result, or a stored postback that was never recorded), so the next
      * rank run tracks their keywords again instead of skipping them.
      */
+    /**
+     * Queue the recording job again for results the webhook stored but
+     * that still aren't recorded, e.g. because queueing the job failed
+     * after the claim committed. Recording is idempotent (it locks the task
+     * and skips one already collected), so a job that was only slow does
+     * no harm.
+     */
+    private function requeueStalledPostbacks(): int
+    {
+        $minutes = max(1, (int) config('coqui.dataforseo.postback_requeue_minutes', 15));
+
+        $ids = DB::table('dataforseo_tasks')
+            ->where('status', 'processing')
+            ->whereNotNull('result_payload')
+            ->where('updated_at', '<=', now()->subMinutes($minutes))
+            ->orderBy('updated_at')
+            ->limit(200)
+            ->pluck('id');
+
+        foreach ($ids as $id) {
+            ProcessDataForSeoPostbackJob::dispatch((int) $id);
+        }
+
+        return $ids->count();
+    }
+
     private function failExpiredTasks(): int
     {
         $hours = max(1, (int) config('coqui.dataforseo.task_max_age_hours', 12));

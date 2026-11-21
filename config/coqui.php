@@ -23,6 +23,8 @@ return [
         // keywords are tracked again. Postbacks are authenticated by each
         // task's own token, so there is no shared webhook secret.
         'task_max_age_hours' => (int) env('DATAFORSEO_TASK_MAX_AGE_HOURS', 12),
+        // A received result not recorded after this long is queued again.
+        'postback_requeue_minutes' => (int) env('DATAFORSEO_POSTBACK_REQUEUE_MINUTES', 15),
 
         'default_location_code' => (int) env('DATAFORSEO_LOCATION_CODE', 2840),
         'default_language_code' => env('DATAFORSEO_LANGUAGE_CODE', 'en'),

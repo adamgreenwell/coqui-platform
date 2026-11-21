@@ -262,4 +262,31 @@ class DataForSeoTaskLifecycleTest extends TestCase
         (new ProcessDataForSeoPostbackJob($task['id']))->handle(app(RecordDataForSeoTaskResult::class));
         $this->assertSame('collected', $this->taskStatus($task['id']));
     }
+
+    public function test_a_received_result_whose_job_was_never_queued_is_queued_again(): void
+    {
+        $keyword = $this->keyword('lost job keyword');
+        $stalled = $this->task($keyword, 'processing', 20);
+        $fresh = $this->task($this->keyword('fresh job keyword'), 'processing', 5);
+        foreach ([$stalled, $fresh] as $task) {
+            DB::table('dataforseo_tasks')->where('id', $task['id'])->update([
+                'result_payload' => json_encode($this->payload($task['external']), JSON_THROW_ON_ERROR),
+            ]);
+        }
+
+        Queue::fake();
+        Http::fake();
+        $this->artisan('dataforseo:collect-tasks')
+            ->assertSuccessful()
+            ->expectsOutputToContain('Re-queued 1 received DataForSEO results');
+
+        Queue::assertPushed(ProcessDataForSeoPostbackJob::class, 1);
+        Queue::assertPushed(ProcessDataForSeoPostbackJob::class, fn (ProcessDataForSeoPostbackJob $job): bool => $job->taskId === $stalled['id']);
+
+        // Running it twice records once.
+        (new ProcessDataForSeoPostbackJob($stalled['id']))->handle(app(RecordDataForSeoTaskResult::class));
+        (new ProcessDataForSeoPostbackJob($stalled['id']))->handle(app(RecordDataForSeoTaskResult::class));
+        $this->assertSame('collected', $this->taskStatus($stalled['id']));
+        $this->assertSame(1, KeywordRankSnapshot::query()->where('tracked_keyword_id', $keyword->id)->where('domain', 'coqui.io')->count());
+    }
 }
