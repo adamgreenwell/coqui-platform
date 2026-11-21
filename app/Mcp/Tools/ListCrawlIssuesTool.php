@@ -40,7 +40,7 @@ class ListCrawlIssuesTool extends Tool
             return Response::error("Project not found for domain [{$normalized}].");
         }
 
-        $latestCrawl = $project->crawlRuns()->latest('id')->first();
+        $latestCrawl = $project->latestAuditRun;
         if ($latestCrawl === null) {
             return Response::json([
                 'domain' => $normalized,

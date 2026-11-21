@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Internal;
 
 use App\Domains\Crawls\Actions\IngestDesktopCrawlSnapshot;
+use App\Domains\Crawls\CrawlSource;
 use App\Domains\Crawls\DTOs\CrawlSyncPayload;
 use App\Domains\Crawls\Events\CrawlProgressUpdated;
 use App\Domains\Crawls\Models\CrawlRun;
@@ -21,7 +22,7 @@ use Illuminate\Http\Request;
  */
 class CoquiWorkerCallbackController extends Controller
 {
-    private const array WORKER_SOURCES = ['worker', 'deploy_smoke'];
+    private const array WORKER_SOURCES = [CrawlSource::Worker->value, CrawlSource::DeploySmoke->value];
 
     private const array TERMINAL_STATUSES = ['completed', 'failed', 'cancelled'];
 

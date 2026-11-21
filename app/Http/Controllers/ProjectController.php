@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers;
 
 use App\Domains\Billing\PlanFeature;
+use App\Domains\Crawls\CrawlSource;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Integrations\Models\BingCrawlStat;
 use App\Domains\Integrations\Models\ProjectIntegration;
@@ -189,13 +190,15 @@ class ProjectController extends Controller
 
         $runnrEnabled = RunnrIntegration::enabled();
 
-        /** @var CrawlRun|null $latestCrawl */
-        $latestCrawl = $project->crawlRuns()->latest('id')->first();
+        // Only a real audit may feed the overview numbers; an imported
+        // snapshot has URLs but no issue data, so it is surfaced separately.
+        $latestCrawl = $project->latestAuditRun;
+        $latestImport = $project->latestImportRun;
 
         /** @var CrawlRun|null $latestSmoke */
         $latestSmoke = $workspace->hasFeature(PlanFeature::RunnrSmokeTests)
             ? $project->crawlRuns()
-                ->where('source', 'deploy_smoke')
+                ->where('source', CrawlSource::DeploySmoke->value)
                 ->latest('id')
                 ->first()
             : null;
@@ -307,18 +310,8 @@ class ProjectController extends Controller
                 'slug' => $workspace->slug,
             ],
             'project' => $projectProps,
-            'latestCrawl' => $latestCrawl !== null ? [
-                'id' => $latestCrawl->external_crawl_id,
-                'externalCrawlId' => $latestCrawl->external_crawl_id,
-                'status' => $latestCrawl->status,
-                'source' => $latestCrawl->source,
-                'totalUrls' => $latestCrawl->total_urls,
-                'errorCount' => $latestCrawl->error_count,
-                'warningCount' => $latestCrawl->warning_count,
-                'opportunityCount' => $latestCrawl->opportunity_count,
-                'finalizedAt' => $latestCrawl->finalized_at instanceof CarbonInterface ? $latestCrawl->finalized_at->toIso8601String() : null,
-                'createdAt' => $latestCrawl->created_at instanceof CarbonInterface ? $latestCrawl->created_at->toIso8601String() : null,
-            ] : null,
+            'latestCrawl' => $this->crawlSummary($latestCrawl),
+            'latestImport' => $this->crawlSummary($latestImport),
             'trackedKeywordsCount' => $project->trackedKeywords()->count(),
             'monitoredBacklinksCount' => $project->monitoredBacklinks()->count(),
             'keywordVisibility' => VisibilityScore::forProject($project),
@@ -348,6 +341,31 @@ class ProjectController extends Controller
             'canEdit' => $user->can('update', $project),
             'canDelete' => $user->can('delete', $project),
         ]);
+    }
+
+    /**
+     * Overview-safe summary of a crawl run.
+     *
+     * @return array{id: string, externalCrawlId: string, status: string, source: string, totalUrls: int, errorCount: int, warningCount: int, opportunityCount: int, finalizedAt: string|null, createdAt: string|null}|null
+     */
+    private function crawlSummary(?CrawlRun $run): ?array
+    {
+        if ($run === null) {
+            return null;
+        }
+
+        return [
+            'id' => $run->external_crawl_id,
+            'externalCrawlId' => $run->external_crawl_id,
+            'status' => $run->status,
+            'source' => $run->source,
+            'totalUrls' => $run->total_urls,
+            'errorCount' => $run->error_count,
+            'warningCount' => $run->warning_count,
+            'opportunityCount' => $run->opportunity_count,
+            'finalizedAt' => $run->finalized_at instanceof CarbonInterface ? $run->finalized_at->toIso8601String() : null,
+            'createdAt' => $run->created_at instanceof CarbonInterface ? $run->created_at->toIso8601String() : null,
+        ];
     }
 
     /**

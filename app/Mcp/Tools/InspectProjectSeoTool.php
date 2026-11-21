@@ -40,7 +40,7 @@ class InspectProjectSeoTool extends Tool
 
         $project->load(['competitors:id,project_id,domain']);
 
-        $latestCrawl = $project->crawlRuns()->latest('id')->first();
+        $latestCrawl = $project->latestAuditRun;
 
         return Response::json([
             'project' => [

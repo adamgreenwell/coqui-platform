@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domains\Crawls\Services;
 
+use App\Domains\Crawls\CrawlSource;
 use App\Domains\Crawls\Models\CrawlDiffReport;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Projects\Models\Project;
@@ -163,6 +164,13 @@ class CrawlDiffService
         $projectId = $targetRun->project_id;
         $baselineId = $baselineRun->id;
         $targetId = $targetRun->id;
+
+        // Imported snapshots (e.g. Screaming Frog) carry URLs and links but no
+        // issue data. Reporting their zero issue totals as a measured delta
+        // would claim new issues were resolved when nothing was checked.
+        $baselineIssuesMeasured = $baselineRun->source !== CrawlSource::Import->value;
+        $targetIssuesMeasured = $targetRun->source !== CrawlSource::Import->value;
+        $issuesMeasured = $baselineIssuesMeasured && $targetIssuesMeasured;
 
         // 1. URL Set Differences: New & Removed counts
         $newUrlsCount = (int) DB::table('crawl_urls as t')
@@ -356,43 +364,49 @@ class CrawlDiffService
 
         // 3. Issue Delta Breakdown: New, Resolved, Persistent. Counts come
         // from the database; only samples are loaded, with each URL's page
-        // fields from both crawls so the change itself is visible.
+        // fields from both crawls so the change itself is visible. An imported
+        // side makes the whole issue delta unmeasured, never zero.
         $ruleDeltas = [];
         $newIssuesCount = 0;
         $resolvedIssuesCount = 0;
+        $persistentCount = 0;
 
-        foreach (['new' => 'newCount', 'resolved' => 'resolvedCount'] as $type => $field) {
-            $counts = $this->issueDeltaQuery($baselineId, $targetId, $type)
-                ->select('i.rule', 'i.severity')
-                ->selectRaw('COUNT(*) as issue_count')
-                ->groupBy('i.rule', 'i.severity')
-                ->get();
+        if ($issuesMeasured) {
+            foreach (['new' => 'newCount', 'resolved' => 'resolvedCount'] as $type => $field) {
+                $counts = $this->issueDeltaQuery($baselineId, $targetId, $type)
+                    ->select('i.rule', 'i.severity')
+                    ->selectRaw('COUNT(*) as issue_count')
+                    ->groupBy('i.rule', 'i.severity')
+                    ->get();
 
-            foreach ($counts as $row) {
-                $key = $row->severity.'|'.$row->rule;
-                $ruleDeltas[$key] ??= [
-                    'rule' => (string) $row->rule,
-                    'severity' => (string) $row->severity,
-                    'newCount' => 0,
-                    'resolvedCount' => 0,
-                ];
-                $ruleDeltas[$key][$field] += (int) $row->issue_count;
-                if ($type === 'new') {
-                    $newIssuesCount += (int) $row->issue_count;
-                } else {
-                    $resolvedIssuesCount += (int) $row->issue_count;
+                foreach ($counts as $row) {
+                    $key = $row->severity.'|'.$row->rule;
+                    $ruleDeltas[$key] ??= [
+                        'rule' => (string) $row->rule,
+                        'severity' => (string) $row->severity,
+                        'newCount' => 0,
+                        'resolvedCount' => 0,
+                    ];
+                    $ruleDeltas[$key][$field] += (int) $row->issue_count;
+                    if ($type === 'new') {
+                        $newIssuesCount += (int) $row->issue_count;
+                    } else {
+                        $resolvedIssuesCount += (int) $row->issue_count;
+                    }
                 }
             }
         }
 
-        $persistentCount = (int) DB::table('crawl_issues as t')
-            ->join('crawl_issues as b', function ($join) use ($baselineId): void {
-                $join->on('b.url_hash', '=', 't.url_hash')
-                    ->on('b.rule', '=', 't.rule')
-                    ->where('b.crawl_run_id', '=', $baselineId);
-            })
-            ->where('t.crawl_run_id', $targetId)
-            ->count();
+        if ($issuesMeasured) {
+            $persistentCount = (int) DB::table('crawl_issues as t')
+                ->join('crawl_issues as b', function ($join) use ($baselineId): void {
+                    $join->on('b.url_hash', '=', 't.url_hash')
+                        ->on('b.rule', '=', 't.rule')
+                        ->where('b.crawl_run_id', '=', $baselineId);
+                })
+                ->where('t.crawl_run_id', $targetId)
+                ->count();
+        }
 
         $rulesSummary = array_values(array_map(static fn (array $d): array => [
             'rule' => $d['rule'],
@@ -402,24 +416,29 @@ class CrawlDiffService
             'netChange' => $d['newCount'] - $d['resolvedCount'],
         ], $ruleDeltas));
 
-        $newIssuesSample = array_map(function (array $issue) use ($trafficStats): array {
+        $newIssuesSample = $issuesMeasured ? array_map(function (array $issue) use ($trafficStats): array {
             $issue['gscClicks'] = $trafficStats[$issue['urlHash']]['clicks'] ?? null;
 
             return $issue;
-        }, $this->issueDeltaRows($baselineId, $targetId, 'new', limit: 100));
+        }, $this->issueDeltaRows($baselineId, $targetId, 'new', limit: 100)) : [];
 
-        $resolvedIssuesSample = $this->issueDeltaRows($baselineId, $targetId, 'resolved', limit: 100);
+        $resolvedIssuesSample = $issuesMeasured
+            ? $this->issueDeltaRows($baselineId, $targetId, 'resolved', limit: 100)
+            : [];
 
         $baselineTotal = (int) $baselineRun->total_urls;
         $targetTotal = (int) $targetRun->total_urls;
 
         return [
+            // "measured" only when both runs are real audits with issue data.
+            'issueMeasurement' => $issuesMeasured ? 'measured' : 'not_measured',
             'summary' => [
                 'baseline' => [
                     'id' => $baselineRun->external_crawl_id,
                     'externalCrawlId' => $baselineRun->external_crawl_id,
                     'seed' => $baselineRun->seed,
                     'source' => $baselineRun->source,
+                    'issuesMeasured' => $baselineIssuesMeasured,
                     'status' => $baselineRun->status,
                     'totalUrls' => $baselineTotal,
                     'errorCount' => (int) $baselineRun->error_count,
@@ -433,6 +452,7 @@ class CrawlDiffService
                     'externalCrawlId' => $targetRun->external_crawl_id,
                     'seed' => $targetRun->seed,
                     'source' => $targetRun->source,
+                    'issuesMeasured' => $targetIssuesMeasured,
                     'status' => $targetRun->status,
                     'totalUrls' => $targetTotal,
                     'errorCount' => (int) $targetRun->error_count,
@@ -447,9 +467,11 @@ class CrawlDiffService
                     'removedUrlsCount' => $removedUrlsCount,
                     'newlyBrokenCount' => count($newlyBroken),
                     'statusChangesCount' => count($rawTransitions),
-                    'newIssuesCount' => $newIssuesCount,
-                    'resolvedIssuesCount' => $resolvedIssuesCount,
-                    'persistentIssuesCount' => $persistentCount,
+                    // Null, not zero, when either side is an import: an
+                    // issue delta was never measured.
+                    'newIssuesCount' => $issuesMeasured ? $newIssuesCount : null,
+                    'resolvedIssuesCount' => $issuesMeasured ? $resolvedIssuesCount : null,
+                    'persistentIssuesCount' => $issuesMeasured ? $persistentCount : null,
                     'trafficImpactedBrokenUrls' => count(array_filter($newlyBroken, static fn ($item) => ($item['gscClicks'] ?? 0) > 0)),
                     'totalLostClicks' => $totalLostClicks,
                 ],

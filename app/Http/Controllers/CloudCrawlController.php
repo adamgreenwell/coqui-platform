@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Controllers;
 
+use App\Domains\Crawls\CrawlSource;
 use App\Domains\Crawls\Jobs\DispatchCloudCrawlJob;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Crawls\Services\CoquiWorkerClient;
@@ -31,8 +32,11 @@ class CloudCrawlController extends Controller
             return back()->with('error', CoquiWorkerClient::NOT_CONFIGURED_MESSAGE);
         }
 
+        // Imported snapshots are not cloud audits, so an in-flight import must
+        // not block dispatching a real crawl.
         $hasActiveRun = $project->crawlRuns()
             ->whereIn('status', ['pending', 'running'])
+            ->where('source', '!=', CrawlSource::Import->value)
             ->exists();
 
         if ($hasActiveRun) {
@@ -62,7 +66,7 @@ class CloudCrawlController extends Controller
         $run = CrawlRun::query()->create([
             'project_id' => $project->id,
             'external_crawl_id' => $crawlId,
-            'source' => 'worker',
+            'source' => CrawlSource::Worker->value,
             'seed' => $project->canonical_url,
             'seed_kind' => 'url',
             'status' => 'pending',

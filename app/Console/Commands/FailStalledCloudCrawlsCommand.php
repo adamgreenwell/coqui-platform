@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Domains\Crawls\CrawlSource;
 use App\Domains\Crawls\Events\CrawlProgressUpdated;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Integrations\Services\RunnrDeploySmokeService;
@@ -35,7 +36,7 @@ class FailStalledCloudCrawlsCommand extends Command
         // By id, since closing a run takes it out of the filter as we go.
         $stalled = CrawlRun::query()
             ->with('project')
-            ->whereIn('source', ['worker', 'deploy_smoke'])
+            ->whereIn('source', CrawlSource::serverValues())
             ->whereIn('status', ['pending', 'running'])
             ->whereNull('finalized_at')
             ->where('updated_at', '<', $cutoff)
@@ -85,7 +86,7 @@ class FailStalledCloudCrawlsCommand extends Command
                 );
             }
 
-            if ($run->source === 'deploy_smoke') {
+            if ($run->source === CrawlSource::DeploySmoke->value) {
                 app(RunnrDeploySmokeService::class)->reportFailure(
                     $run,
                     "The crawl worker sent no progress for {$minutes} minutes.",

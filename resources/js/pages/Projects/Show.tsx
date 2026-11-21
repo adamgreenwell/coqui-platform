@@ -139,6 +139,8 @@ interface ProjectShowProps {
   workspace: WorkspaceSummary;
   project: ProjectDetails;
   latestCrawl?: LatestCrawlSummary | null;
+  // Newest imported snapshot; shown as a badge, never used for audit numbers.
+  latestImport?: LatestCrawlSummary | null;
   trackedKeywordsCount: number;
   monitoredBacklinksCount: number;
   // Score is null until a tracked keyword has been checked.
@@ -215,6 +217,7 @@ export default function ProjectShow({
   workspace,
   project,
   latestCrawl,
+  latestImport = null,
   trackedKeywordsCount,
   monitoredBacklinksCount,
   keywordVisibility,
@@ -579,6 +582,14 @@ export default function ProjectShow({
                 <span>Crawl Health</span>
               </span>
               <div className="flex items-center gap-1.5">
+                {latestImport && (
+                  <span
+                    className="px-1.5 py-0.5 rounded text-[10px] bg-violet-500/10 text-violet-300 border border-violet-500/30"
+                    title={`Screaming Frog import available (${latestImport.totalUrls.toLocaleString()} URLs)`}
+                  >
+                    Imported
+                  </span>
+                )}
                 {liveCrawl && (
                   <span className="capitalize px-1.5 py-0.5 rounded text-[10px] bg-slate-800 text-slate-300 border border-slate-700">
                     {liveCrawl.status}
@@ -602,9 +613,11 @@ export default function ProjectShow({
                 </>
               ) : (
                 <>
-                  <div className="text-sm font-semibold text-slate-400">No crawls yet</div>
+                  <div className="text-sm font-semibold text-slate-400">No audit yet</div>
                   <p className="mt-1 text-[11px] text-slate-500">
-                    Sync via Coqui Desktop or compare snapshots
+                    {latestImport
+                      ? 'A Screaming Frog import is available in crawl history.'
+                      : 'Sync via Coqui Desktop or compare snapshots'}
                   </p>
                 </>
               )}

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domains\Integrations\Services;
 
 use App\Domains\Billing\PlanFeature;
+use App\Domains\Crawls\CrawlSource;
 use App\Domains\Crawls\Jobs\DispatchCloudCrawlJob;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Crawls\Services\CoquiWorkerClient;
@@ -49,7 +50,7 @@ class RunnrDeployWebhookHandler
             /** @var CrawlRun|null $existing */
             $existing = CrawlRun::query()
                 ->where('project_id', $project->id)
-                ->where('source', 'deploy_smoke')
+                ->where('source', CrawlSource::DeploySmoke->value)
                 ->where('config->deploy->deploy_id', $deployId)
                 ->first();
             if ($existing !== null) {
@@ -65,7 +66,7 @@ class RunnrDeployWebhookHandler
         $run = CrawlRun::query()->create([
             'project_id' => $project->id,
             'external_crawl_id' => $crawlId,
-            'source' => 'deploy_smoke',
+            'source' => CrawlSource::DeploySmoke->value,
             'seed' => $seed,
             'seed_kind' => 'url',
             'status' => 'pending',

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Http\Controllers\Api\V1;
 
 use App\Domains\Billing\PlanFeature;
+use App\Domains\Crawls\CrawlSource;
 use App\Domains\Crawls\Models\CrawlRun;
 use App\Domains\Projects\Models\Project;
 use App\Http\Controllers\Controller;
@@ -44,7 +45,7 @@ class RunnrDeploySmokeController extends Controller implements HasMiddleware
         $latestRun = $smokeTestsActive
             ? CrawlRun::query()
                 ->where('project_id', $project->id)
-                ->where('source', 'deploy_smoke')
+                ->where('source', CrawlSource::DeploySmoke->value)
                 ->latest('id')
                 ->first()
             : null;
@@ -139,7 +140,7 @@ SVG;
         /** @var CrawlRun|null $latestRun */
         $latestRun = CrawlRun::query()
             ->where('project_id', $project->id)
-            ->where('source', 'deploy_smoke')
+            ->where('source', CrawlSource::DeploySmoke->value)
             ->latest('id')
             ->first();
 

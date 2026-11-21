@@ -461,6 +461,7 @@ class CrawlCompareTest extends TestCase
         );
 
         $response->assertOk();
+        $response->assertJsonPath('issueMeasurement', 'measured');
         $response->assertJsonStructure([
             'summary' => [
                 'baseline' => ['id', 'externalCrawlId', 'status', 'totalUrls'],
@@ -494,5 +495,160 @@ class CrawlCompareTest extends TestCase
         );
 
         $response->assertForbidden();
+    }
+
+    public function test_imported_baseline_marks_issue_deltas_unmeasured_but_keeps_url_diffs(): void
+    {
+        $importBaseline = CrawlRun::query()->create([
+            'project_id' => $this->project->id,
+            'external_crawl_id' => (string) Str::uuid(),
+            'seed' => 'https://acme.test/',
+            'seed_kind' => 'url',
+            'source' => 'import',
+            'status' => 'completed',
+            'config' => ['maxDepth' => 3, 'maxUrls' => 500],
+            'total_urls' => 2,
+            'error_count' => 0,
+            'warning_count' => 0,
+            'opportunity_count' => 0,
+            'created_at' => Carbon::now()->subDays(3),
+            'finalized_at' => Carbon::now()->subDays(3),
+        ]);
+
+        $desktopTarget = CrawlRun::query()->create([
+            'project_id' => $this->project->id,
+            'external_crawl_id' => (string) Str::uuid(),
+            'seed' => 'https://acme.test/',
+            'seed_kind' => 'url',
+            'source' => 'desktop',
+            'status' => 'completed',
+            'config' => ['maxDepth' => 3, 'maxUrls' => 500],
+            'total_urls' => 3,
+            'error_count' => 1,
+            'warning_count' => 0,
+            'opportunity_count' => 0,
+            'created_at' => Carbon::now(),
+            'finalized_at' => Carbon::now(),
+        ]);
+
+        $urlA = 'https://acme.test/home';
+        $urlB = 'https://acme.test/broken';
+        $urlC = 'https://acme.test/new';
+
+        // Screaming Frog baseline: URLs only, no issue rows.
+        foreach ([$urlA, $urlB] as $url) {
+            CrawlUrl::query()->create([
+                'crawl_run_id' => $importBaseline->id,
+                'url' => $url,
+                'url_hash' => hash('sha256', $url),
+                'status' => 200,
+                'title' => 'Imported '.$url,
+            ]);
+        }
+
+        // Desktop target: A unchanged, B newly broken, C new.
+        CrawlUrl::query()->create([
+            'crawl_run_id' => $desktopTarget->id,
+            'url' => $urlA,
+            'url_hash' => hash('sha256', $urlA),
+            'status' => 200,
+            'title' => 'Imported '.$urlA,
+        ]);
+        CrawlUrl::query()->create([
+            'crawl_run_id' => $desktopTarget->id,
+            'url' => $urlB,
+            'url_hash' => hash('sha256', $urlB),
+            'status' => 404,
+            'title' => null,
+        ]);
+        CrawlUrl::query()->create([
+            'crawl_run_id' => $desktopTarget->id,
+            'url' => $urlC,
+            'url_hash' => hash('sha256', $urlC),
+            'status' => 200,
+            'title' => 'Brand new page',
+        ]);
+
+        // The target's issue data must not be reported as resolved issues.
+        CrawlIssue::query()->create([
+            'crawl_run_id' => $desktopTarget->id,
+            'url' => $urlA,
+            'url_hash' => hash('sha256', $urlA),
+            'rule' => 'missing_meta_description',
+            'severity' => 'warning',
+            'detail' => 'Target-only issue',
+        ]);
+
+        $compareUrl = "/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/crawls/compare?baseline={$importBaseline->external_crawl_id}&target={$desktopTarget->external_crawl_id}";
+
+        // URL/status diffs stay measured; issue deltas are explicitly unmeasured.
+        $this->actingAs($this->user)->get($compareUrl)
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Crawls/Compare')
+                ->where('diff.issueMeasurement', 'not_measured')
+                ->where('diff.summary.baseline.source', 'import')
+                ->where('diff.summary.baseline.issuesMeasured', false)
+                ->where('diff.summary.target.source', 'desktop')
+                ->where('diff.summary.target.issuesMeasured', true)
+                ->where('diff.summary.delta.newUrlsCount', 1)
+                ->where('diff.summary.delta.removedUrlsCount', 0)
+                ->where('diff.summary.delta.newlyBrokenCount', 1)
+                ->where('diff.summary.delta.newIssuesCount', null)
+                ->where('diff.summary.delta.resolvedIssuesCount', null)
+                ->where('diff.summary.delta.persistentIssuesCount', null)
+                ->where('diff.issueDeltas.rules', [])
+                ->where('diff.issueDeltas.newIssues', [])
+                ->where('diff.issueDeltas.resolvedIssues', [])
+                // The imported run is still offered as a comparison baseline.
+                ->where('availableRuns', fn ($runs): bool => collect($runs)->contains(
+                    fn (array $run): bool => $run['id'] === $importBaseline->external_crawl_id
+                        && $run['source'] === 'import'
+                        && str_contains($run['label'], 'Import')
+                ))
+            );
+
+        // A share link built from the same comparison keeps the unmeasured state.
+        $share = $this->actingAs($this->user)->postJson(
+            "/workspaces/{$this->workspace->uuid}/projects/{$this->project->uuid}/crawls/compare/share",
+            [
+                'baseline_id' => $importBaseline->external_crawl_id,
+                'target_id' => $desktopTarget->external_crawl_id,
+                'title' => 'Imported Baseline Diff',
+                'expires_in_days' => 30,
+            ]
+        )->assertCreated();
+
+        $token = (string) $share->json('shareToken');
+
+        $this->get("/reports/crawls/diff/{$token}")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Crawls/Compare')
+                ->where('isReadOnly', true)
+                ->where('diff.issueMeasurement', 'not_measured')
+                ->where('diff.summary.baseline.source', 'import')
+                ->where('diff.summary.delta.newUrlsCount', 1)
+                ->where('diff.summary.delta.newlyBrokenCount', 1)
+                ->where('diff.summary.delta.newIssuesCount', null)
+                ->where('diff.issueDeltas.rules', [])
+                ->where('diff.issueDeltas.newIssues', [])
+            );
+
+        // The standalone API exposes the same semantics.
+        Sanctum::actingAs($this->user, ['crawls:sync']);
+
+        $this->getJson("/api/v1/projects/{$this->project->uuid}/crawls/compare?baseline={$importBaseline->external_crawl_id}&target={$desktopTarget->external_crawl_id}")
+            ->assertOk()
+            ->assertJsonPath('issueMeasurement', 'not_measured')
+            ->assertJsonPath('summary.baseline.issuesMeasured', false)
+            ->assertJsonPath('summary.target.issuesMeasured', true)
+            ->assertJsonPath('summary.delta.newlyBrokenCount', 1)
+            ->assertJsonPath('summary.delta.newIssuesCount', null)
+            ->assertJsonPath('summary.delta.resolvedIssuesCount', null)
+            ->assertJsonPath('summary.delta.persistentIssuesCount', null)
+            ->assertJsonPath('issueDeltas.rules', [])
+            ->assertJsonPath('issueDeltas.newIssues', [])
+            ->assertJsonPath('issueDeltas.resolvedIssues', []);
     }
 }

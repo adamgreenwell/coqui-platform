@@ -80,7 +80,9 @@ Accepts up to 1,000 `urls`, 2,500 `links`, and 2,500 `issues` per request; large
 - issues on `(crawl_run_id, url, rule)`
 - links on `(crawl_run_id, fromUrl, toUrl, anchor, rel)`
 
-A run that has been finalized with any status other than `paused` is sealed: further chunks get a `409`. A paused run accepts chunks again when the crawl resumes.
+A run that has been finalized with any status other than `paused` is sealed: further chunks get a `409`. A paused desktop run accepts chunks again when the crawl resumes. Imported runs can be re-synced to reopen a finalized snapshot (see below).
+
+The endpoints below address both client sources (`desktop` and `import`); a server-side run (`worker`, `deploy_smoke`) is never addressable through them and returns `404`.
 
 ```json
 {
@@ -148,3 +150,50 @@ It then broadcasts `CrawlSynced` on the project's private channel over Reverb:
   "finalized_at": "2026-11-21T05:30:00+00:00"
 }
 ```
+
+---
+
+## Imported Crawls (Screaming Frog)
+
+`POST /api/v1/projects/{project}/crawls/sync` accepts `"source": "import"` in
+addition to `"source": "desktop"`. Any other value (including the server-side
+`worker` and `deploy_smoke` sources) is a `422`; those runs are created by the
+platform and cannot be forged with a desktop token.
+
+- **No issues.** An import sends URLs and links only. Do not upload issue rows
+  and do not map Screaming Frog rules; the cloud does not derive issues for an
+  import.
+- **Ownership.** A crawl ID can only be re-synced by the same project and the
+  same source. Re-using an ID from another project, or re-syncing an imported
+  ID as `desktop` (or vice versa), is a `409`.
+- **Re-importing is idempotent.** Re-syncing a finalized imported crawl reopens
+  it (`finalizedAt` becomes `null`) so chunks are accepted again, and the next
+  finalize recomputes the same totals. The project keeps exactly one crawl run
+  for that `externalCrawlId`. Re-finalizing without a preceding sync stays
+  allowed and recomputes totals.
+- **Sealing** is unchanged: once finalized, chunks return `409` until the run is
+  reopened (by a paused-desktop resume or by re-syncing an import).
+- **Not an audit.** Imported runs stay visible in crawl history and can be used
+  as either side of a crawl comparison, but they are not the project's "latest
+  crawl": they are excluded from latest-audit summaries and do not advance
+  `lastCrawledAt`/crawl cadence. The project overview exposes them separately
+  and shows an "Imported" badge.
+
+### Crawl Comparison Measurement
+
+`GET /api/v1/projects/{project}/crawls/compare` always reports URL, status,
+metadata and redirect diffs. Issue deltas are measured only when both runs are
+real audits:
+
+- `issueMeasurement`: `"measured"` or `"not_measured"`.
+- `summary.baseline.issuesMeasured` / `summary.target.issuesMeasured`: whether
+  that side carries issue data.
+- When either side is imported: `summary.delta.newIssuesCount`,
+  `resolvedIssuesCount` and `persistentIssuesCount` are `null` (not `0`), and
+  `issueDeltas.rules`, `issueDeltas.newIssues` and `issueDeltas.resolvedIssues`
+  are empty. URL and status diffs remain populated.
+
+This applies to the authenticated comparison, the shared public diff page, and
+the standalone API.
+
+---

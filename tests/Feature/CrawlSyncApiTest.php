@@ -9,7 +9,9 @@ use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Inertia\Testing\AssertableInertia as Assert;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -555,5 +557,240 @@ class CrawlSyncApiTest extends TestCase
             ]);
 
         $this->assertFalse($project->fresh()->trashed());
+    }
+
+    public function test_import_can_sync_chunk_and_finalize_idempotently(): void
+    {
+        $user = User::factory()->create();
+        $workspace = Workspace::query()->create([
+            'name' => 'Import Workspace',
+            'slug' => 'import-workspace',
+            'owner_id' => $user->id,
+        ]);
+        $project = Project::query()->create([
+            'workspace_id' => $workspace->id,
+            'name' => 'Screaming Frog Import',
+            'domain' => 'importtest.com',
+            'canonical_url' => 'https://importtest.com/',
+        ]);
+
+        Sanctum::actingAs($user, ['crawls:sync']);
+
+        $crawlId = (string) Str::uuid();
+        $base = "/api/v1/projects/{$project->uuid}/crawls/{$crawlId}";
+
+        $sync = fn () => $this->postJson("/api/v1/projects/{$project->uuid}/crawls/sync", [
+            'id' => $crawlId,
+            'seed' => 'https://importtest.com/',
+            'seedKind' => 'url',
+            'status' => 'running',
+            'config' => ['maxDepth' => 3, 'maxUrls' => 500],
+            'createdAt' => 1795022400000,
+            'totalUrls' => 2,
+            'source' => 'import',
+        ])->assertCreated()->assertJson(['externalCrawlId' => $crawlId]);
+
+        // A Screaming Frog import carries URLs and links but no issues.
+        $chunk = fn () => $this->postJson("{$base}/chunks", [
+            'urls' => [
+                [
+                    'id' => 1,
+                    'url' => 'https://importtest.com/',
+                    'status' => 200,
+                    'title' => 'Imported Home',
+                    'h1Count' => 1,
+                    'depth' => 0,
+                ],
+                [
+                    'id' => 2,
+                    'url' => 'https://importtest.com/pricing',
+                    'status' => 200,
+                    'title' => 'Imported Pricing',
+                    'h1Count' => 1,
+                    'depth' => 1,
+                ],
+            ],
+            'links' => [
+                [
+                    'fromUrl' => 'https://importtest.com/',
+                    'toUrl' => 'https://importtest.com/pricing',
+                    'anchor' => 'Pricing',
+                    'rel' => null,
+                    'internal' => true,
+                ],
+            ],
+        ])->assertOk();
+
+        $finalize = fn () => $this->postJson("{$base}/finalize", ['status' => 'completed'])
+            ->assertOk()
+            ->assertJson([
+                'externalCrawlId' => $crawlId,
+                'status' => 'completed',
+                'totalUrls' => 2,
+                'errors' => 0,
+                'warnings' => 0,
+                'opportunities' => 0,
+            ]);
+
+        $sync();
+        $chunk();
+        $finalize();
+
+        $run = $project->crawlRuns()->where('external_crawl_id', $crawlId)->sole();
+        $this->assertSame('import', $run->source);
+        $this->assertNotNull($run->finalized_at);
+
+        // Re-running the same import reopens the finalized run, takes the same
+        // chunks again and re-finalizes without creating a second run.
+        $sync();
+        $chunk();
+        $finalize();
+
+        $this->assertSame(1, $project->crawlRuns()->where('external_crawl_id', $crawlId)->count());
+
+        $run->refresh();
+        $this->assertSame('import', $run->source);
+        $this->assertSame('completed', $run->status);
+        $this->assertSame(2, $run->total_urls);
+        $this->assertSame(0, $run->error_count);
+        $this->assertSame(0, $run->warning_count);
+        $this->assertSame(0, $run->opportunity_count);
+        $this->assertNotNull($run->finalized_at);
+        $this->assertSame(2, DB::table('crawl_urls')->where('crawl_run_id', $run->id)->count());
+        $this->assertSame(1, DB::table('crawl_links')->where('crawl_run_id', $run->id)->count());
+        $this->assertSame(0, DB::table('crawl_issues')->where('crawl_run_id', $run->id)->count());
+
+        // The source filter includes imports.
+        $this->getJson("/api/v1/projects/{$project->uuid}/crawls?source=import")
+            ->assertOk()
+            ->assertJsonPath('data.0.externalCrawlId', $crawlId)
+            ->assertJsonPath('data.0.source', 'import');
+
+        // An import does not count as the project's last audit.
+        $this->assertNull($project->fresh()->last_crawled_at);
+    }
+
+    public function test_desktop_and_import_sources_cannot_take_over_each_other(): void
+    {
+        $user = User::factory()->create();
+        $workspace = Workspace::query()->create([
+            'name' => 'Ownership Workspace',
+            'slug' => 'ownership-workspace',
+            'owner_id' => $user->id,
+        ]);
+        $project = Project::query()->create([
+            'workspace_id' => $workspace->id,
+            'name' => 'Ownership Project',
+            'domain' => 'ownershiptest.com',
+            'canonical_url' => 'https://ownershiptest.com/',
+        ]);
+
+        Sanctum::actingAs($user, ['crawls:sync']);
+
+        $importCrawlId = (string) Str::uuid();
+        $payload = fn (string $id, array $overrides): array => $overrides + [
+            'id' => $id,
+            'seed' => 'https://ownershiptest.com/',
+            'seedKind' => 'url',
+            'status' => 'running',
+            'config' => ['maxDepth' => 1],
+            'createdAt' => 1795022400000,
+        ];
+
+        $sync = fn (array $body) => $this->postJson(
+            "/api/v1/projects/{$project->uuid}/crawls/sync",
+            $body,
+        );
+
+        // An existing import run cannot be claimed by a desktop payload.
+        $sync($payload($importCrawlId, ['source' => 'import']))->assertCreated();
+        $sync($payload($importCrawlId, ['source' => 'desktop']))->assertStatus(409);
+
+        // A desktop run cannot be claimed by an import payload either.
+        $desktopCrawlId = (string) Str::uuid();
+        $sync($payload($desktopCrawlId, []))->assertCreated();
+        $sync($payload($desktopCrawlId, ['source' => 'import']))->assertStatus(409);
+
+        $this->assertSame('import', $project->crawlRuns()->where('external_crawl_id', $importCrawlId)->sole()->source);
+        $this->assertSame('desktop', $project->crawlRuns()->where('external_crawl_id', $desktopCrawlId)->sole()->source);
+        $this->assertSame(2, $project->crawlRuns()->count());
+    }
+
+    public function test_imported_runs_are_not_the_latest_audit_on_the_project_page_or_api(): void
+    {
+        $user = User::factory()->create();
+        $workspace = Workspace::query()->create([
+            'name' => 'Audit Workspace',
+            'slug' => 'audit-workspace',
+            'owner_id' => $user->id,
+        ]);
+        $project = Project::query()->create([
+            'workspace_id' => $workspace->id,
+            'name' => 'Audit Project',
+            'domain' => 'audittest.com',
+            'canonical_url' => 'https://audittest.com/',
+        ]);
+
+        // A real desktop audit exists, then a newer Screaming Frog import lands.
+        $auditId = (string) Str::uuid();
+        CrawlRun::query()->create([
+            'project_id' => $project->id,
+            'external_crawl_id' => $auditId,
+            'source' => 'desktop',
+            'seed' => 'https://audittest.com/',
+            'seed_kind' => 'url',
+            'status' => 'completed',
+            'config' => ['maxDepth' => 3],
+            'total_urls' => 40,
+            'error_count' => 3,
+            'warning_count' => 6,
+            'opportunity_count' => 1,
+            'finalized_at' => now(),
+        ]);
+
+        Sanctum::actingAs($user, ['crawls:sync']);
+        $importId = (string) Str::uuid();
+        $this->postJson("/api/v1/projects/{$project->uuid}/crawls/sync", [
+            'id' => $importId,
+            'seed' => 'https://audittest.com/',
+            'seedKind' => 'url',
+            'status' => 'completed',
+            'config' => ['maxDepth' => 3],
+            'createdAt' => 1795022400000,
+            'totalUrls' => 999,
+            'source' => 'import',
+        ])->assertCreated();
+        $this->postJson("/api/v1/projects/{$project->uuid}/crawls/{$importId}/finalize", [
+            'status' => 'completed',
+        ])->assertOk();
+
+        // Web page: audit numbers come from the desktop run, the import is a badge.
+        $this->actingAs($user)
+            ->get("/workspaces/{$workspace->uuid}/projects/{$project->uuid}")
+            ->assertOk()
+            ->assertInertia(fn (Assert $page) => $page
+                ->component('Projects/Show')
+                ->where('latestCrawl.source', 'desktop')
+                ->where('latestCrawl.externalCrawlId', $auditId)
+                ->where('latestCrawl.totalUrls', 40)
+                ->where('latestImport.source', 'import')
+                ->where('latestImport.externalCrawlId', $importId)
+            );
+
+        // API: the latest crawl summary never falls back to an import.
+        Sanctum::actingAs($user, ['projects:read']);
+        $this->getJson('/api/v1/projects')
+            ->assertOk()
+            ->assertJsonPath('data.0.latestCrawl.source', 'desktop')
+            ->assertJsonPath('data.0.latestCrawl.externalCrawlId', $auditId);
+        $this->getJson("/api/v1/projects/{$project->uuid}")
+            ->assertOk()
+            ->assertJsonPath('crawlStats.latestRun.source', 'desktop')
+            ->assertJsonPath('crawlStats.latestRun.externalCrawlId', $auditId);
+
+        // Both runs stay visible in crawl history.
+        $this->getJson("/api/v1/projects/{$project->uuid}/crawls?source=import")
+            ->assertOk()
+            ->assertJsonPath('data.0.externalCrawlId', $importId);
     }
 }
