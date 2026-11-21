@@ -622,7 +622,13 @@ class DataForSeoClient
     ): array {
         $endpoint = '/v3/serp/google/organic/task_post';
         $unitCost = (float) config('coqui.dataforseo.prices.serp_standard_task', 0.0006);
-        $estimatedCost = count($tasks) * $unitCost;
+        $aiOverviewSurcharge = (float) config('coqui.dataforseo.prices.serp_ai_overview_surcharge', 0.0006);
+        $estimatedCost = 0.0;
+        foreach ($tasks as $task) {
+            // Waiting for an AI Overview that loads after the page is billed
+            // on top of the task.
+            $estimatedCost += $unitCost + (! empty($task['load_async_ai_overview']) ? $aiOverviewSurcharge : 0.0);
+        }
 
         $this->spendGuard->assertCanSpend($estimatedCost, $project->workspace, $isScheduled);
 

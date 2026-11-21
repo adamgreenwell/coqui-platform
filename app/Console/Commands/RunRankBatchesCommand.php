@@ -143,6 +143,9 @@ class RunRankBatchesCommand extends Command
                         'depth' => 100,
                         'postback_url' => $callbackUrl,
                         'postback_data' => 'advanced',
+                        // Wait for AI Overviews that load after the page, so
+                        // their presence and citations are recorded.
+                        'load_async_ai_overview' => (bool) config('coqui.dataforseo.load_async_ai_overview', true),
                         'tag' => "kw:{$kw->id}",
                     ];
 

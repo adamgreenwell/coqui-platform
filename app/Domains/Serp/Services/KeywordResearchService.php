@@ -69,6 +69,7 @@ class KeywordResearchService
 
         $misses = array_values(array_diff($normalized, array_keys($hits)));
         $newMetrics = [];
+        $noData = [];
 
         if ($misses !== []) {
             // DataForSEO Labs keyword_overview accepts up to 700 keywords per payload task
@@ -78,10 +79,31 @@ class KeywordResearchService
                 foreach ($parsed as $kw => $metric) {
                     $newMetrics[$kw] = $metric;
                 }
+
+                // A successful lookup that returned nothing for a keyword is
+                // remembered too, so asking again doesn't pay for it again.
+                if ($this->succeeded($response)) {
+                    foreach ($chunk as $kw) {
+                        if (! isset($parsed[$kw])) {
+                            $noData[$kw] = $this->emptyMetrics($kw, $locationCode, $languageCode) + [
+                                'no_data' => true,
+                                'updated_at' => now()->toIso8601String(),
+                            ];
+                        }
+                    }
+                }
             }
 
             if ($newMetrics !== []) {
                 $this->cache->putKeywordMetricsBatch($newMetrics, $locationCode, $languageCode);
+            }
+            if ($noData !== []) {
+                $this->cache->putKeywordMetricsBatch(
+                    $noData,
+                    $locationCode,
+                    $languageCode,
+                    (int) config('coqui.dataforseo.cache_ttl_hours.keyword_no_data', 24 * 7),
+                );
             }
         }
 
@@ -92,20 +114,7 @@ class KeywordResearchService
             } elseif (isset($newMetrics[$kw])) {
                 $all[] = array_merge($newMetrics[$kw], ['cached' => false]);
             } else {
-                $all[] = [
-                    'keyword' => $kw,
-                    'location_code' => $locationCode,
-                    'language_code' => $languageCode,
-                    'search_volume' => null,
-                    'cpc' => null,
-                    'competition' => null,
-                    'competition_level' => null,
-                    'keyword_difficulty' => null,
-                    'main_intent' => null,
-                    'secondary_intents' => [],
-                    'monthly_searches' => [],
-                    'cached' => false,
-                ];
+                $all[] = $this->emptyMetrics($kw, $locationCode, $languageCode) + ['cached' => false];
             }
         }
 
@@ -113,6 +122,50 @@ class KeywordResearchService
             'keywords' => $all,
             'summary' => $this->calculateSummary($all, count($hits), count($misses)),
         ];
+    }
+
+    /**
+     * Metrics for a keyword with no data.
+     *
+     * @return array<string, mixed>
+     */
+    private function emptyMetrics(string $keyword, int $locationCode, string $languageCode): array
+    {
+        return [
+            'keyword' => $keyword,
+            'location_code' => $locationCode,
+            'language_code' => $languageCode,
+            'search_volume' => null,
+            'cpc' => null,
+            'competition' => null,
+            'competition_level' => null,
+            'keyword_difficulty' => null,
+            'main_intent' => null,
+            'secondary_intents' => [],
+            'monthly_searches' => [],
+        ];
+    }
+
+    /**
+     * Whether the request and every task in it succeeded, so a keyword
+     * missing from the results genuinely has no data.
+     *
+     * @param  array<string, mixed>  $response
+     */
+    private function succeeded(array $response): bool
+    {
+        $tasks = $response['tasks'] ?? null;
+        if ((int) ($response['status_code'] ?? 0) !== 20000 || ! is_array($tasks) || $tasks === []) {
+            return false;
+        }
+
+        foreach ($tasks as $task) {
+            if (! is_array($task) || (int) ($task['status_code'] ?? 0) !== 20000) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
