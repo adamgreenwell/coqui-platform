@@ -24,6 +24,9 @@ return new class extends Migration
         }
 
         DB::transaction(function (): void {
+            // Lock out ingestion first: taking the sequence lock before the
+            // table lock could deadlock with a concurrent INSERT.
+            DB::statement('LOCK TABLE bot_crawl_logs IN ACCESS EXCLUSIVE MODE');
             // Keep the id sequence when the old table is dropped.
             DB::statement('ALTER SEQUENCE bot_crawl_logs_id_seq OWNED BY NONE');
 
@@ -71,6 +74,7 @@ return new class extends Migration
         }
 
         DB::transaction(function (): void {
+            DB::statement('LOCK TABLE bot_crawl_logs IN ACCESS EXCLUSIVE MODE');
             DB::statement('ALTER SEQUENCE bot_crawl_logs_id_seq OWNED BY NONE');
             DB::statement(<<<'SQL'
                 CREATE TABLE bot_crawl_logs_plain (
