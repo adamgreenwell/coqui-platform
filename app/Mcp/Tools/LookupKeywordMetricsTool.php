@@ -100,12 +100,19 @@ class LookupKeywordMetricsTool extends Tool
             return Response::error("Couldn't fetch keyword metrics right now. Try again in a few minutes.");
         }
 
+        // Keywords no configured provider could look up aren't "not found".
+        $skipped = array_map('strtolower', $result['unavailable']);
+        $unavailable = array_values(array_filter($missing, static fn (string $keyword): bool => in_array(strtolower($keyword), $skipped, true)));
+        $notFound = array_values(array_diff($missing, $unavailable));
+
         return Response::json([
             'mode' => 'live',
             'source' => $source,
             'project' => $project->domain,
             'keywords' => array_values($metrics),
-            ...($lookupFailed ? ['unavailable' => $missing] : ['not_found' => $missing]),
+            ...($lookupFailed
+                ? ['unavailable' => $missing]
+                : ['not_found' => $notFound, ...($unavailable !== [] ? ['unavailable' => $unavailable] : [])]),
         ]);
     }
 

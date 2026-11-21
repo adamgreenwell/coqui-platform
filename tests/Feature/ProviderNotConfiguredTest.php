@@ -6,6 +6,7 @@ namespace Tests\Feature;
 
 use App\Domains\Projects\Models\Project;
 use App\Domains\Projects\Models\Workspace;
+use App\Domains\Serp\DataForSeo\DataForSeoCacheRepository;
 use App\Domains\Serp\Models\ContentBrief;
 use App\Domains\Serp\Models\TrackedKeyword;
 use App\Domains\Serp\ProviderNotConfiguredException;
@@ -189,11 +190,46 @@ class ProviderNotConfiguredTest extends TestCase
 
         $result = app(SeoProviderRouter::class)->lookupKeywords(['seo crawler', '2026']);
 
-        // '2026' would go to the other provider, which isn't set up: skipped.
+        // '2026' would go to the other provider, which isn't set up: skipped
+        // and reported as unavailable rather than as having no data.
         $this->assertSame('seo crawler', $result['providers']['seranking'][0]['keyword']);
         $this->assertSame([], $result['providers']['dataforseo']);
+        $this->assertSame(['2026'], $result['unavailable']);
         Http::assertSent(fn (HttpRequest $request): bool => str_contains($request->url(), 'api.seranking.com'));
         Http::assertSentCount(1);
+    }
+
+    public function test_cached_keyword_data_is_still_served_without_credentials(): void
+    {
+        app(DataForSeoCacheRepository::class)->put(
+            '/v3/dataforseo_labs/google/keyword_overview/live',
+            ['keywords' => ['seo crawler'], 'location_code' => 2840, 'language_code' => 'en'],
+            ['tasks' => [['result' => [['items' => [['keyword' => 'seo crawler']]]]]]],
+            24,
+        );
+
+        $result = app(SeoProviderRouter::class)->lookupKeywords(['seo crawler']);
+
+        $this->assertSame('seo crawler', $result['providers']['dataforseo']['tasks'][0]['result'][0]['items'][0]['keyword']);
+        $this->assertSame([], $result['unavailable']);
+        Http::assertNothingSent();
+    }
+
+    public function test_the_mcp_tool_lists_keywords_no_provider_could_look_up_as_unavailable(): void
+    {
+        config()->set('coqui.seranking.api_key', 'seranking-key');
+        config()->set('coqui.seranking.base_url', 'https://api.seranking.com');
+        Http::fake([
+            'api.seranking.com/v1/keywords/export*' => Http::response([
+                ['keyword' => 'seo crawler', 'volume' => 1900, 'is_data_found' => true],
+            ], 200),
+        ]);
+
+        CoquiSeoServer::actingAs($this->user)
+            ->tool(LookupKeywordMetricsTool::class, ['keywords' => 'seo crawler, 2026', 'execute' => true, 'domain' => 'coqui.io'])
+            ->assertOk()
+            ->assertSee('"not_found":[]')
+            ->assertSee('"unavailable":["2026"]');
     }
 
     public function test_the_router_refuses_when_no_provider_is_configured(): void

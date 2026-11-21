@@ -17,8 +17,9 @@ use App\Domains\Serp\SeRanking\SeRankingClient;
  * - Keyword bulk screening: SE Ranking flat-batch (`/v1/keywords/export`) for
  *   accepted ASCII keywords, falling back to DataForSEO `keyword_overview` for
  *   non-ASCII, numeric-only, or unconfigured setups. With only SE Ranking
- *   configured, keywords it can't take are skipped instead of failing.
- *   Neither configured throws ProviderNotConfiguredException.
+ *   configured, keywords it can't take come back as `unavailable` (unless
+ *   DataForSEO has them cached). When nothing can be looked up it throws
+ *   ProviderNotConfiguredException.
  * - Backlinks & SERP Rank Tracking: always DataForSEO (SE Ranking's standalone
  *   Data API does not expose backlink endpoints without a regular plan).
  */
@@ -31,10 +32,15 @@ class SeoProviderRouter
     ) {}
 
     /**
+     * `unavailable` lists keywords no configured provider could look up, so
+     * callers don't report them as having no data. Throws
+     * ProviderNotConfiguredException when no keyword could be looked up.
+     *
      * @param  list<string>  $keywords
      * @return array{
      *     partition: array{accepted: list<string>, rejected: list<string>},
-     *     providers: array{seranking: list<array<string, mixed>>, dataforseo: array<string, mixed>}
+     *     providers: array{seranking: list<array<string, mixed>>, dataforseo: array<string, mixed>},
+     *     unavailable: list<string>
      * }
      */
     public function lookupKeywords(
@@ -44,18 +50,13 @@ class SeoProviderRouter
         string $languageCode = 'en',
         string $seRankingSource = 'us',
     ): array {
-        $seRankingConfigured = $this->seRanking->isConfigured();
-        $dataForSeoConfigured = $this->dataForSeo->isConfigured();
-        if (! $seRankingConfigured && ! $dataForSeoConfigured) {
-            throw new ProviderNotConfiguredException('seranking,dataforseo');
-        }
-
         $partition = $this->acceptanceRule->partition($keywords, $seRankingSource);
 
         $seRankingRows = [];
         $dataForSeoKeywords = $partition['rejected'];
+        $seRankingRan = $this->seRanking->isConfigured() && $partition['accepted'] !== [];
 
-        if ($seRankingConfigured && $partition['accepted'] !== []) {
+        if ($seRankingRan) {
             $seRankingRows = $this->seRanking->exportKeywords(
                 keywords: $partition['accepted'],
                 source: $seRankingSource,
@@ -69,13 +70,25 @@ class SeoProviderRouter
         }
 
         $dataForSeoPayload = [];
-        if ($dataForSeoKeywords !== [] && $dataForSeoConfigured) {
-            $dataForSeoPayload = $this->dataForSeo->keywordOverview(
-                keywords: $dataForSeoKeywords,
-                project: $project,
-                locationCode: $locationCode,
-                languageCode: $languageCode,
-            );
+        $unavailable = [];
+        if ($dataForSeoKeywords !== []) {
+            try {
+                // Cached results are served even without credentials; only a
+                // cache miss needs them.
+                $dataForSeoPayload = $this->dataForSeo->keywordOverview(
+                    keywords: $dataForSeoKeywords,
+                    project: $project,
+                    locationCode: $locationCode,
+                    languageCode: $languageCode,
+                );
+            } catch (ProviderNotConfiguredException $e) {
+                if (! $seRankingRan) {
+                    // Nothing could be looked up at all.
+                    throw $e;
+                }
+
+                $unavailable = $dataForSeoKeywords;
+            }
         }
 
         return [
@@ -84,6 +97,7 @@ class SeoProviderRouter
                 'seranking' => $seRankingRows,
                 'dataforseo' => $dataForSeoPayload,
             ],
+            'unavailable' => $unavailable,
         ];
     }
 }
